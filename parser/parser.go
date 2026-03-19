@@ -114,3 +114,19 @@ func Many[T any](parser Parser[T]) Parser[[]T] {
 		}, nil
 	}
 }
+
+func Optional[T any](parser Parser[T]) Parser[Option[T]] {
+	return func(context ParsingContext) (ParseResult[Option[T]], error) {
+		result, err := parser(context)
+		if err != nil {
+			return ParseResult[Option[T]]{
+				Result:  None[T](),
+				Context: context,
+			}, nil
+		}
+		return ParseResult[Option[T]]{
+			Result:  Some(result.Result),
+			Context: result.Context,
+		}, nil
+	}
+}

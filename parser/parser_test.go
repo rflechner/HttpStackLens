@@ -267,3 +267,66 @@ func TestMany(t *testing.T) {
 		}
 	})
 }
+
+func TestOptional(t *testing.T) {
+	t.Run("Success: match present", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+		p := Optional(OneChar('a'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result.IsNone() {
+			t.Error("Expected Some, got None")
+		}
+
+		if res.Result.Unwrap() != 'a' {
+			t.Errorf("Incorrect result: expected 'a', got %q", res.Result.Unwrap())
+		}
+
+		if string(res.Context.Remaining) != "bc" {
+			t.Errorf("Incorrect remaining context: expected \"bc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: match absent", func(t *testing.T) {
+		input := "bc"
+		ctx := NewParsingContext(input)
+		p := Optional(OneChar('a'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result.IsSome() {
+			t.Errorf("Expected None, got Some(%q)", res.Result.Unwrap())
+		}
+
+		if string(res.Context.Remaining) != "bc" {
+			t.Errorf("Incorrect remaining context: expected \"bc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: end of string", func(t *testing.T) {
+		input := ""
+		ctx := NewParsingContext(input)
+		p := Optional(OneChar('a'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result.IsSome() {
+			t.Error("Expected None, got Some")
+		}
+
+		if !res.Context.AtEnd() {
+			t.Error("Expected context to be at end")
+		}
+	})
+}
