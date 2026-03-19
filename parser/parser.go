@@ -18,6 +18,7 @@ func Parse(input string) string {
 	return "Parsed: " + input
 }
 
+// Combine combines two parsers into a new parser that parses the input using both parsers in sequence.
 func Combine[A any, B any](left Parser[A], right Parser[B]) Parser[struct {
 	Left  A
 	Right B
@@ -58,6 +59,7 @@ func Combine[A any, B any](left Parser[A], right Parser[B]) Parser[struct {
 	}
 }
 
+// OneChar A parser that matches a single character.
 func OneChar(c rune) Parser[rune] {
 	return func(context ParsingContext) (ParseResult[rune], error) {
 		if context.AtEnd() {
@@ -74,6 +76,7 @@ func OneChar(c rune) Parser[rune] {
 	}
 }
 
+// Satisfy A parser that matches a character if the specified predicate returns true.
 func Satisfy(predicate func(rune) bool) Parser[rune] {
 	return func(context ParsingContext) (ParseResult[rune], error) {
 		if context.AtEnd() {
@@ -90,10 +93,12 @@ func Satisfy(predicate func(rune) bool) Parser[rune] {
 	}
 }
 
+// AnyChar A parser that matches any character.
 func AnyChar() Parser[rune] {
 	return Satisfy(func(c rune) bool { return true })
 }
 
+// Many A parser that attempts to parse the input using the specified parser, collecting all the results into a slice.
 func Many[T any](parser Parser[T]) Parser[[]T] {
 	return func(context ParsingContext) (ParseResult[[]T], error) {
 		l := list.New()
@@ -115,6 +120,7 @@ func Many[T any](parser Parser[T]) Parser[[]T] {
 	}
 }
 
+// Optional A parser that attempts to parse the input using the specified parser, but returns None if the parser fails.
 func Optional[T any](parser Parser[T]) Parser[Option[T]] {
 	return func(context ParsingContext) (ParseResult[Option[T]], error) {
 		result, err := parser(context)
@@ -135,7 +141,9 @@ func Optional[T any](parser Parser[T]) Parser[Option[T]] {
 func OrElse[T any](parsers ...Parser[T]) Parser[T] {
 	return func(context ParsingContext) (ParseResult[T], error) {
 		if len(parsers) == 0 {
-			return ParseResult[T]{}, errors.New("no parsers provided to OrElse")
+			return ParseResult[T]{
+				Context: context,
+			}, errors.New("no parsers provided to OrElse")
 		}
 		errorList := list.New()
 		for _, parser := range parsers {
@@ -146,6 +154,34 @@ func OrElse[T any](parsers ...Parser[T]) Parser[T] {
 			errorList.PushBack(err)
 		}
 
-		return ParseResult[T]{}, errors.Join(ListToSlice[error](errorList)...)
+		return ParseResult[T]{
+			Context: context,
+		}, errors.Join(ListToSlice[error](errorList)...)
+	}
+}
+
+// StringMatch A parser that matches a specified text as a prefix of the input.
+func StringMatch(s string) Parser[string] {
+	return func(context ParsingContext) (ParseResult[string], error) {
+		if context.AtEnd() {
+			return ParseResult[string]{
+				Context: context,
+			}, errors.New("end of string")
+		}
+		if len(s) > len(context.Remaining) {
+			return ParseResult[string]{
+				Context: context,
+			}, errors.New("string does not match")
+		}
+		if string(context.Remaining[0:len(s)]) == s {
+			return ParseResult[string]{
+				Result:  s,
+				Context: context.Forward(len(s)),
+			}, nil
+		}
+
+		return ParseResult[string]{
+			Context: context,
+		}, errors.New("string does not match")
 	}
 }

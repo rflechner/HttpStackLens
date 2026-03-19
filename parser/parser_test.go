@@ -402,3 +402,77 @@ func TestOrElse(t *testing.T) {
 		}
 	})
 }
+
+func TestStringMatch(t *testing.T) {
+	t.Run("Success: match full string", func(t *testing.T) {
+		input := "hello world"
+		ctx := NewParsingContext(input)
+		p := StringMatch("hello")
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result != "hello" {
+			t.Errorf("Incorrect result: expected \"hello\", got %q", res.Result)
+		}
+
+		if string(res.Context.Remaining) != " world" {
+			t.Errorf("Incorrect remaining context: expected \" world\", got %q", string(res.Context.Remaining))
+		}
+
+		if res.Context.Position.Offset != 5 {
+			t.Errorf("Incorrect position: expected offset 5, got %d", res.Context.Position.Offset)
+		}
+	})
+
+	t.Run("Failure: string does not match", func(t *testing.T) {
+		input := "hello world"
+		ctx := NewParsingContext(input)
+		p := StringMatch("world")
+
+		result, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (string mismatch), but nil was returned")
+		}
+
+		if err.Error() != "string does not match" {
+			t.Errorf("Incorrect error message: expected \"string does not match\", got %q", err.Error())
+		}
+
+		if string(result.Context.Remaining) != "hello world" {
+			t.Errorf("Incorrect remaining context: expected \" world\", got %q", string(result.Context.Remaining))
+		}
+	})
+
+	t.Run("Failure: end of string", func(t *testing.T) {
+		input := ""
+		ctx := NewParsingContext(input)
+		p := StringMatch("hello")
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (end of string), but nil was returned")
+		}
+
+		if err.Error() != "end of string" {
+			t.Errorf("Incorrect error message: expected \"end of string\", got %q", err.Error())
+		}
+	})
+
+	t.Run("Failure: input shorter than target string", func(t *testing.T) {
+		input := "hel"
+		ctx := NewParsingContext(input)
+		p := StringMatch("hello")
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (input too short), but nil was returned")
+		}
+
+		if err.Error() != "string does not match" {
+			t.Errorf("Incorrect error message: expected \"string does not match\", got %q", err.Error())
+		}
+	})
+}
