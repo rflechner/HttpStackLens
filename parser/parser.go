@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 )
+import "container/list"
 
 type ParseResult[T any] struct {
 	Result  T
@@ -91,4 +92,25 @@ func Satisfy(predicate func(rune) bool) Parser[rune] {
 
 func AnyChar() Parser[rune] {
 	return Satisfy(func(c rune) bool { return true })
+}
+
+func Many[T any](parser Parser[T]) Parser[[]T] {
+	return func(context ParsingContext) (ParseResult[[]T], error) {
+		l := list.New()
+		next := context
+
+		for !next.AtEnd() {
+			result, err := parser(next)
+			if err != nil {
+				break
+			}
+			l.PushBack(result.Result)
+			next = result.Context
+		}
+		items := ListToSlice[T](l)
+		return ParseResult[[]T]{
+			Result:  items,
+			Context: next,
+		}, nil
+	}
 }

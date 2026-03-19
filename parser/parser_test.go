@@ -193,3 +193,58 @@ func TestAnyChar(t *testing.T) {
 		}
 	})
 }
+
+func TestMany(t *testing.T) {
+	t.Run("Success: match several characters", func(t *testing.T) {
+		input := "aaab"
+		ctx := NewParsingContext(input)
+		p := Many(OneChar('a'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 3 {
+			t.Errorf("Incorrect result length: expected 3, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "b" {
+			t.Errorf("Incorrect remaining context: expected \"b\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: match zero characters (0 or more)", func(t *testing.T) {
+		input := "bbba"
+		ctx := NewParsingContext(input)
+		p := Many(OneChar('a'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 0 {
+			t.Errorf("Incorrect result length: expected 0, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "bbba" {
+			t.Errorf("Incorrect remaining context: expected \"bbba\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: end of string", func(t *testing.T) {
+		input := ""
+		ctx := NewParsingContext(input)
+		p := Many(OneChar('a'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 0 {
+			t.Errorf("Incorrect result length: expected 0, got %d", len(res.Result))
+		}
+	})
+}
