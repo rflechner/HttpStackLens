@@ -99,3 +99,61 @@ func TestCombine(t *testing.T) {
 	})
 
 }
+
+func TestSatisfy(t *testing.T) {
+	t.Run("Success: predicate matches", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+		p := Satisfy(func(r rune) bool {
+			return r == 'a'
+		})
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result != 'a' {
+			t.Errorf("Incorrect result: expected 'a', got %q", res.Result)
+		}
+
+		if string(res.Context.Remaining) != "bc" {
+			t.Errorf("Incorrect remaining context: expected \"bc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Failure: predicate does not match", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+		p := Satisfy(func(r rune) bool {
+			return r == 'z'
+		})
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (predicate mismatch), but nil was returned")
+		}
+
+		expectedErr := "'a' is not expected"
+		if err.Error() != expectedErr {
+			t.Errorf("Incorrect error message: expected %q, got %q", expectedErr, err.Error())
+		}
+	})
+
+	t.Run("Failure: end of string", func(t *testing.T) {
+		input := ""
+		ctx := NewParsingContext(input)
+		p := Satisfy(func(r rune) bool {
+			return true
+		})
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (end of string), but nil was returned")
+		}
+
+		if err.Error() != "end of string" {
+			t.Errorf("Incorrect error message: expected \"end of string\", got %q", err.Error())
+		}
+	})
+}

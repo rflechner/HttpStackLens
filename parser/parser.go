@@ -72,3 +72,19 @@ func OneChar(c rune) Parser[rune] {
 		}, nil
 	}
 }
+
+func Satisfy(predicate func(rune) bool) Parser[rune] {
+	return func(context ParsingContext) (ParseResult[rune], error) {
+		if context.AtEnd() {
+			return ParseResult[rune]{}, errors.New("end of string")
+		}
+		c := context.Remaining[0]
+		if predicate(c) == false {
+			return ParseResult[rune]{}, fmt.Errorf("%q is not expected", c)
+		}
+		return ParseResult[rune]{
+			Result:  c,
+			Context: context.Forward(1),
+		}, nil
+	}
+}
