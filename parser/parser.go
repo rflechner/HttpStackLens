@@ -185,3 +185,42 @@ func StringMatch(s string) Parser[string] {
 		}, errors.New("string does not match")
 	}
 }
+
+func UntilText[T any](parser Parser[T], delimiter string, includeDelimiter bool) Parser[T] {
+	return func(context ParsingContext) (ParseResult[T], error) {
+		index := IndexOf(context.Remaining, delimiter)
+		if index < 0 {
+			return ParseResult[T]{
+				Context: context,
+			}, errors.New("delimiter not found")
+		}
+		target := context.Remaining[0:index]
+		result, err := parser(ParsingContext{
+			Remaining: target,
+			Position:  NewTextPosition(),
+		})
+		if err != nil {
+			return ParseResult[T]{
+				Context: context,
+			}, err
+		}
+		if result.Context.AtEnd() == false {
+			return ParseResult[T]{
+				Context: context,
+			}, errors.New("parser did not consume all input up to delimiter")
+		}
+
+		if includeDelimiter {
+			return ParseResult[T]{
+				Context: context.Forward(index + len(delimiter)),
+				Result:  result.Result,
+			}, nil
+		}
+
+		return ParseResult[T]{
+			Context: context.Forward(index),
+			Result:  result.Result,
+		}, nil
+
+	}
+}

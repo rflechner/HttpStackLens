@@ -476,3 +476,104 @@ func TestStringMatch(t *testing.T) {
 		}
 	})
 }
+
+func TestUntilText(t *testing.T) {
+	t.Run("Success: UntilText with ManySatisfy-like parser", func(t *testing.T) {
+		input := "my_json_prop :delimiter: 1234"
+		ctx := NewParsingContext(input)
+
+		innerParser := Many(Satisfy(func(r rune) bool {
+			return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '_'
+		}))
+
+		p := UntilText(innerParser, ":delimiter:", false)
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		resultStr := string(res.Result)
+		expectedResult := "my_json_prop "
+		if resultStr != expectedResult {
+			t.Errorf("Incorrect result: expected %q, got %q", expectedResult, resultStr)
+		}
+
+		expectedRemaining := ":delimiter: 1234"
+		if string(res.Context.Remaining) != expectedRemaining {
+			t.Errorf("Incorrect remaining context: expected %q, got %q", expectedRemaining, string(res.Context.Remaining))
+		}
+
+		if res.Context.Position.Offset != 13 {
+			t.Errorf("Incorrect offset: expected 13, got %d", res.Context.Position.Offset)
+		}
+		if res.Context.Position.Line != 1 {
+			t.Errorf("Incorrect line: expected 1, got %d", res.Context.Position.Line)
+		}
+
+		if res.Context.Position.Column != 14 {
+			t.Errorf("Incorrect column: expected 14, got %d", res.Context.Position.Column)
+		}
+	})
+
+	t.Run("Success: UntilText including delimiter", func(t *testing.T) {
+		input := "part1:delimiter:part2"
+		ctx := NewParsingContext(input)
+		innerParser := Many(Satisfy(func(r rune) bool { return r != ':' }))
+
+		p := UntilText(innerParser, ":delimiter:", true)
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if string(res.Result) != "part1" {
+			t.Errorf("Incorrect result: expected \"part1\", got %q", string(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "part2" {
+			t.Errorf("Incorrect remaining context: expected \"part2\", got %q", string(res.Context.Remaining))
+		}
+
+		// "part1" (5) + ":delimiter:" (11) = 16
+		if res.Context.Position.Offset != 16 {
+			t.Errorf("Incorrect offset: expected 16, got %d", res.Context.Position.Offset)
+		}
+	})
+
+	t.Run("Failure: delimiter not found", func(t *testing.T) {
+		input := "some text without separator"
+		ctx := NewParsingContext(input)
+		innerParser := Many(AnyChar())
+
+		p := UntilText(innerParser, ":separator:", false)
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("Expected error (delimiter not found), got nil")
+		}
+
+		if err.Error() != "delimiter not found" {
+			t.Errorf("Incorrect error message: expected \"delimiter not found\", got %q", err.Error())
+		}
+	})
+
+	t.Run("Failure: inner parser did not consume all input", func(t *testing.T) {
+		input := "abc:delimiter:def"
+		ctx := NewParsingContext(input)
+
+		innerParser := OneChar('a')
+
+		p := UntilText(innerParser, ":delimiter:", false)
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("Expected error (did not consume all input), got nil")
+		}
+
+		if err.Error() != "parser did not consume all input up to delimiter" {
+			t.Errorf("Incorrect error message: expected \"parser did not consume all input up to delimiter\", got %q", err.Error())
+		}
+	})
+}
