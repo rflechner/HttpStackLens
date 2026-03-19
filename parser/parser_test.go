@@ -841,3 +841,100 @@ func TestSpaces(t *testing.T) {
 		}
 	})
 }
+
+func TestLazyParse(t *testing.T) {
+	t.Run("Success: lazy evaluation", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+
+		// Utilisation de LazyParse pour différer la création du parser
+		p := LazyParse(func() Parser[rune] {
+			return OneChar('a')
+		})
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result != 'a' {
+			t.Errorf("Incorrect result: expected 'a', got %q", res.Result)
+		}
+
+		if string(res.Context.Remaining) != "bc" {
+			t.Errorf("Incorrect remaining context: expected \"bc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: mutual recursion", func(t *testing.T) {
+		// Exemple simple de récursion : un parser qui matche 'a' suivi optionnellement par lui-même
+		// expression := 'a' | 'a' expression
+		// Ici on va tester "aaa"
+
+		var parser Parser[string]
+		parser = LazyParse(func() Parser[string] {
+			return OrElse(
+				func(ctx ParsingContext) (ParseResult[string], error) {
+					// Cas de base : 'a' suivi de la fin ou d'autre chose que 'a'
+					res, err := OneChar('a')(ctx)
+					if err != nil {
+						return ParseResult[string]{}, err
+					}
+					// On essaie de continuer la récursion
+					nextRes, nextErr := parser(res.Context)
+					if nextErr != nil {
+						// Si la suite échoue, on retourne juste 'a'
+						return ParseResult[string]{
+							Result:  "a",
+							Context: res.Context,
+						}, nil
+					}
+					return ParseResult[string]{
+						Result:  "a" + nextRes.Result,
+						Context: nextRes.Context,
+					}, nil
+				},
+				func(ctx ParsingContext) (ParseResult[string], error) {
+					res, err := OneChar('a')(ctx)
+					if err != nil {
+						return ParseResult[string]{}, err
+					}
+					return ParseResult[string]{
+						Result:  "a",
+						Context: res.Context,
+					}, nil
+				},
+			)
+		})
+
+		input := "aaa"
+		ctx := NewParsingContext(input)
+		res, err := parser(ctx)
+
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result != "aaa" {
+			t.Errorf("Incorrect result: expected \"aaa\", got %q", res.Result)
+		}
+
+		if !res.Context.AtEnd() {
+			t.Errorf("Expected context to be at end, got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Failure: propagation", func(t *testing.T) {
+		input := "bbc"
+		ctx := NewParsingContext(input)
+
+		p := LazyParse(func() Parser[rune] {
+			return OneChar('a')
+		})
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("Expected error, got nil")
+		}
+	})
+}

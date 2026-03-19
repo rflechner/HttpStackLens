@@ -338,3 +338,9 @@ func SeparatedBy[A any, B any](parser Parser[A], separator Parser[B], matchTaili
 func Spaces() Parser[[]rune] {
 	return Many(Satisfy(func(c rune) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }))
 }
+
+func LazyParse[T any](factory func() Parser[T]) Parser[T] {
+	return func(context ParsingContext) (ParseResult[T], error) {
+		return factory()(context)
+	}
+}
