@@ -330,3 +330,75 @@ func TestOptional(t *testing.T) {
 		}
 	})
 }
+
+func TestOrElse(t *testing.T) {
+	t.Run("Success: first parser succeeds", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+		p := OrElse(OneChar('a'), OneChar('b'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result != 'a' {
+			t.Errorf("Incorrect result: expected 'a', got %q", res.Result)
+		}
+
+		if string(res.Context.Remaining) != "bc" {
+			t.Errorf("Incorrect remaining context: expected \"bc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: second parser succeeds when first fails", func(t *testing.T) {
+		input := "bac"
+		ctx := NewParsingContext(input)
+		p := OrElse(OneChar('a'), OneChar('b'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result != 'b' {
+			t.Errorf("Incorrect result: expected 'b', got %q", res.Result)
+		}
+
+		if string(res.Context.Remaining) != "ac" {
+			t.Errorf("Incorrect remaining context: expected \"ac\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Failure: all parsers fail", func(t *testing.T) {
+		input := "cab"
+		ctx := NewParsingContext(input)
+		p := OrElse(OneChar('a'), OneChar('b'))
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (all parsers failed), but nil was returned")
+		}
+
+		// OrElse uses errors.Join which produces a multi-line error message usually.
+		// Let's just check that it contains the individual errors if possible,
+		// or at least that it's not nil.
+		t.Logf("Joined error: %v", err)
+	})
+
+	t.Run("Failure: empty parsers list", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+		p := OrElse[rune]()
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (empty parsers list), but nil was returned")
+		}
+
+		expectedErr := "no parsers provided to OrElse"
+		if err.Error() != expectedErr {
+			t.Errorf("Incorrect error message: expected %q, got %q", expectedErr, err.Error())
+		}
+	})
+}

@@ -130,3 +130,22 @@ func Optional[T any](parser Parser[T]) Parser[Option[T]] {
 		}, nil
 	}
 }
+
+// OrElse A parser that attempts to parse the input using multiple parsers in sequence until one succeeds.
+func OrElse[T any](parsers ...Parser[T]) Parser[T] {
+	return func(context ParsingContext) (ParseResult[T], error) {
+		if len(parsers) == 0 {
+			return ParseResult[T]{}, errors.New("no parsers provided to OrElse")
+		}
+		errorList := list.New()
+		for _, parser := range parsers {
+			result, err := parser(context)
+			if err == nil {
+				return result, nil
+			}
+			errorList.PushBack(err)
+		}
+
+		return ParseResult[T]{}, errors.Join(ListToSlice[error](errorList)...)
+	}
+}
