@@ -334,3 +334,7 @@ func SeparatedBy[A any, B any](parser Parser[A], separator Parser[B], matchTaili
 		}, nil
 	}
 }
+
+func Spaces() Parser[[]rune] {
+	return Many(Satisfy(func(c rune) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }))
+}

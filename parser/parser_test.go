@@ -763,3 +763,81 @@ func TestSeparatedBy(t *testing.T) {
 	})
 
 }
+
+func TestSpaces(t *testing.T) {
+	t.Run("Success: trim leading spaces", func(t *testing.T) {
+		input := "   abc"
+		ctx := NewParsingContext(input)
+		p := Spaces()
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if string(res.Result) != "   " {
+			t.Errorf("Incorrect result: expected \"   \", got %q", string(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "abc" {
+			t.Errorf("Incorrect remaining context: expected \"abc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: trim mixed whitespace (tabs, newlines, carriage returns)", func(t *testing.T) {
+		input := " \t\n\r abc"
+		ctx := NewParsingContext(input)
+		p := Spaces()
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if string(res.Result) != " \t\n\r " {
+			t.Errorf("Incorrect result length: expected 5 chars, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "abc" {
+			t.Errorf("Incorrect remaining context: expected \"abc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: no whitespace found", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+		p := Spaces()
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 0 {
+			t.Errorf("Incorrect result length: expected 0, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "abc" {
+			t.Errorf("Incorrect remaining context: expected \"abc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: only whitespace", func(t *testing.T) {
+		input := "   "
+		ctx := NewParsingContext(input)
+		p := Spaces()
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if string(res.Result) != "   " {
+			t.Errorf("Incorrect result: expected \"   \", got %q", string(res.Result))
+		}
+
+		if !res.Context.AtEnd() {
+			t.Errorf("Expected context to be at end, but remaining is %q", string(res.Context.Remaining))
+		}
+	})
+}
