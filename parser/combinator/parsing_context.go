@@ -1,4 +1,4 @@
-package parser
+package combinator
 
 type ParsingContext struct {
 	Remaining []rune

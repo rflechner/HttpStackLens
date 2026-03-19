@@ -1,4 +1,4 @@
-package parser
+package combinator
 
 type TextPosition struct {
 	Offset int

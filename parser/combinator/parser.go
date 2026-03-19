@@ -1,8 +1,9 @@
-package parser
+package combinator
 
 import (
 	"errors"
 	"fmt"
+	parser2 "goproxy/parser"
 )
 import "container/list"
 
@@ -12,6 +13,19 @@ type ParseResult[T any] struct {
 }
 
 type Parser[T any] func(context ParsingContext) (ParseResult[T], error)
+
+func Map[T any, Output any](p Parser[T], f func(T) Output) Parser[Output] {
+	return func(context ParsingContext) (ParseResult[Output], error) {
+		result, err := p(context)
+		if err != nil {
+			return ParseResult[Output]{}, err
+		}
+		return ParseResult[Output]{
+			Result:  f(result.Result),
+			Context: result.Context,
+		}, nil
+	}
+}
 
 // Parse analyzes a string and returns a result
 func Parse(input string) string {
@@ -116,7 +130,7 @@ func Many[T any](parser Parser[T]) Parser[[]T] {
 			l.PushBack(result.Result)
 			next = result.Context
 		}
-		items := ListToSlice[T](l)
+		items := parser2.ListToSlice[T](l)
 		return ParseResult[[]T]{
 			Result:  items,
 			Context: next,
@@ -125,17 +139,17 @@ func Many[T any](parser Parser[T]) Parser[[]T] {
 }
 
 // Optional A parser that attempts to parse the input using the specified parser, but returns None if the parser fails.
-func Optional[T any](parser Parser[T]) Parser[Option[T]] {
-	return func(context ParsingContext) (ParseResult[Option[T]], error) {
+func Optional[T any](parser Parser[T]) Parser[parser2.Option[T]] {
+	return func(context ParsingContext) (ParseResult[parser2.Option[T]], error) {
 		result, err := parser(context)
 		if err != nil {
-			return ParseResult[Option[T]]{
-				Result:  None[T](),
+			return ParseResult[parser2.Option[T]]{
+				Result:  parser2.None[T](),
 				Context: context,
 			}, nil
 		}
-		return ParseResult[Option[T]]{
-			Result:  Some(result.Result),
+		return ParseResult[parser2.Option[T]]{
+			Result:  parser2.Some(result.Result),
 			Context: result.Context,
 		}, nil
 	}
@@ -160,7 +174,7 @@ func OrElse[T any](parsers ...Parser[T]) Parser[T] {
 
 		return ParseResult[T]{
 			Context: context,
-		}, errors.Join(ListToSlice[error](errorList)...)
+		}, errors.Join(parser2.ListToSlice[error](errorList)...)
 	}
 }
 
@@ -192,7 +206,7 @@ func StringMatch(s string) Parser[string] {
 
 func UntilText[T any](parser Parser[T], delimiter string, includeDelimiter bool) Parser[T] {
 	return func(context ParsingContext) (ParseResult[T], error) {
-		index := IndexOf(context.Remaining, delimiter)
+		index := parser2.IndexOf(context.Remaining, delimiter)
 		if index < 0 {
 			return ParseResult[T]{
 				Context: context,
@@ -325,12 +339,12 @@ func SeparatedBy[A any, B any](parser Parser[A], separator Parser[B], matchTaili
 		if !matchTailingSeparator && hasTailingSeparator {
 			return ParseResult[[]A]{
 				Context: previous,
-				Result:  ListToSlice[A](l),
+				Result:  parser2.ListToSlice[A](l),
 			}, nil
 		}
 		return ParseResult[[]A]{
 			Context: next,
-			Result:  ListToSlice[A](l),
+			Result:  parser2.ListToSlice[A](l),
 		}, nil
 	}
 }
