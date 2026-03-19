@@ -746,4 +746,20 @@ func TestSeparatedBy(t *testing.T) {
 		}
 	})
 
+	t.Run("Failure: SeparatedBy with no items found", func(t *testing.T) {
+		input := "1,2,3"
+		ctx := NewParsingContext(input)
+		// Parser that only matches letters
+		p := SeparatedBy(Satisfy(func(c rune) bool { return c >= 'a' && c <= 'z' }), OneChar(','), false)
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("Expected error (no items found), got nil")
+		}
+
+		expectedErr := "no items found"
+		if err.Error() != expectedErr {
+			t.Errorf("Incorrect error message: expected %q, got %q", expectedErr, err.Error())
+		}
+	})
+
 }
