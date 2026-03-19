@@ -214,6 +214,25 @@ func TestMany(t *testing.T) {
 		}
 	})
 
+	t.Run("Success: match one characters", func(t *testing.T) {
+		input := "abcd"
+		ctx := NewParsingContext(input)
+		p := Many(OneChar('a'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 1 {
+			t.Errorf("Incorrect result length: expected 1, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "bcd" {
+			t.Errorf("Incorrect remaining context: expected \"b\", got %q", string(res.Context.Remaining))
+		}
+	})
+
 	t.Run("Success: match zero characters (0 or more)", func(t *testing.T) {
 		input := "bbba"
 		ctx := NewParsingContext(input)
