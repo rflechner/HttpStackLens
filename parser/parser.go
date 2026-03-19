@@ -63,11 +63,15 @@ func Combine[A any, B any](left Parser[A], right Parser[B]) Parser[struct {
 func OneChar(c rune) Parser[rune] {
 	return func(context ParsingContext) (ParseResult[rune], error) {
 		if context.AtEnd() {
-			return ParseResult[rune]{}, errors.New("end of string")
+			return ParseResult[rune]{
+				Context: context,
+			}, errors.New("end of string")
 		}
 		found := context.Remaining[0]
 		if found != c {
-			return ParseResult[rune]{}, fmt.Errorf("expected %q, found %q", c, found)
+			return ParseResult[rune]{
+				Context: context,
+			}, fmt.Errorf("expected %q, found %q", c, found)
 		}
 		return ParseResult[rune]{
 			Result:  c,
@@ -282,6 +286,51 @@ func Between[A any, B any, C any](before Parser[A], middle Parser[B], after Pars
 				Middle: middleResult.Result,
 				After:  afterResult.Result,
 			},
+		}, nil
+	}
+}
+
+func SeparatedBy[A any, B any](parser Parser[A], separator Parser[B], matchTailingSeparator bool) Parser[[]A] {
+	return func(context ParsingContext) (ParseResult[[]A], error) {
+		l := list.New()
+		next := context
+		previous := context
+		hasTailingSeparator := false
+
+		for !next.AtEnd() {
+			result, err := parser(next)
+			if err != nil {
+				break
+			}
+			l.PushBack(result.Result)
+			previous = next
+			next = result.Context
+
+			separatorResult, err := separator(next)
+			if err != nil {
+				hasTailingSeparator = false
+				break
+			}
+			previous = next
+			next = separatorResult.Context
+			hasTailingSeparator = true
+		}
+
+		if l.Len() == 0 {
+			return ParseResult[[]A]{
+				Context: context,
+			}, errors.New("no items found")
+		}
+
+		if !matchTailingSeparator && hasTailingSeparator {
+			return ParseResult[[]A]{
+				Context: previous,
+				Result:  ListToSlice[A](l),
+			}, nil
+		}
+		return ParseResult[[]A]{
+			Context: next,
+			Result:  ListToSlice[A](l),
 		}, nil
 	}
 }

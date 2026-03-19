@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -637,4 +638,112 @@ func TestBetween(t *testing.T) {
 			t.Fatal("Expected error (after mismatch), got nil")
 		}
 	})
+}
+
+func TestSeparatedBy(t *testing.T) {
+
+	t.Run("Success: SeparatedBy with matchTailingSeparator=false", func(t *testing.T) {
+		input := "a,b,c"
+		ctx := NewParsingContext(input)
+		p := SeparatedBy(Satisfy(func(c rune) bool { return c >= 'a' && c <= 'z' }), OneChar(','), false)
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 3 {
+			t.Errorf("Incorrect result length: expected 3, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "" {
+			t.Errorf("Incorrect remaining context: expected \"\", got %q", string(res.Context.Remaining))
+		}
+
+		if res.Context.Position.Offset != 5 {
+			t.Errorf("Incorrect position offset: expected 5, got %d", res.Context.Position.Offset)
+		}
+
+		if !slices.Equal(res.Result, []rune{'a', 'b', 'c'}) {
+			t.Errorf("Incorrect result: expected [a b c], got %v", res.Result)
+		}
+	})
+
+	t.Run("Success: SeparatedBy with matchTailingSeparator=false having tailing separator", func(t *testing.T) {
+		input := "a,b,c,"
+		ctx := NewParsingContext(input)
+		p := SeparatedBy(Satisfy(func(c rune) bool { return c >= 'a' && c <= 'z' }), OneChar(','), false)
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 3 {
+			t.Errorf("Incorrect result length: expected 3, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "," {
+			t.Errorf("Incorrect remaining context: expected \"\", got %q", string(res.Context.Remaining))
+		}
+
+		if res.Context.Position.Offset != 5 {
+			t.Errorf("Incorrect position offset: expected 5, got %d", res.Context.Position.Offset)
+		}
+
+		if !slices.Equal(res.Result, []rune{'a', 'b', 'c'}) {
+			t.Errorf("Incorrect result: expected [a b c], got %v", res.Result)
+		}
+	})
+
+	t.Run("Success: SeparatedBy with matchTailingSeparator=true", func(t *testing.T) {
+		input := "a,b,c"
+		ctx := NewParsingContext(input)
+		p := SeparatedBy(Satisfy(func(c rune) bool { return c >= 'a' && c <= 'z' }), OneChar(','), true)
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 3 {
+			t.Errorf("Incorrect result length: expected 3, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "" {
+			t.Errorf("Incorrect remaining context: expected \"\", got %q", string(res.Context.Remaining))
+		}
+
+		if res.Context.Position.Offset != 5 {
+			t.Errorf("Incorrect position offset: expected 5, got %d", res.Context.Position.Offset)
+		}
+
+		if !slices.Equal(res.Result, []rune{'a', 'b', 'c'}) {
+			t.Errorf("Incorrect result: expected [a b c], got %v", res.Result)
+		}
+	})
+
+	t.Run("Success: SeparatedBy with matchTailingSeparator=true having tailing separator", func(t *testing.T) {
+		input := "a,b,c,"
+		ctx := NewParsingContext(input)
+		p := SeparatedBy(Satisfy(func(c rune) bool { return c >= 'a' && c <= 'z' }), OneChar(','), true)
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if len(res.Result) != 3 {
+			t.Errorf("Incorrect result length: expected 3, got %d", len(res.Result))
+		}
+
+		if string(res.Context.Remaining) != "" {
+			t.Errorf("Incorrect remaining context: expected \"\", got %q", string(res.Context.Remaining))
+		}
+
+		if res.Context.Position.Offset != 6 {
+			t.Errorf("Incorrect position offset: expected 5, got %d", res.Context.Position.Offset)
+		}
+
+		if !slices.Equal(res.Result, []rune{'a', 'b', 'c'}) {
+			t.Errorf("Incorrect result: expected [a b c], got %v", res.Result)
+		}
+	})
+
 }
