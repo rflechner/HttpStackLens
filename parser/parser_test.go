@@ -157,3 +157,39 @@ func TestSatisfy(t *testing.T) {
 		}
 	})
 }
+
+func TestAnyChar(t *testing.T) {
+	t.Run("Success: read any character", func(t *testing.T) {
+		input := "abc"
+		ctx := NewParsingContext(input)
+		p := AnyChar()
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result != 'a' {
+			t.Errorf("Incorrect result: expected 'a', got %q", res.Result)
+		}
+
+		if string(res.Context.Remaining) != "bc" {
+			t.Errorf("Incorrect remaining context: expected \"bc\", got %q", string(res.Context.Remaining))
+		}
+	})
+
+	t.Run("Failure: end of string", func(t *testing.T) {
+		input := ""
+		ctx := NewParsingContext(input)
+		p := AnyChar()
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("An error was expected (end of string), but nil was returned")
+		}
+
+		if err.Error() != "end of string" {
+			t.Errorf("Incorrect error message: expected \"end of string\", got %q", err.Error())
+		}
+	})
+}

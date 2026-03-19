@@ -88,3 +88,7 @@ func Satisfy(predicate func(rune) bool) Parser[rune] {
 		}, nil
 	}
 }
+
+func AnyChar() Parser[rune] {
+	return Satisfy(func(c rune) bool { return true })
+}
