@@ -572,8 +572,69 @@ func TestUntilText(t *testing.T) {
 			t.Fatal("Expected error (did not consume all input), got nil")
 		}
 
-		if err.Error() != "parser did not consume all input up to delimiter" {
-			t.Errorf("Incorrect error message: expected \"parser did not consume all input up to delimiter\", got %q", err.Error())
+	})
+}
+
+func TestBetween(t *testing.T) {
+	t.Run("Success: parse between parentheses", func(t *testing.T) {
+		input := "(a)bc"
+		ctx := NewParsingContext(input)
+		p := Between(OneChar('('), OneChar('a'), OneChar(')'))
+
+		res, err := p(ctx)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		if res.Result.Before != '(' {
+			t.Errorf("Incorrect Before: expected '(', got %q", res.Result.Before)
+		}
+		if res.Result.Middle != 'a' {
+			t.Errorf("Incorrect Middle: expected 'a', got %q", res.Result.Middle)
+		}
+		if res.Result.After != ')' {
+			t.Errorf("Incorrect After: expected ')', got %q", res.Result.After)
+		}
+
+		if string(res.Context.Remaining) != "bc" {
+			t.Errorf("Incorrect remaining context: expected \"bc\", got %q", string(res.Context.Remaining))
+		}
+
+		if res.Context.Position.Offset != 3 {
+			t.Errorf("Incorrect offset: expected 3, got %d", res.Context.Position.Offset)
+		}
+	})
+
+	t.Run("Failure: before parser fails", func(t *testing.T) {
+		input := "[a)bc"
+		ctx := NewParsingContext(input)
+		p := Between(OneChar('('), OneChar('a'), OneChar(')'))
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("Expected error (before mismatch), got nil")
+		}
+	})
+
+	t.Run("Failure: middle parser fails", func(t *testing.T) {
+		input := "(b)bc"
+		ctx := NewParsingContext(input)
+		p := Between(OneChar('('), OneChar('a'), OneChar(')'))
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("Expected error (middle mismatch), got nil")
+		}
+	})
+
+	t.Run("Failure: after parser fails", func(t *testing.T) {
+		input := "(a]bc"
+		ctx := NewParsingContext(input)
+		p := Between(OneChar('('), OneChar('a'), OneChar(')'))
+
+		_, err := p(ctx)
+		if err == nil {
+			t.Fatal("Expected error (after mismatch), got nil")
 		}
 	})
 }

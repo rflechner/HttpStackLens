@@ -224,3 +224,64 @@ func UntilText[T any](parser Parser[T], delimiter string, includeDelimiter bool)
 
 	}
 }
+
+// Between A parser that parses text between 2 other matched parsings.
+func Between[A any, B any, C any](before Parser[A], middle Parser[B], after Parser[C]) Parser[struct {
+	Before A
+	Middle B
+	After  C
+}] {
+	return func(context ParsingContext) (ParseResult[struct {
+		Before A
+		Middle B
+		After  C
+	}], error) {
+		beforeResult, err := before(context)
+		if err != nil {
+			return ParseResult[struct {
+				Before A
+				Middle B
+				After  C
+			}]{
+				Context: beforeResult.Context,
+			}, err
+		}
+		middleResult, err := middle(beforeResult.Context)
+		if err != nil {
+			return ParseResult[struct {
+				Before A
+				Middle B
+				After  C
+			}]{
+				Context: middleResult.Context,
+			}, err
+		}
+		afterResult, err := after(middleResult.Context)
+		if err != nil {
+			return ParseResult[struct {
+				Before A
+				Middle B
+				After  C
+			}]{
+				Context: afterResult.Context,
+			}, err
+		}
+
+		return ParseResult[struct {
+			Before A
+			Middle B
+			After  C
+		}]{
+			Context: afterResult.Context,
+			Result: struct {
+				Before A
+				Middle B
+				After  C
+			}{
+				Before: beforeResult.Result,
+				Middle: middleResult.Result,
+				After:  afterResult.Result,
+			},
+		}, nil
+	}
+}
