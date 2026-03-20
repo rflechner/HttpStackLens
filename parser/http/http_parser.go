@@ -1,101 +1,85 @@
 package http
 
 import (
-	"fmt"
+	"unicode"
 )
 import p "github.com/rflechner/EasyParsingForGo/combinator"
 
-func HTTPVersionParser() p.Parser[HTTPVersion] {
-	// HTTP/1.1
-	return func(context p.ParsingContext) (p.ParseResult[HTTPVersion], error) {
-		res, err := p.StringMatch("HTTP/")(context)
-		if err != nil {
-			return p.ParseResult[HTTPVersion]{}, err
-		}
+func VersionParser() p.Parser[Version] {
+	return p.Map(
+		p.Right(
+			p.StringMatch("HTTP/"),
+			p.Combine(p.Integer(),
+				p.Right(p.OneChar('.'), p.Integer()),
+			),
+		),
+		func(t struct {
+			Left  int
+			Right int
+		}) Version {
+			return Version{Major: t.Left, Minor: t.Right}
+		},
+	)
+}
 
-		majorRes, err := p.Integer()(res.Context)
-		if err != nil {
-			return p.ParseResult[HTTPVersion]{}, err
-		}
+func HostParser() p.Parser[string] {
+	return p.Map(
+		p.UntilText(p.Many(p.Satisfy(func(c rune) bool {
+			return unicode.IsLetter(c) || unicode.IsDigit(c) || c == '-' || c == '_' || c == '.'
+		})), ":", false),
+		func(host []rune) string { return string(host) })
+}
 
-		dotRes, err := p.OneChar('.')(majorRes.Context)
-		if err != nil {
-			return p.ParseResult[HTTPVersion]{}, err
-		}
+func SpacesParser() p.Parser[struct{}] {
+	return p.Skip(p.Spaces())
+}
 
-		minorRes, err := p.Integer()(dotRes.Context)
-		if err != nil {
-			return p.ParseResult[HTTPVersion]{}, err
-		}
-
-		return p.ParseResult[HTTPVersion]{
-			Result: HTTPVersion{
-				Major: majorRes.Result,
-				Minor: minorRes.Result,
-			},
-			Context: minorRes.Context,
-		}, nil
-	}
+func HostPortParser() p.Parser[HostPort] {
+	return p.Map(
+		p.Left(
+			p.Combine(
+				HostParser(),
+				p.Right(p.OneChar(':'), p.Integer()),
+			),
+			SpacesParser(),
+		),
+		func(hostPort struct {
+			Left  string
+			Right int
+		}) HostPort {
+			return HostPort{hostPort.Left, hostPort.Right}
+		},
+	)
 }
 
 func ConnectParser() p.Parser[Connect] {
 	return func(context p.ParsingContext) (p.ParseResult[Connect], error) {
-		// CONNECT
-		res, err := p.StringMatch("CONNECT")(context)
+		verbParser := p.Left(p.StringMatch("CONNECT"), SpacesParser())
+
+		verbResult, err := verbParser(context)
 		if err != nil {
-			return p.ParseResult[Connect]{}, err
+			return p.ParseResult[Connect]{Context: context}, err
 		}
 
-		// Space
-		spaceRes, err := p.OneChar(' ')(res.Context)
+		hostPortResult, err := HostPortParser()(verbResult.Context)
 		if err != nil {
-			return p.ParseResult[Connect]{}, err
+			return p.ParseResult[Connect]{Context: context}, err
 		}
 
-		// Host (until :)
-		hostParser := p.Many(p.Satisfy(func(r rune) bool {
-			return r != ':' && r != ' '
-		}))
-		hostRes, err := hostParser(spaceRes.Context)
+		versionResult, err := VersionParser()(hostPortResult.Context)
 		if err != nil {
-			return p.ParseResult[Connect]{}, err
-		}
-		if len(hostRes.Result) == 0 {
-			return p.ParseResult[Connect]{}, fmt.Errorf("empty host")
-		}
-		host := string(hostRes.Result)
-
-		// :
-		colonRes, err := p.OneChar(':')(hostRes.Context)
-		if err != nil {
-			return p.ParseResult[Connect]{}, err
-		}
-
-		// Port
-		portRes, err := p.Integer()(colonRes.Context)
-		if err != nil {
-			return p.ParseResult[Connect]{}, err
-		}
-
-		// Space
-		spaceAfterPortRes, err := p.OneChar(' ')(portRes.Context)
-		if err != nil {
-			return p.ParseResult[Connect]{}, err
-		}
-
-		// Version
-		versionRes, err := HTTPVersionParser()(spaceAfterPortRes.Context)
-		if err != nil {
-			return p.ParseResult[Connect]{}, err
+			return p.ParseResult[Connect]{Context: context}, err
 		}
 
 		return p.ParseResult[Connect]{
 			Result: Connect{
-				Host:    host,
-				Port:    portRes.Result,
-				Version: versionRes.Result,
+				HostPort: HostPort{
+					Host: hostPortResult.Result.Host,
+					Port: hostPortResult.Result.Port,
+				},
+				Version: versionResult.Result,
 			},
-			Context: versionRes.Context,
+			Context: versionResult.Context,
 		}, nil
 	}
 }

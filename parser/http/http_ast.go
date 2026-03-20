@@ -5,9 +5,13 @@ type Command interface {
 }
 
 type Connect struct {
-	Host    string
-	Port    int
-	Version HTTPVersion
+	HostPort HostPort
+	Version  Version
 }
 
-type HTTPVersion struct{ Major, Minor int } // HTTP/1.1, HTTP/2.0
+type Version struct{ Major, Minor int } // HTTP/1.1, HTTP/2.0
+
+type HostPort struct {
+	Host string
+	Port int
+}

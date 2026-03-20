@@ -16,11 +16,11 @@ func TestConnectParser(t *testing.T) {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
 
-		if result.Result.Host != "example.com" {
-			t.Errorf("Expected host 'example.com', got %q", result.Result.Host)
+		if result.Result.HostPort.Host != "example.com" {
+			t.Errorf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
 		}
-		if result.Result.Port != 443 {
-			t.Errorf("Expected port 443, got %d", result.Result.Port)
+		if result.Result.HostPort.Port != 443 {
+			t.Errorf("Expected port 443, got %d", &result.Result.HostPort.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
@@ -65,7 +65,7 @@ func TestHTTPVersionParser(t *testing.T) {
 	t.Run("Success: HTTP/1.1", func(t *testing.T) {
 		input := "HTTP/1.1"
 		context := p.NewParsingContext(input)
-		parser := HTTPVersionParser()
+		parser := VersionParser()
 
 		result, err := parser(context)
 		if err != nil {
@@ -80,7 +80,7 @@ func TestHTTPVersionParser(t *testing.T) {
 	t.Run("Success: HTTP/2.0", func(t *testing.T) {
 		input := "HTTP/2.0"
 		context := p.NewParsingContext(input)
-		parser := HTTPVersionParser()
+		parser := VersionParser()
 
 		result, err := parser(context)
 		if err != nil {

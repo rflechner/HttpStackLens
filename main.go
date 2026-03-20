@@ -3,8 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"goproxy/parser/http"
 	"net"
 	"os"
+
+	p "github.com/rflechner/EasyParsingForGo/combinator"
 )
 
 func main() {
@@ -39,8 +42,18 @@ func handleConnection(conn net.Conn) {
 		message := scanner.Text()
 		fmt.Printf("[%s] %s\n", clientAddr, message)
 
-		response := fmt.Sprintf("Echo: %s\n", message)
-		conn.Write([]byte(response))
+		context := p.NewParsingContext(message)
+		parser := http.ConnectParser()
+		result, err := parser(context)
+		if err != nil {
+			fmt.Printf("Error parsing message: %v\n", err)
+			break
+		}
+
+		fmt.Printf("[Command] -> Connect to %s:%d\n", result.Result.HostPort.Host, result.Result.HostPort.Port)
+
+		//response := fmt.Sprintf("Echo: %s\n", message)
+		//conn.Write([]byte(response))
 	}
 
 	if err := scanner.Err(); err != nil {
