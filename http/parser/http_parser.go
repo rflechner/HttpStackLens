@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"goproxy/http/ast"
+	"httpStackLens/http/ast"
 	"strings"
 	"unicode"
 )

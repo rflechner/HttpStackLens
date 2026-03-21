@@ -5,8 +5,8 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
-	"goproxy/http/ast"
-	"goproxy/http/parser"
+	"httpStackLens/http/ast"
+	"httpStackLens/http/parser"
 	"io"
 
 	p "github.com/rflechner/EasyParsingForGo/combinator"

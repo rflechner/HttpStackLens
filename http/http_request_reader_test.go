@@ -1,7 +1,7 @@
 package http
 
 import (
-	"goproxy/http/ast"
+	"httpStackLens/http/ast"
 	"strings"
 	"testing"
 )
