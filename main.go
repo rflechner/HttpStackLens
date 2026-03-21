@@ -111,9 +111,9 @@ func handleNegotiate(browser net.Conn, requireNegotiate bool, handleConnect func
 				// 407 — aks authentication
 				_, err := browser.Write([]byte(
 					"HTTP/1.1 407 Proxy Authentication Required\r\n" +
+						"Proxy-Authenticate: NTLM\r\n" +
 						//"Proxy-Authenticate: Negotiate\r\n" +
 						//"Proxy-Authenticate: Kerberos\r\n" +
-						"Proxy-Authenticate: NTLM\r\n" +
 						"Proxy-Connection: keep-alive\r\n" +
 						"Connection: keep-alive\r\n" +
 						"Content-Length: 0\r\n" +

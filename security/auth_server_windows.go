@@ -4,6 +4,8 @@ package security
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"strings"
 
 	"github.com/alexbrainman/sspi"
@@ -66,8 +68,14 @@ func NewServerAuth(authPackage AuthPackage) (*ServerAuth, error) {
 	return nil, fmt.Errorf("unsupported auth package: %s", authPackage)
 }
 
+func getServerSPN() string {
+	hostname, _ := os.Hostname()
+	return "HTTP/" + hostname
+}
+
 func newNegotiateServerAuth() (*ServerAuth, error) {
-	cred, err := negotiate.AcquireServerCredentials("")
+	spn := getServerSPN()
+	cred, err := negotiate.AcquireServerCredentials(spn)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +97,8 @@ func newNtlmServerAuth() (*ServerAuth, error) {
 }
 
 func newKerberosServerAuth() (*ServerAuth, error) {
-	cred, err := kerberos.AcquireServerCredentials("")
+	spn := getServerSPN()
+	cred, err := kerberos.AcquireServerCredentials(spn)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +117,8 @@ func (a *ServerAuth) Release() error {
 }
 
 func (a *ServerAuth) ValidateToken(token []byte) (authDone bool, outputToken []byte, err error) {
+
+	debugToken(token)
 
 	switch a.AuthPackage {
 	case AuthNone:
@@ -139,4 +150,15 @@ func (a *ServerAuth) ValidateToken(token []byte) (authDone bool, outputToken []b
 	}
 
 	return false, nil, fmt.Errorf("unsupported auth package: %s", a.AuthPackage)
+}
+
+func debugToken(token []byte) {
+	// Les 8 premiers octets identifient le mécanisme
+	// NTLMSSP\x00 → NTLM
+	// \x60 → SPNEGO/Kerberos (ASN.1)
+	if len(token) > 7 && string(token[:7]) == "NTLMSSP" {
+		log.Println("→ token NTLM")
+	} else if len(token) > 0 && token[0] == 0x60 {
+		log.Println("→ token SPNEGO/Kerberos")
+	}
 }
