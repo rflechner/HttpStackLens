@@ -27,14 +27,43 @@ func TestConnectParser(t *testing.T) {
 		}
 	})
 
-	t.Run("Failure: Missing port", func(t *testing.T) {
+	t.Run("Success: Standard CONNECT", func(t *testing.T) {
+		input := "CONNECT https://www.youtube.com/ HTTP/1.1"
+		context := p.NewParsingContext(input)
+		parser := ConnectParser()
+
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		if result.Result.HostPort.Host != "www.youtube.com" {
+			t.Errorf("Expected host 'www.youtube.com', got %q", result.Result.HostPort.Host)
+		}
+		if result.Result.HostPort.Port != 443 {
+			t.Errorf("Expected port 443, got %d", &result.Result.HostPort.Port)
+		}
+		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
+			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
+		}
+	})
+
+	t.Run("Success: Missing port has default port 443", func(t *testing.T) {
 		input := "CONNECT example.com HTTP/1.1"
 		context := p.NewParsingContext(input)
 		parser := ConnectParser()
 
-		_, err := parser(context)
-		if err == nil {
-			t.Fatal("Expected error due to missing port, but got success")
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Connect parsing got error %s", err.Error())
+		}
+
+		if result.Result.HostPort.Host != "example.com" {
+			t.Fatalf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
+		}
+
+		if result.Result.HostPort.Port != 443 {
+			t.Fatalf("Expected port 443, got %d", result.Result.HostPort.Port)
 		}
 	})
 
