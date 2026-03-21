@@ -1,4 +1,4 @@
-package parser
+package http
 
 import (
 	"container/list"

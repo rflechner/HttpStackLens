@@ -1,4 +1,4 @@
-package parser
+package http
 
 type Option[T any] struct {
 	value    T
