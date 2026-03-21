@@ -57,5 +57,5 @@ func readConnect(scanner *bufio.Scanner) (ast.Connect, error) {
 
 		return result.Result, nil
 	}
-	return ast.Connect{}, errors.New("failed to read connect message")
+	return ast.Connect{}, errors.New("Connection seems to be closed")
 }
