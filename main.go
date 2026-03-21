@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"goproxy/http"
+	"io"
+	"log"
 	"net"
 	"os"
 )
@@ -28,13 +30,13 @@ func main() {
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
+func handleConnection(browser net.Conn) {
+	defer browser.Close()
 
-	clientAddr := conn.RemoteAddr().String()
+	clientAddr := browser.RemoteAddr().String()
 	fmt.Printf("New connection from %s\n", clientAddr)
 
-	request, err := http.ReadProxyRequest(conn)
+	request, err := http.ReadProxyRequest(browser)
 	if err != nil {
 		fmt.Printf("Error reading request from %s: %v\n", clientAddr, err)
 		return
@@ -42,27 +44,17 @@ func handleConnection(conn net.Conn) {
 
 	fmt.Printf("Request received: %v \n", request)
 
-	/*
-		scanner := bufio.NewScanner(conn)
-		for scanner.Scan() {
-			message := scanner.Text()
-			fmt.Printf("[%s] %s\n", clientAddr, message)
+	webServer, err := net.Dial("tcp", fmt.Sprintf("%s:%d", request.Connect.HostPort.Host, request.Connect.HostPort.Port))
+	if err != nil {
+		browser.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
+		log.Fatal(err)
+	}
+	defer webServer.Close()
 
-			context := p.NewParsingContext(message)
-			parser := parser.ConnectParser()
-			result, err := parser(context)
-			if err != nil {
-				fmt.Printf("Error parsing message: %v\n", err)
-				break
-			}
+	browser.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
-			fmt.Printf("[Command] -> Connect to %s:%d\n", result.Result.HostPort.Host, result.Result.HostPort.Port)
-		}
-
-		if err := scanner.Err(); err != nil {
-			fmt.Printf("Read error for %s: %v\n", clientAddr, err)
-		}
-	*/
+	go io.Copy(browser, webServer)
+	io.Copy(webServer, browser)
 
 	fmt.Printf("Connection closed: %s\n", clientAddr)
 }
