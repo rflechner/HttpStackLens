@@ -10,14 +10,14 @@ import (
 )
 
 func main() {
-	listener, err := net.Listen("tcp", ":8080")
+	listener, err := net.Listen("tcp", ":3128")
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		os.Exit(1)
 	}
 	defer listener.Close()
 
-	fmt.Println("Socket server started on port 8080")
+	fmt.Println("Socket server started on port 3128")
 
 	for {
 		conn, err := listener.Accept()
