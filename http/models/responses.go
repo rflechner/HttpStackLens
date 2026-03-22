@@ -41,3 +41,16 @@ func (h *ResponseHead) String() string {
 	lines = append(lines, "")
 	return strings.Join(lines, "\r\n") + "\r\n"
 }
+
+func (h *ResponseHead) GetHeader(name string) string {
+	for _, header := range h.Headers {
+		if strings.EqualFold(header.Name, name) {
+			return header.Value
+		}
+	}
+	return ""
+}
+
+func (h *ResponseHead) Bytes() []byte {
+	return []byte(h.String())
+}
