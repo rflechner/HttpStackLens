@@ -1,10 +1,10 @@
 package middlewares
 
 import (
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"net"
 )
 
 type Middleware interface {
-	HandleProxyRequest(browser net.Conn, request ast.ProxyRequest) error
+	HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error
 }

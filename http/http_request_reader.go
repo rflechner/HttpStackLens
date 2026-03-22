@@ -5,7 +5,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"httpStackLens/http/parser"
 	"io"
 	"strings"
@@ -13,12 +13,12 @@ import (
 	p "github.com/rflechner/EasyParsingForGo/combinator"
 )
 
-func ReadProxyRequest(reader io.Reader) (ast.ProxyRequest, error) {
+func ReadProxyRequest(reader io.Reader) (models.ProxyRequest, error) {
 	scanner := bufio.NewScanner(reader)
 
 	connect, err := readConnect(scanner)
 	if err != nil {
-		return ast.ProxyRequest{}, err
+		return models.ProxyRequest{}, err
 	}
 
 	headers := list.New()
@@ -39,23 +39,23 @@ func ReadProxyRequest(reader io.Reader) (ast.ProxyRequest, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return ast.ProxyRequest{}, err
+		return models.ProxyRequest{}, err
 	}
 
-	return ast.ProxyRequest{Connect: connect, Headers: ListToSlice[ast.Header](headers)}, nil
+	return models.ProxyRequest{Connect: connect, Headers: ListToSlice[models.Header](headers)}, nil
 }
 
-func readConnect(scanner *bufio.Scanner) (ast.Connect, error) {
+func readConnect(scanner *bufio.Scanner) (models.Connect, error) {
 	if scanner.Scan() {
 		message := strings.TrimSpace(scanner.Text())
 		context := p.NewParsingContext(message)
 		result, err := parser.ConnectParser()(context)
 		if err != nil {
 			fmt.Printf("Error parsing message: %v in '%s'\n", err, message)
-			return ast.Connect{}, err
+			return models.Connect{}, err
 		}
 
 		return result.Result, nil
 	}
-	return ast.Connect{}, errors.New("Connection seems to be closed")
+	return models.Connect{}, errors.New("Connection seems to be closed")
 }

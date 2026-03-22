@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"httpStackLens/http"
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"httpStackLens/security"
 	"log"
 	"net"
@@ -16,7 +16,7 @@ type WindowsAuthenticationServerMiddleware struct {
 	NextMiddleware Middleware
 }
 
-func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.Conn, request ast.ProxyRequest) error {
+func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
 	defer func(browser net.Conn) {
 		_ = browser.Close()
 	}(browser)
@@ -50,7 +50,7 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 		}
 		fmt.Printf("Request received: %v \n", request)
 
-		proxyAuthIndex := slices.IndexFunc(request.Headers, func(header ast.Header) bool {
+		proxyAuthIndex := slices.IndexFunc(request.Headers, func(header models.Header) bool {
 			return header.Name == "Proxy-Authorization"
 		})
 		if proxyAuthIndex == -1 {

@@ -2,7 +2,7 @@ package parser
 
 import (
 	"fmt"
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"net/url"
 	"strconv"
 	"strings"
@@ -12,7 +12,7 @@ import (
 )
 import p "github.com/rflechner/EasyParsingForGo/combinator"
 
-func VersionParser() p.Parser[ast.Version] {
+func VersionParser() p.Parser[models.Version] {
 	return p.Map(
 		p.Right(p.Spaces(),
 			p.Right(
@@ -25,8 +25,8 @@ func VersionParser() p.Parser[ast.Version] {
 		func(t struct {
 			Left  int
 			Right int
-		}) ast.Version {
-			return ast.Version{Major: t.Left, Minor: t.Right}
+		}) models.Version {
+			return models.Version{Major: t.Left, Minor: t.Right}
 		},
 	)
 }
@@ -48,7 +48,7 @@ func SpacesParser() p.Parser[struct{}] {
 	return p.Skip(p.Spaces())
 }
 
-func HostPortParser() p.Parser[ast.HostPort] {
+func HostPortParser() p.Parser[models.HostPort] {
 	onlyHostPortParser := p.Map(
 		p.Left(
 			p.Combine(
@@ -60,12 +60,12 @@ func HostPortParser() p.Parser[ast.HostPort] {
 		func(hostPort struct {
 			Left  string
 			Right helpers.Option[int]
-		}) ast.HostPort {
-			return ast.HostPort{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
+		}) models.HostPort {
+			return models.HostPort{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
 		},
 	)
 
-	urlParser := p.Map(UrlParser(), func(url url.URL) ast.HostPort {
+	urlParser := p.Map(UrlParser(), func(url url.URL) models.HostPort {
 
 		var defaultPort int
 		if strings.ToLower(url.Scheme) == "https" {
@@ -78,12 +78,12 @@ func HostPortParser() p.Parser[ast.HostPort] {
 			portText := url.Port()
 			port, err := strconv.Atoi(portText)
 			if err != nil {
-				return ast.HostPort{Host: url.Hostname(), Port: defaultPort}
+				return models.HostPort{Host: url.Hostname(), Port: defaultPort}
 			}
-			return ast.HostPort{Host: url.Hostname(), Port: port}
+			return models.HostPort{Host: url.Hostname(), Port: port}
 		}
 
-		return ast.HostPort{Host: url.Hostname(), Port: defaultPort}
+		return models.HostPort{Host: url.Hostname(), Port: defaultPort}
 	})
 
 	return p.OrElse(urlParser, onlyHostPortParser)
@@ -112,28 +112,28 @@ func UrlParser() p.Parser[url.URL] {
 	}
 }
 
-func ConnectParser() p.Parser[ast.Connect] {
-	return func(context p.ParsingContext) (p.ParseResult[ast.Connect], error) {
+func ConnectParser() p.Parser[models.Connect] {
+	return func(context p.ParsingContext) (p.ParseResult[models.Connect], error) {
 		verbParser := p.Left(p.StringMatch("CONNECT"), SpacesParser())
 
 		verbResult, err := verbParser(context)
 		if err != nil {
-			return p.ParseResult[ast.Connect]{Context: context}, err
+			return p.ParseResult[models.Connect]{Context: context}, err
 		}
 
 		hostPortResult, err := HostPortParser()(verbResult.Context)
 		if err != nil {
-			return p.ParseResult[ast.Connect]{Context: context}, err
+			return p.ParseResult[models.Connect]{Context: context}, err
 		}
 
 		versionResult, err := VersionParser()(hostPortResult.Context)
 		if err != nil {
-			return p.ParseResult[ast.Connect]{Context: context}, err
+			return p.ParseResult[models.Connect]{Context: context}, err
 		}
 
-		return p.ParseResult[ast.Connect]{
-			Result: ast.Connect{
-				HostPort: ast.HostPort{
+		return p.ParseResult[models.Connect]{
+			Result: models.Connect{
+				HostPort: models.HostPort{
 					Host: hostPortResult.Result.Host,
 					Port: hostPortResult.Result.Port,
 				},
@@ -144,8 +144,8 @@ func ConnectParser() p.Parser[ast.Connect] {
 	}
 }
 
-func HeaderParser() p.Parser[ast.Header] {
-	return func(context p.ParsingContext) (p.ParseResult[ast.Header], error) {
+func HeaderParser() p.Parser[models.Header] {
+	return func(context p.ParsingContext) (p.ParseResult[models.Header], error) {
 		nameParser := p.Map(
 			p.UntilText(p.Many(p.Satisfy(func(c rune) bool {
 				return c != ':'
@@ -163,15 +163,15 @@ func HeaderParser() p.Parser[ast.Header] {
 
 		nameResult, err := nameParser(context)
 		if err != nil {
-			return p.ParseResult[ast.Header]{Context: context}, err
+			return p.ParseResult[models.Header]{Context: context}, err
 		}
 		valueResult, err := valueParser(nameResult.Context)
 		if err != nil {
-			return p.ParseResult[ast.Header]{Context: context}, err
+			return p.ParseResult[models.Header]{Context: context}, err
 		}
 
-		return p.ParseResult[ast.Header]{
-			Result: ast.Header{
+		return p.ParseResult[models.Header]{
+			Result: models.Header{
 				Name:  nameResult.Result,
 				Value: valueResult.Result,
 			},

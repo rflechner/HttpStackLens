@@ -2,7 +2,7 @@ package middlewares
 
 import (
 	"fmt"
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"io"
 	"log"
 	"net"
@@ -13,7 +13,7 @@ type ForwardProxyServer struct {
 	OutputProxy url.URL
 }
 
-func (m *ForwardProxyServer) HandleProxyRequest(browser net.Conn, request ast.ProxyRequest) error {
+func (m *ForwardProxyServer) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
 	clientAddr := browser.RemoteAddr().String()
 	gateway, err := net.Dial("tcp", m.OutputProxy.Host)
 	if err != nil {
