@@ -47,6 +47,11 @@ func HostParser() p.Parser[string] {
 func SpacesParser() p.Parser[struct{}] {
 	return p.Skip(p.Spaces())
 }
+func NewLineParser() p.Parser[string] {
+	return p.OrElse(
+		p.StringMatch("\r\n"),
+		p.StringMatch("\n"))
+}
 
 func HostPortParser() p.Parser[models.HostPort] {
 	onlyHostPortParser := p.Map(
@@ -231,18 +236,18 @@ func responseStatusParser() p.Parser[responseStatus] {
 		})
 }
 
-func NewLineParser() p.Parser[string] {
-	return p.OrElse(
-		p.StringMatch("\r\n"),
-		p.StringMatch("\n"))
-}
-
 func ResponseHeadParser() p.Parser[models.ResponseHead] {
-	headersParser := p.SeparatedBy(HeaderParser(), NewLineParser(), false)
+	headersParser := p.OrElse(
+		p.Map(NewLineParser(), func(r string) []models.Header { return []models.Header{} }),
+		p.SeparatedBy(HeaderParser(), NewLineParser(), false),
+	)
 
 	return p.Map(
 		p.Combine(
-			p.Left(responseStatusParser(), p.Optional(NewLineParser())),
+			p.Left(
+				responseStatusParser(),
+				p.Optional(NewLineParser()),
+			),
 			headersParser,
 		),
 		func(r struct {
