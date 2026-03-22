@@ -59,6 +59,11 @@ func main() {
 			fmt.Printf("Error reading request from %s: %v\n", browser.RemoteAddr().String(), err)
 			continue
 		}
-		go pipeline.HandleProxyRequest(browser, request)
+		go func() {
+			err := pipeline.HandleProxyRequest(browser, request)
+			if err != nil {
+				fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
+			}
+		}()
 	}
 }

@@ -49,13 +49,17 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 		}
 	}(auth)
 
+	firstLoop := true
+	var err error
 	for {
-		r, err := http.ReadProxyRequest(browser)
+		if firstLoop == false {
+			request, err = http.ReadProxyRequest(browser)
+		}
+		firstLoop = false
 		if err != nil {
 			fmt.Printf("Error reading request from %s: %v\n", clientAddr, err)
 			return fmt.Errorf("Error reading request from %s: %v\n", clientAddr, err)
 		}
-		request = r
 		fmt.Printf("Request received: %v \n", request)
 
 		proxyAuthIndex := slices.IndexFunc(request.Headers, func(header ast.Header) bool {
