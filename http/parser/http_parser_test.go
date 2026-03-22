@@ -121,3 +121,70 @@ func TestHTTPVersionParser(t *testing.T) {
 		}
 	})
 }
+
+func TestResponseHeadParser(t *testing.T) {
+	t.Run("Success: Simple OK", func(t *testing.T) {
+		input := "HTTP/1.1 200 OK\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		if result.Result.StatusCode != 200 {
+			t.Errorf("Expected status code 200, got %d", result.Result.StatusCode)
+		}
+		if result.Result.StatusDescription != "OK" {
+			t.Errorf("Expected status description 'OK', got %q", result.Result.StatusDescription)
+		}
+		if len(result.Result.Headers) != 0 {
+			t.Errorf("Expected 0 headers, got %d", len(result.Result.Headers))
+		}
+	})
+
+	t.Run("Success: OK with headers", func(t *testing.T) {
+		input := "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		if len(result.Result.Headers) != 2 {
+			t.Errorf("Expected 2 headers, got %d", len(result.Result.Headers))
+		}
+		if result.Result.GetHeader("Content-Type") != "application/json" {
+			t.Errorf("Expected Content-Type: application/json, got %q", result.Result.GetHeader("Content-Type"))
+		}
+	})
+
+	t.Run("Success: Multiple spaces in status description", func(t *testing.T) {
+		input := "HTTP/1.1 404 Not Found Extended\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		if result.Result.StatusDescription != "Not Found Extended" {
+			t.Errorf("Expected status description 'Not Found Extended', got %q", result.Result.StatusDescription)
+		}
+	})
+
+	t.Run("Failure: Invalid Status Code", func(t *testing.T) {
+		input := "HTTP/1.1 OK 200\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		_, err := parser(context)
+		if err == nil {
+			t.Fatal("Expected error due to invalid status code, but got success")
+		}
+	})
+}

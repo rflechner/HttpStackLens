@@ -179,3 +179,82 @@ func HeaderParser() p.Parser[models.Header] {
 		}, nil
 	}
 }
+
+type responseStatus struct {
+	HttpVersion       models.Version
+	StatusCode        int
+	StatusDescription string
+}
+
+func responseStatusParser() p.Parser[responseStatus] {
+	statusDescriptionParser := p.Map(
+		p.UntilText(
+			p.Many(
+				p.Satisfy(
+					func(c rune) bool {
+						return c != '\r' && c != '\n'
+					})),
+			"\r\n", true),
+		func(r []rune) string { return string(r) })
+
+	firstLineParserStart := p.Map(
+		p.Left(
+			p.Combine(
+				p.Left(
+					VersionParser(),
+					SpacesParser(),
+				),
+				p.Integer(),
+			), p.Spaces()),
+		func(r struct {
+			Left  models.Version
+			Right int
+		}) responseStatus {
+			return responseStatus{
+				HttpVersion: r.Left,
+				StatusCode:  r.Right,
+			}
+		},
+	)
+
+	return p.Map(
+		p.Combine(firstLineParserStart, statusDescriptionParser),
+		func(r struct {
+			Left  responseStatus
+			Right string
+		}) responseStatus {
+			return responseStatus{
+				HttpVersion:       r.Left.HttpVersion,
+				StatusCode:        r.Left.StatusCode,
+				StatusDescription: r.Right,
+			}
+		})
+}
+
+func NewLineParser() p.Parser[string] {
+	return p.OrElse(
+		p.StringMatch("\r\n"),
+		p.StringMatch("\n"))
+}
+
+func ResponseHeadParser() p.Parser[models.ResponseHead] {
+	headersParser := p.SeparatedBy(HeaderParser(), NewLineParser(), false)
+
+	return p.Map(
+		p.Combine(
+			p.Left(responseStatusParser(), p.Optional(NewLineParser())),
+			headersParser,
+		),
+		func(r struct {
+			Left  responseStatus
+			Right []models.Header
+		}) models.ResponseHead {
+			return models.ResponseHead{
+				HttpVersion:       r.Left.HttpVersion,
+				StatusCode:        r.Left.StatusCode,
+				StatusDescription: r.Left.StatusDescription,
+				Headers:           r.Right,
+			}
+		},
+	)
+}
