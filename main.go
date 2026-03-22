@@ -1,60 +1,69 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"httpStackLens/http"
-	"io"
+	"httpStackLens/proxy"
 	"log"
 	"net"
+	"net/url"
 	"os"
 )
 
 func main() {
-	listener, err := net.Listen("tcp", ":3128")
+	port := flag.Int("port", 3128, "listening port")
+	outputProxyUri := flag.String("output-proxy-uri", "", "URI to output proxy information")                                                                // -output-proxy-uri=http://localhost:3129/
+	requireWindowsAuthentication := flag.Bool("require-negotiate", false, "specifies that browsers need negotiate authentication (Windows supported only)") //-require-negotiate=true
+	flag.Parse()
+
+	var outputProxy *url.URL
+	if len(*outputProxyUri) > 0 {
+		u, err := url.Parse(*outputProxyUri)
+		if err != nil {
+			log.Printf("Invalid output proxy URI: %v\n", err)
+			return
+		}
+		outputProxy = u
+	}
+
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(outputProxy, *requireWindowsAuthentication)
+	if err != nil {
+		log.Printf("Failed to configure proxy pipeline: %v\n", err)
+		return
+	}
+
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		os.Exit(1)
 	}
-	defer listener.Close()
+	defer func(listener net.Listener) {
+		err = listener.Close()
+		if err != nil {
+			log.Printf("Warning when closing browser connection: %v\n", err.Error())
+		}
+	}(listener)
 
-	fmt.Println("Socket server started on port 3128")
+	log.Printf("Socket server started on port %v\n", *port)
 
 	for {
-		conn, err := listener.Accept()
+		browser, err := listener.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection:", err)
+			log.Println("Error accepting connection:", err)
 			continue
 		}
 
-		go handleConnection(conn)
+		request, err := http.ReadProxyRequest(browser)
+		if err != nil {
+			fmt.Printf("Error reading request from %s: %v\n", browser.RemoteAddr().String(), err)
+			continue
+		}
+		go func() {
+			err := pipeline.HandleProxyRequest(browser, request)
+			if err != nil {
+				fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
+			}
+		}()
 	}
-}
-
-func handleConnection(browser net.Conn) {
-	defer browser.Close()
-
-	clientAddr := browser.RemoteAddr().String()
-	fmt.Printf("New connection from %s\n", clientAddr)
-
-	request, err := http.ReadProxyRequest(browser)
-	if err != nil {
-		fmt.Printf("Error reading request from %s: %v\n", clientAddr, err)
-		return
-	}
-
-	fmt.Printf("Request received: %v \n", request)
-
-	webServer, err := net.Dial("tcp", fmt.Sprintf("%s:%d", request.Connect.HostPort.Host, request.Connect.HostPort.Port))
-	if err != nil {
-		browser.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
-		log.Fatal(err)
-	}
-	defer webServer.Close()
-
-	browser.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-
-	go io.Copy(browser, webServer)
-	io.Copy(webServer, browser)
-
-	fmt.Printf("Connection closed: %s\n", clientAddr)
 }

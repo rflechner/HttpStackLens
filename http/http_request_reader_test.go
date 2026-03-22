@@ -132,4 +132,32 @@ func TestReadProxyRequest(t *testing.T) {
 			t.Errorf("Expected Empty header with empty value, got %+v", request.Headers[0])
 		}
 	})
+
+	t.Run("Success: Host with no port", func(t *testing.T) {
+		input := "CONNECT example.com HTTP/1.1\n" +
+			"Cookie: user=toto\n"
+
+		reader := strings.NewReader(input)
+		request, err := ReadProxyRequest(reader)
+
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if len(request.Headers) != 1 {
+			t.Fatalf("Expected 1 headers, got %d", len(request.Headers))
+		}
+
+		if request.Headers[0].Name != "Cookie" || request.Headers[0].Value != "user=toto" {
+			t.Errorf("Expected header, got %+v", request.Headers[0])
+		}
+
+		if request.Connect.HostPort.Port != 443 {
+			t.Errorf("Expected port 443, got %d", request.Connect.HostPort.Port)
+		}
+
+		if request.Connect.HostPort.Host != "example.com" {
+			t.Errorf("Expected host example.com, got %s", request.Connect.HostPort.Host)
+		}
+	})
 }
