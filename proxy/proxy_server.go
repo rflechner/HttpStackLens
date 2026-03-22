@@ -16,13 +16,6 @@ func ConfigureProxyPipelineBase(outputProxy *url.URL) Middleware {
 	return &TunnelServer{}
 }
 
-func ConfigureOsSpecificProxyPipeline(outputProxy *url.URL, requireWindowsAuthentication bool) (Middleware, error) {
-	if requireWindowsAuthentication {
-		return nil, fmt.Errorf("windows authentication is not supported")
-	}
-	return ConfigureProxyPipelineBase(outputProxy), nil
-}
-
 type Middleware interface {
 	HandleProxyRequest(browser net.Conn, request ast.ProxyRequest) error
 }
