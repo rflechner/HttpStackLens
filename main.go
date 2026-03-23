@@ -55,10 +55,6 @@ func main() {
 }
 
 func handleRequest(browser net.Conn, err error) func(pipeline middlewares.Middleware) {
-	defer func(browser net.Conn) {
-		_ = browser.Close()
-	}(browser)
-
 	if err != nil {
 		log.Println("Error accepting connection:", err)
 		return nil
@@ -71,6 +67,9 @@ func handleRequest(browser net.Conn, err error) func(pipeline middlewares.Middle
 	}
 
 	return func(pipeline middlewares.Middleware) {
+		defer func(browser net.Conn) {
+			_ = browser.Close()
+		}(browser)
 		err := pipeline.HandleProxyRequest(browser, request)
 		if err != nil {
 			fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
