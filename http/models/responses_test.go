@@ -59,41 +59,60 @@ func TestResponseHead_GetHeader(t *testing.T) {
 		Headers: []Header{
 			{Name: "Content-Type", Value: "application/json"},
 			{Name: "Content-Length", Value: "42"},
+			{Name: "X-Forwarded-For", Value: "127.0.0.1"},
+			{Name: "X-Forwarded-For", Value: "10.0.0.1"},
 		},
 	}
 
 	tests := []struct {
 		name string
 		key  string
-		want string
+		want []string
 	}{
 		{
 			name: "Existing header (case sensitive)",
 			key:  "Content-Type",
-			want: "application/json",
+			want: []string{"application/json"},
 		},
 		{
 			name: "Existing header (another)",
 			key:  "Content-Length",
-			want: "42",
+			want: []string{"42"},
 		},
 		{
 			name: "Non-existing header",
 			key:  "Authorization",
-			want: "",
+			want: nil,
 		},
 		{
 			name: "Existing header (different case)",
 			key:  "content-type",
-			want: "application/json",
+			want: []string{"application/json"},
+		},
+		{
+			name: "Multiple values for header",
+			key:  "X-Forwarded-For",
+			want: []string{"127.0.0.1", "10.0.0.1"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := h.GetHeader(tt.key); got != tt.want {
+			if got := h.GetHeader(tt.key); !slicesEqual(got, tt.want) {
 				t.Errorf("ResponseHead.GetHeader(%q) = %q, want %q", tt.key, got, tt.want)
 			}
 		})
 	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

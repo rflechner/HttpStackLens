@@ -157,7 +157,7 @@ func TestResponseHeadParser(t *testing.T) {
 		if len(result.Result.Headers) != 2 {
 			t.Errorf("Expected 2 headers, got %d", len(result.Result.Headers))
 		}
-		if result.Result.GetHeader("Content-Type") != "application/json" {
+		if len(result.Result.GetHeader("Content-Type")) == 0 || result.Result.GetHeader("Content-Type")[0] != "application/json" {
 			t.Errorf("Expected Content-Type: application/json, got %q", result.Result.GetHeader("Content-Type"))
 		}
 	})
