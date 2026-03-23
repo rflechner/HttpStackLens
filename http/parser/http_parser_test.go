@@ -20,7 +20,7 @@ func TestConnectParser(t *testing.T) {
 			t.Errorf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
 		}
 		if result.Result.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", &result.Result.HostPort.Port)
+			t.Errorf("Expected port 443, got %d", result.Result.HostPort.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
@@ -41,7 +41,7 @@ func TestConnectParser(t *testing.T) {
 			t.Errorf("Expected host 'www.youtube.com', got %q", result.Result.HostPort.Host)
 		}
 		if result.Result.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", &result.Result.HostPort.Port)
+			t.Errorf("Expected port 443, got %d", result.Result.HostPort.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)

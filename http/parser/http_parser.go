@@ -160,9 +160,9 @@ func HeaderParser() p.Parser[models.Header] {
 		valueParser := p.Map(
 			p.Left(
 				p.Many(p.Satisfy(func(c rune) bool {
-					return true
+					return c != '\r' && c != '\n'
 				})),
-				p.Spaces(),
+				p.Optional(NewLineParser()),
 			),
 			func(v []rune) string { return strings.TrimSpace(string(v)) })
 
@@ -199,7 +199,7 @@ func responseStatusParser() p.Parser[responseStatus] {
 					func(c rune) bool {
 						return c != '\r' && c != '\n'
 					})),
-			"\r\n", true),
+			"\r\n", false),
 		func(r []rune) string { return string(r) })
 
 	firstLineParserStart := p.Map(
@@ -237,18 +237,18 @@ func responseStatusParser() p.Parser[responseStatus] {
 }
 
 func ResponseHeadParser() p.Parser[models.ResponseHead] {
-	headersParser := p.OrElse(
-		p.Map(NewLineParser(), func(r string) []models.Header { return []models.Header{} }),
-		p.SeparatedBy(HeaderParser(), NewLineParser(), false),
-	)
+	headersParser := p.Many(HeaderParser())
 
 	return p.Map(
 		p.Combine(
 			p.Left(
 				responseStatusParser(),
-				p.Optional(NewLineParser()),
+				NewLineParser(),
 			),
-			headersParser,
+			p.Left(
+				headersParser,
+				NewLineParser(),
+			),
 		),
 		func(r struct {
 			Left  responseStatus
