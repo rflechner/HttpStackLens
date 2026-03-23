@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"httpStackLens/http"
 	"httpStackLens/proxy"
+	"httpStackLens/proxy/middlewares"
 	"log"
 	"net"
 	"net/url"
@@ -48,22 +49,30 @@ func main() {
 	log.Printf("Socket server started on port %v\n", *port)
 
 	for {
-		browser, err := listener.Accept()
-		if err != nil {
-			log.Println("Error accepting connection:", err)
-			continue
-		}
+		go handleRequest(listener.Accept())(pipeline)
+	}
+}
 
-		request, err := http.ReadProxyRequest(browser)
+func handleRequest(browser net.Conn, err error) func(pipeline middlewares.Middleware) {
+	defer func(browser net.Conn) {
+		_ = browser.Close()
+	}(browser)
+
+	if err != nil {
+		log.Println("Error accepting connection:", err)
+		return nil
+	}
+
+	request, err := http.ReadProxyRequest(browser)
+	if err != nil {
+		fmt.Printf("Error reading request from %s: %v\n", browser.RemoteAddr().String(), err)
+		return nil
+	}
+
+	return func(pipeline middlewares.Middleware) {
+		err := pipeline.HandleProxyRequest(browser, request)
 		if err != nil {
-			fmt.Printf("Error reading request from %s: %v\n", browser.RemoteAddr().String(), err)
-			continue
+			fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
 		}
-		go func() {
-			err := pipeline.HandleProxyRequest(browser, request)
-			if err != nil {
-				fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
-			}
-		}()
 	}
 }

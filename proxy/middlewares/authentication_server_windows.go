@@ -17,10 +17,6 @@ type WindowsAuthenticationServerMiddleware struct {
 }
 
 func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
-	defer func(browser net.Conn) {
-		_ = browser.Close()
-	}(browser)
-
 	clientAddr := browser.RemoteAddr().String()
 	fmt.Printf("New connection from %s\n", clientAddr)
 
