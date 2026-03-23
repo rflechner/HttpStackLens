@@ -7,12 +7,12 @@ import (
 func TestResponseHead_String(t *testing.T) {
 	tests := []struct {
 		name string
-		h    *ResponseHead
+		h    *HttpResponseHead
 		want string
 	}{
 		{
 			name: "Simple OK without headers",
-			h: &ResponseHead{
+			h: &HttpResponseHead{
 				HttpVersion:       Version{Major: 1, Minor: 1},
 				StatusCode:        200,
 				StatusDescription: "OK",
@@ -21,7 +21,7 @@ func TestResponseHead_String(t *testing.T) {
 		},
 		{
 			name: "OK with multiple headers",
-			h: &ResponseHead{
+			h: &HttpResponseHead{
 				HttpVersion:       Version{Major: 1, Minor: 1},
 				StatusCode:        200,
 				StatusDescription: "OK",
@@ -34,7 +34,7 @@ func TestResponseHead_String(t *testing.T) {
 		},
 		{
 			name: "HTTP/2.0 Redirect with header",
-			h: &ResponseHead{
+			h: &HttpResponseHead{
 				HttpVersion:       Version{Major: 2, Minor: 0},
 				StatusCode:        301,
 				StatusDescription: "Moved Permanently",
@@ -48,14 +48,14 @@ func TestResponseHead_String(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.h.String(); got != tt.want {
-				t.Errorf("ResponseHead.String() = %q, want %q", got, tt.want)
+				t.Errorf("HttpResponseHead.String() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
 func TestResponseHead_GetHeader(t *testing.T) {
-	h := &ResponseHead{
+	h := &HttpResponseHead{
 		Headers: []Header{
 			{Name: "Content-Type", Value: "application/json"},
 			{Name: "Content-Length", Value: "42"},
@@ -99,10 +99,50 @@ func TestResponseHead_GetHeader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := h.GetHeader(tt.key); !slicesEqual(got, tt.want) {
-				t.Errorf("ResponseHead.GetHeader(%q) = %q, want %q", tt.key, got, tt.want)
+				t.Errorf("HttpResponseHead.GetHeader(%q) = %q, want %q", tt.key, got, tt.want)
 			}
 		})
 	}
+}
+
+func TestResponseHead_SetContentLength(t *testing.T) {
+	t.Run("Add Content-Length if not exists", func(t *testing.T) {
+		h := &HttpResponseHead{}
+		h.SetContentLength(1024)
+		got := h.GetHeader("Content-Length")
+		want := []string{"1024"}
+		if !slicesEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Replace existing Content-Length", func(t *testing.T) {
+		h := &HttpResponseHead{
+			Headers: []Header{
+				{Name: "Content-Length", Value: "0"},
+			},
+		}
+		h.SetContentLength(2048)
+		got := h.GetHeader("Content-Length")
+		want := []string{"2048"}
+		if !slicesEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Replace existing Content-Length (case insensitive)", func(t *testing.T) {
+		h := &HttpResponseHead{
+			Headers: []Header{
+				{Name: "content-length", Value: "0"},
+			},
+		}
+		h.SetContentLength(4096)
+		got := h.GetHeader("Content-Length")
+		want := []string{"4096"}
+		if !slicesEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
 }
 
 func slicesEqual(a, b []string) bool {

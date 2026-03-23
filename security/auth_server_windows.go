@@ -31,6 +31,8 @@ func (a AuthPackage) String() string {
 		return "NTLM"
 	case AuthNegotiate:
 		return "Negotiate"
+	case AuthKerberos:
+		return "Kerberos"
 	default:
 		return ""
 	}

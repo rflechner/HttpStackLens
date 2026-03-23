@@ -236,7 +236,7 @@ func responseStatusParser() p.Parser[responseStatus] {
 		})
 }
 
-func ResponseHeadParser() p.Parser[models.ResponseHead] {
+func ResponseHeadParser() p.Parser[models.HttpResponseHead] {
 	headersParser := p.Many(HeaderParser())
 
 	return p.Map(
@@ -253,8 +253,8 @@ func ResponseHeadParser() p.Parser[models.ResponseHead] {
 		func(r struct {
 			Left  responseStatus
 			Right []models.Header
-		}) models.ResponseHead {
-			return models.ResponseHead{
+		}) models.HttpResponseHead {
+			return models.HttpResponseHead{
 				HttpVersion:       r.Left.HttpVersion,
 				StatusCode:        r.Left.StatusCode,
 				StatusDescription: r.Left.StatusDescription,
