@@ -194,7 +194,7 @@ func TestHttpResponse_WriteTo(t *testing.T) {
 		}
 
 		got := buf.String()
-		want := "HTTP/1.1 204 No Content\r\n\r\n"
+		want := "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
