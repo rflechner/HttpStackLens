@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -141,6 +142,65 @@ func TestResponseHead_SetContentLength(t *testing.T) {
 		want := []string{"4096"}
 		if !slicesEqual(got, want) {
 			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestHttpResponse_WriteTo(t *testing.T) {
+	t.Run("Write response with BodyString", func(t *testing.T) {
+		r := HttpResponse{
+			Head: HttpResponseHead{
+				HttpVersion:       Version{Major: 1, Minor: 1},
+				StatusCode:        200,
+				StatusDescription: "OK",
+				Headers: []Header{
+					{Name: "Content-Type", Value: "text/plain"},
+				},
+			},
+			Body: BodyString{Content: "Hello, World!"},
+		}
+
+		var buf strings.Builder
+		n, err := r.WriteTo(&buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		got := buf.String()
+		want := "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello, World!"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+
+		if n != int64(len(want)) {
+			t.Errorf("got length %d, want %d", n, len(want))
+		}
+	})
+
+	t.Run("Write response with EmptyBody", func(t *testing.T) {
+		r := HttpResponse{
+			Head: HttpResponseHead{
+				HttpVersion:       Version{Major: 1, Minor: 1},
+				StatusCode:        204,
+				StatusDescription: "No Content",
+			},
+			Body: EmptyBody{},
+		}
+
+		var buf strings.Builder
+		n, err := r.WriteTo(&buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		got := buf.String()
+		want := "HTTP/1.1 204 No Content\r\n\r\n"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+
+		if n != int64(len(want)) {
+			t.Errorf("got length %d, want %d", n, len(want))
 		}
 	})
 }

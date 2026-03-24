@@ -50,7 +50,7 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 			return header.Name == "Proxy-Authorization"
 		})
 		if proxyAuthIndex == -1 {
-			_, err := m.send407Response(browser, "Authentication required")
+			_, err := m.sendEmpty407Response(browser)
 			if err != nil {
 				log.Printf("Failed to write 407 response to %s: %v\n", clientAddr, err)
 				return fmt.Errorf("Failed to write 407 response to %s: %v\n", clientAddr, err)
@@ -124,9 +124,29 @@ func (m *WindowsAuthenticationServerMiddleware) sendInvalidTokenResponse(browser
 	return m.send407Response(browser, "Invalid token format")
 }
 
+func (m *WindowsAuthenticationServerMiddleware) sendEmpty407Response(browser net.Conn) (int64, error) {
+	rs := models.HttpResponse{
+		Head: models.HttpResponseHead{
+			HttpVersion:       models.Version{Major: 1, Minor: 1},
+			StatusCode:        407,
+			StatusDescription: "Proxy Authentication Required",
+			Headers: []models.Header{
+				{Name: "Proxy-Authenticate", Value: "NTLM"},
+				//{Name: "Proxy-Authenticate", Value: "Negotiate"},
+				//{Name: "Proxy-Authenticate", Value: "Kerberos"},
+				{Name: "Proxy-Connection", Value: "keep-alive"},
+				{Name: "Connection", Value: "keep-alive"},
+			},
+		},
+		Body: models.EmptyBody{},
+	}
+	return rs.WriteTo(browser)
+}
+
 func (m *WindowsAuthenticationServerMiddleware) send407Response(browser net.Conn, message string) (int64, error) {
 	rs := models.HttpResponse{
 		Head: models.HttpResponseHead{
+			HttpVersion:       models.Version{Major: 1, Minor: 1},
 			StatusCode:        407,
 			StatusDescription: "Proxy Authentication Required",
 			Headers: []models.Header{
@@ -145,6 +165,7 @@ func (m *WindowsAuthenticationServerMiddleware) send407Response(browser net.Conn
 func (m *WindowsAuthenticationServerMiddleware) sendChallengeResponse(browser net.Conn, authPackage security.AuthPackage, responseToken string) (int64, error) {
 	rs := models.HttpResponse{
 		Head: models.HttpResponseHead{
+			HttpVersion:       models.Version{Major: 1, Minor: 1},
 			StatusCode:        407,
 			StatusDescription: "Proxy Authentication Required",
 			Headers: []models.Header{

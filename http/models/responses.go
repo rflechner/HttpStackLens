@@ -48,7 +48,7 @@ func (b EmptyBody) WriteTo(_ io.Writer) (int64, error) {
 }
 
 func (b EmptyBody) HasContentLength() bool {
-	return false
+	return true
 }
 
 func (b EmptyBody) ContentLength() int {
