@@ -50,20 +50,21 @@ func main() {
 	log.Printf("Socket server started on port %v\n", *port)
 
 	for {
-		go handleRequest(listener.Accept())(pipeline)
+		browser, err := listener.Accept()
+		if err != nil {
+			log.Println("Error accepting connection:", err)
+			continue
+		}
+		fmt.Printf("New connection from %s\n", browser.RemoteAddr().String())
+		go handleRequest(browser)(pipeline)
 	}
 }
 
-func handleRequest(browser net.Conn, err error) func(pipeline middlewares.Middleware) {
-	if err != nil {
-		log.Println("Error accepting connection:", err)
-		return nil
-	}
-
+func handleRequest(browser net.Conn) func(pipeline middlewares.Middleware) {
 	request, err := http.ReadProxyRequest(browser)
 	if err != nil {
 		fmt.Printf("Error reading request from %s: %v\n", browser.RemoteAddr().String(), err)
-		return nil
+		return func(pipeline middlewares.Middleware) {}
 	}
 
 	return func(pipeline middlewares.Middleware) {
