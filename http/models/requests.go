@@ -57,6 +57,10 @@ type HttpRequestLine struct {
 	Version    Version
 }
 
+func (r *HttpRequestLine) IsConnect() bool {
+	return strings.EqualFold(string(r.HttpMethod), string(CONNECT))
+}
+
 type ProxyRequest struct {
 	HttpRequestLine HttpRequestLine
 	Headers         []Header

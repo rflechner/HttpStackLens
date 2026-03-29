@@ -24,6 +24,11 @@ func (m *TunnelServer) HandleProxyRequest(browser net.Conn, request models.Proxy
 	browser.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 	log.Printf("Connection established with %s:%d for %s\n", request.HttpRequestLine.HostPort.Host, request.HttpRequestLine.HostPort.Port, clientAddr)
 
+	if !request.HttpRequestLine.IsConnect() {
+		log.Printf("Sending request to %s:%d\n", request.HttpRequestLine.HostPort.Host, request.HttpRequestLine.HostPort.Port)
+		request.WriteTo(webServer, false)
+	}
+
 	go io.Copy(browser, webServer)
 	io.Copy(webServer, browser)
 
