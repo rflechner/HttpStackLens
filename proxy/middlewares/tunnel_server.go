@@ -2,7 +2,7 @@ package middlewares
 
 import (
 	"fmt"
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"io"
 	"log"
 	"net"
@@ -11,7 +11,7 @@ import (
 type TunnelServer struct {
 }
 
-func (m *TunnelServer) HandleProxyRequest(browser net.Conn, request ast.ProxyRequest) error {
+func (m *TunnelServer) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
 	clientAddr := browser.RemoteAddr().String()
 	webServer, err := net.Dial("tcp", fmt.Sprintf("%s:%d", request.Connect.HostPort.Host, request.Connect.HostPort.Port))
 	if err != nil {

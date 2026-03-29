@@ -20,7 +20,7 @@ func TestConnectParser(t *testing.T) {
 			t.Errorf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
 		}
 		if result.Result.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", &result.Result.HostPort.Port)
+			t.Errorf("Expected port 443, got %d", result.Result.HostPort.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
@@ -41,7 +41,7 @@ func TestConnectParser(t *testing.T) {
 			t.Errorf("Expected host 'www.youtube.com', got %q", result.Result.HostPort.Host)
 		}
 		if result.Result.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", &result.Result.HostPort.Port)
+			t.Errorf("Expected port 443, got %d", result.Result.HostPort.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
@@ -118,6 +118,73 @@ func TestHTTPVersionParser(t *testing.T) {
 
 		if result.Result.Major != 2 || result.Result.Minor != 0 {
 			t.Errorf("Expected 2.0, got %d.%d", result.Result.Major, result.Result.Minor)
+		}
+	})
+}
+
+func TestResponseHeadParser(t *testing.T) {
+	t.Run("Success: Simple OK", func(t *testing.T) {
+		input := "HTTP/1.1 200 OK\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		if result.Result.StatusCode != 200 {
+			t.Errorf("Expected status code 200, got %d", result.Result.StatusCode)
+		}
+		if result.Result.StatusDescription != "OK" {
+			t.Errorf("Expected status description 'OK', got %q", result.Result.StatusDescription)
+		}
+		if len(result.Result.Headers) != 0 {
+			t.Errorf("Expected 0 headers, got %d", len(result.Result.Headers))
+		}
+	})
+
+	t.Run("Success: OK with headers", func(t *testing.T) {
+		input := "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		if len(result.Result.Headers) != 2 {
+			t.Errorf("Expected 2 headers, got %d", len(result.Result.Headers))
+		}
+		if len(result.Result.GetHeader("Content-Type")) == 0 || result.Result.GetHeader("Content-Type")[0] != "application/json" {
+			t.Errorf("Expected Content-Type: application/json, got %q", result.Result.GetHeader("Content-Type"))
+		}
+	})
+
+	t.Run("Success: Multiple spaces in status description", func(t *testing.T) {
+		input := "HTTP/1.1 404 Not Found Extended\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		result, err := parser(context)
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		if result.Result.StatusDescription != "Not Found Extended" {
+			t.Errorf("Expected status description 'Not Found Extended', got %q", result.Result.StatusDescription)
+		}
+	})
+
+	t.Run("Failure: Invalid Status Code", func(t *testing.T) {
+		input := "HTTP/1.1 OK 200\r\n\r\n"
+		context := p.NewParsingContext(input)
+		parser := ResponseHeadParser()
+
+		_, err := parser(context)
+		if err == nil {
+			t.Fatal("Expected error due to invalid status code, but got success")
 		}
 	})
 }

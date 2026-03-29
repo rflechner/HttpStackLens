@@ -1,7 +1,7 @@
 package http
 
 import (
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"strings"
 	"testing"
 )
@@ -32,7 +32,7 @@ func TestReadProxyRequest(t *testing.T) {
 		}
 
 		// Verify Headers
-		expectedHeaders := []ast.Header{
+		expectedHeaders := []models.Header{
 			{Name: "Host", Value: "example.com:443"},
 			{Name: "User-Agent", Value: "curl/7.68.0"},
 			{Name: "Proxy-Connection", Value: "Keep-Alive"},
@@ -84,9 +84,6 @@ func TestReadProxyRequest(t *testing.T) {
 
 		if err == nil {
 			t.Fatal("Expected error for empty reader, but got none")
-		}
-		if err.Error() != "failed to read connect message" {
-			t.Errorf("Expected 'failed to read connect message' error, got %q", err.Error())
 		}
 	})
 

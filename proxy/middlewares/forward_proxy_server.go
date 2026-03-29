@@ -2,7 +2,7 @@ package middlewares
 
 import (
 	"fmt"
-	"httpStackLens/http/ast"
+	"httpStackLens/http/models"
 	"io"
 	"log"
 	"net"
@@ -13,39 +13,37 @@ type ForwardProxyServer struct {
 	OutputProxy url.URL
 }
 
-func (m *ForwardProxyServer) HandleProxyRequest(browser net.Conn, request ast.ProxyRequest) error {
-	clientAddr := browser.RemoteAddr().String()
-	gateway, err := net.Dial("tcp", m.OutputProxy.Host)
+func (m *ForwardProxyServer) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
+	gateway, err := m.ConnectToGateway(browser, request)
 	if err != nil {
-		browser.Write([]byte(fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\n\r\nProxy %v not available", m.OutputProxy)))
-		log.Println(err)
 		return err
 	}
+
 	defer gateway.Close()
 
-	_, err = gateway.Write([]byte(fmt.Sprintf(
-		"CONNECT %s:%d HTTP/%d.%d\r\n",
-		request.Connect.HostPort.Host, request.Connect.HostPort.Port, request.Connect.Version.Major, request.Connect.Version.Minor)))
+	return m.ForwardToGateway(browser, gateway, request)
+}
 
+func (m *ForwardProxyServer) ConnectToGateway(browser net.Conn, request models.ProxyRequest) (net.Conn, error) {
+	gateway, err := net.Dial("tcp", m.OutputProxy.Host)
 	if err != nil {
-		log.Printf("Could not send data to %v\n", m.OutputProxy)
-		return err
-	}
-
-	for _, header := range request.Headers {
-		if header.Name == "Proxy-Connection" {
-			continue
-		}
-		_, err = gateway.Write([]byte(fmt.Sprintf("%s: %s\r\n", header.Name, header.Value)))
+		_, err := browser.Write([]byte(fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\n\r\nProxy %v not available", m.OutputProxy)))
 		if err != nil {
-			log.Printf("Could not send header '%s' to %v\n", header.Name, m.OutputProxy)
-			return err
+			return nil, err
 		}
+		log.Println(err)
+		return nil, err
 	}
 
-	_, err = gateway.Write([]byte("\r\n"))
+	return gateway, nil
+}
+
+func (m *ForwardProxyServer) ForwardToGateway(browser net.Conn, gateway net.Conn, request models.ProxyRequest) error {
+	clientAddr := browser.RemoteAddr().String()
+
+	_, err := request.WriteTo(gateway, true)
 	if err != nil {
-		log.Printf("Could not send end of request to %v\n", m.OutputProxy)
+		log.Printf("Could not send request to %v\n", m.OutputProxy)
 		return err
 	}
 
