@@ -20,14 +20,14 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 	if err != nil {
 		return err
 	}
-	//defer gateway.Close()
+	defer gateway.Close()
 
 	var clientAuth *security.ClientAuth
-	//defer func() {
-	//	if clientAuth != nil {
-	//		clientAuth.Release()
-	//	}
-	//}()
+	defer func() {
+		if clientAuth != nil {
+			clientAuth.Release()
+		}
+	}()
 
 	var authValue string
 
@@ -50,10 +50,13 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 			if err != nil {
 				return err
 			}
-			//_, err = io.Copy(browser, gateway)
+
 			go io.Copy(browser, gateway)
 			io.Copy(gateway, browser)
-			//return err
+
+			fmt.Printf("Connection closed: %s\n", browser.RemoteAddr())
+			// normal exit
+			return nil
 		}
 
 		// It's a 407 Proxy Authentication Required
@@ -135,6 +138,5 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 		// But usually it's kept open for the handshake.
 	}
 
-	request.AddHeader("Proxy-Authorization", authValue)
-	return m.Forwarder.ForwardToGateway(browser, gateway, request)
+	return fmt.Errorf("unexpected end of authentication loop")
 }

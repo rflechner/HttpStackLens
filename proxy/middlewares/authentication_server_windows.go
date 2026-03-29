@@ -63,20 +63,20 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 		parts := strings.SplitN(authHeader.Value, " ", 2)
 		authPackage, err := security.ParseAuthPackage(parts[0])
 		if err != nil {
-			m.sendInvalidTokenResponse(browser)
+			_, _ = m.sendInvalidTokenResponse(browser)
 			log.Println(err)
 			return fmt.Errorf("invalid token format: %v", err)
 		}
 
 		if len(parts) != 2 {
-			m.sendInvalidTokenResponse(browser)
+			_, _ = m.sendInvalidTokenResponse(browser)
 			log.Println("Invalid token format")
 			return fmt.Errorf("invalid token format")
 		}
 
 		token, err := base64.StdEncoding.DecodeString(parts[1])
 		if err != nil {
-			m.sendInvalidTokenResponse(browser)
+			_, _ = m.sendInvalidTokenResponse(browser)
 			log.Println(err)
 			return fmt.Errorf("invalid token format: %v", err)
 		}
@@ -85,7 +85,7 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 		if auth == nil {
 			auth, err = security.NewServerAuth(authPackage)
 			if err != nil {
-				m.send407Response(browser, "Proxy server cannot authenticate")
+				_, _ = m.send407Response(browser, "Proxy server cannot authenticate")
 				log.Println(err)
 				return fmt.Errorf("proxy server cannot authenticate: %v", err)
 			}
@@ -98,13 +98,13 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 
 		authDone, outputToken, err := auth.ValidateToken(token)
 		if err != nil {
-			m.sendInvalidTokenResponse(browser)
+			_, _ = m.sendInvalidTokenResponse(browser)
 			log.Println(err)
 			return fmt.Errorf("invalid token: %v", err)
 		}
 		if authDone == false {
 			responseToken := base64.StdEncoding.EncodeToString(outputToken)
-			m.sendChallengeResponse(browser, authPackage, responseToken)
+			_, _ = m.sendChallengeResponse(browser, authPackage, responseToken)
 			fmt.Println("Challenge response sent")
 			continue
 		}
@@ -132,8 +132,6 @@ func (m *WindowsAuthenticationServerMiddleware) sendEmpty407Response(browser net
 			StatusDescription: "Proxy Authentication Required",
 			Headers: []models.Header{
 				{Name: "Proxy-Authenticate", Value: "NTLM"},
-				//{Name: "Proxy-Authenticate", Value: "Negotiate"},
-				//{Name: "Proxy-Authenticate", Value: "Kerberos"},
 				{Name: "Proxy-Connection", Value: "keep-alive"},
 				{Name: "Connection", Value: "keep-alive"},
 			},
@@ -151,8 +149,6 @@ func (m *WindowsAuthenticationServerMiddleware) send407Response(browser net.Conn
 			StatusDescription: "Proxy Authentication Required",
 			Headers: []models.Header{
 				{Name: "Proxy-Authenticate", Value: "NTLM"},
-				//{Name: "Proxy-Authenticate", Value: "Negotiate"},
-				//{Name: "Proxy-Authenticate", Value: "Kerberos"},
 				{Name: "Connection", Value: "keep-alive"},
 				{Name: "Proxy-Connection", Value: "keep-alive"},
 			},
