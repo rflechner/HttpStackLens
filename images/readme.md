@@ -27,3 +27,13 @@ docker run --rm -v ${PWD}:/app -w /app alpine sh -c "apk add --no-cache imagemag
 ```
 
 This uses [ImageMagick](https://imagemagick.org/) to produce a `logo.ico` containing multiple resolutions (16×16 to 256×256), suitable for Windows application icons.
+
+## Generating the winres logo
+
+To generate a 256×256 PNG for use by `go-winres` in the `winres/` directory, run the following Docker command from the `images/` folder:
+
+```sh
+docker run --rm -v ${PWD}:/app -w /app alpine sh -c "apk add --no-cache imagemagick && convert images/logo.png -resize 256x256 winres/logo.png"
+```
+
+This produces a 256×256 PNG at `winres/logo.png`, which is referenced by `winres/winres.json`.
