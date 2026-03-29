@@ -193,13 +193,9 @@ type responseStatus struct {
 
 func responseStatusParser() p.Parser[responseStatus] {
 	statusDescriptionParser := p.Map(
-		p.UntilText(
-			p.Many(
-				p.Satisfy(
-					func(c rune) bool {
-						return c != '\r' && c != '\n'
-					})),
-			"\r\n", false),
+		p.Many(p.Satisfy(func(c rune) bool {
+			return c != '\r' && c != '\n'
+		})),
 		func(r []rune) string { return string(r) })
 
 	firstLineParserStart := p.Map(
@@ -243,11 +239,11 @@ func ResponseHeadParser() p.Parser[models.HttpResponseHead] {
 		p.Combine(
 			p.Left(
 				responseStatusParser(),
-				NewLineParser(),
+				p.Optional(NewLineParser()),
 			),
 			p.Left(
 				headersParser,
-				NewLineParser(),
+				p.Optional(NewLineParser()),
 			),
 		),
 		func(r struct {

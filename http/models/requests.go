@@ -30,6 +30,10 @@ func (r *ProxyRequest) GetHeader(name string) []string {
 	return values
 }
 
+func (r *ProxyRequest) AddHeader(name, value string) {
+	r.Headers = append(r.Headers, Header{Name: name, Value: value})
+}
+
 func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int64, error) {
 	var total int64
 

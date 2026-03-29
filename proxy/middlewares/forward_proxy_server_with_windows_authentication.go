@@ -20,14 +20,16 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 	if err != nil {
 		return err
 	}
-	defer gateway.Close()
+	//defer gateway.Close()
 
 	var clientAuth *security.ClientAuth
-	defer func() {
-		if clientAuth != nil {
-			clientAuth.Release()
-		}
-	}()
+	//defer func() {
+	//	if clientAuth != nil {
+	//		clientAuth.Release()
+	//	}
+	//}()
+
+	var authValue string
 
 	currentRequest := request
 	for {
@@ -44,13 +46,14 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 		}
 
 		if responseHead.StatusCode != 407 {
-			// Not a 407, forward the head and then the rest of the stream
 			_, err = responseHead.WriteTo(browser)
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(browser, gateway)
-			return err
+			//_, err = io.Copy(browser, gateway)
+			go io.Copy(browser, gateway)
+			io.Copy(gateway, browser)
+			//return err
 		}
 
 		// It's a 407 Proxy Authentication Required
@@ -105,7 +108,7 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 
 		// Prepare next request with Proxy-Authorization
 		tokenBase64 := base64.StdEncoding.EncodeToString(outputToken)
-		authValue := fmt.Sprintf("%s %s", selectedPackage.String(), tokenBase64)
+		authValue = fmt.Sprintf("%s %s", selectedPackage.String(), tokenBase64)
 
 		// Replace or add Proxy-Authorization header
 		found := false
@@ -117,17 +120,14 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 			}
 		}
 		if !found {
-			currentRequest.Headers = append(currentRequest.Headers, models.Header{
-				Name:  "Proxy-Authorization",
-				Value: authValue,
-			})
+			currentRequest.AddHeader("Proxy-Authorization", authValue)
 		}
 
 		if authDone {
 			// We might need one more request to complete if the server didn't accept it yet,
 			// but usually authDone on client means we sent the final token.
 			// The loop will continue, send the request, and hopefully get a non-407.
-			break
+			continue
 		}
 
 		// Note: We need to be careful about the gateway connection.
@@ -135,5 +135,6 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 		// But usually it's kept open for the handshake.
 	}
 
+	request.AddHeader("Proxy-Authorization", authValue)
 	return m.Forwarder.ForwardToGateway(browser, gateway, request)
 }
