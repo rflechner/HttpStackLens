@@ -23,6 +23,34 @@ const (
 	CONNECT HttpMethod = "CONNECT"
 )
 
+func ParseHttpMethod(input string) (HttpMethod, error) {
+	if strings.EqualFold(string(GET), input) {
+		return GET, nil
+	}
+	if strings.EqualFold(string(POST), input) {
+		return POST, nil
+	}
+	if strings.EqualFold(string(PUT), input) {
+		return PUT, nil
+	}
+	if strings.EqualFold(string(PATCH), input) {
+		return PATCH, nil
+	}
+	if strings.EqualFold(string(HEAD), input) {
+		return HEAD, nil
+	}
+	if strings.EqualFold(string(OPTIONS), input) {
+		return OPTIONS, nil
+	}
+	if strings.EqualFold(string(DELETE), input) {
+		return DELETE, nil
+	}
+	if strings.EqualFold(string(CONNECT), input) {
+		return CONNECT, nil
+	}
+	return "", fmt.Errorf("unknown http method: %s", input)
+}
+
 type HttpRequestLine struct {
 	HttpMethod HttpMethod
 	HostPort   HostPort

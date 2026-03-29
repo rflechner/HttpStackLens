@@ -9,7 +9,7 @@ func TestConnectParser(t *testing.T) {
 	t.Run("Success: Standard CONNECT", func(t *testing.T) {
 		input := "CONNECT example.com:443 HTTP/1.1"
 		context := p.NewParsingContext(input)
-		parser := ConnectParser()
+		parser := HttpRequestLineParser()
 
 		result, err := parser(context)
 		if err != nil {
@@ -30,7 +30,7 @@ func TestConnectParser(t *testing.T) {
 	t.Run("Success: Standard CONNECT", func(t *testing.T) {
 		input := "CONNECT https://www.youtube.com/ HTTP/1.1"
 		context := p.NewParsingContext(input)
-		parser := ConnectParser()
+		parser := HttpRequestLineParser()
 
 		result, err := parser(context)
 		if err != nil {
@@ -51,11 +51,15 @@ func TestConnectParser(t *testing.T) {
 	t.Run("Success: Missing port has default port 443", func(t *testing.T) {
 		input := "CONNECT example.com HTTP/1.1"
 		context := p.NewParsingContext(input)
-		parser := ConnectParser()
+		parser := HttpRequestLineParser()
 
 		result, err := parser(context)
 		if err != nil {
 			t.Fatalf("Connect parsing got error %s", err.Error())
+		}
+
+		if result.Result.HttpMethod != "CONNECT" {
+			t.Fatalf("Expected method 'CONNECT', got %q", result.Result.HttpMethod)
 		}
 
 		if result.Result.HostPort.Host != "example.com" {
@@ -70,18 +74,31 @@ func TestConnectParser(t *testing.T) {
 	t.Run("Failure: Invalid command", func(t *testing.T) {
 		input := "GET example.com:443 HTTP/1.1"
 		context := p.NewParsingContext(input)
-		parser := ConnectParser()
+		parser := HttpRequestLineParser()
 
-		_, err := parser(context)
-		if err == nil {
-			t.Fatal("Expected error due to invalid command, but got success")
+		result, err := parser(context)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if result.Result.HttpMethod != "GET" {
+			t.Fatalf("Expected method 'GET', got %q", result.Result.HttpMethod)
+		}
+		if result.Result.HostPort.Host != "example.com" {
+			t.Fatalf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
+		}
+		if result.Result.HostPort.Port != 443 {
+			t.Fatalf("Expected port 443, got %d", result.Result.HostPort.Port)
+		}
+		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
+			t.Fatalf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
 		}
 	})
 
 	t.Run("Failure: Invalid HTTP version", func(t *testing.T) {
 		input := "CONNECT example.com:443 HTTP/INVALID"
 		context := p.NewParsingContext(input)
-		parser := ConnectParser()
+		parser := HttpRequestLineParser()
 
 		_, err := parser(context)
 		if err == nil {

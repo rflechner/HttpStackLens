@@ -89,7 +89,7 @@ func readConnect(scanner *bufio.Scanner) (models.HttpRequestLine, error) {
 	if scanner.Scan() {
 		message := strings.TrimSpace(scanner.Text())
 		context := p.NewParsingContext(message)
-		result, err := parser.ConnectParser()(context)
+		result, err := parser.HttpRequestLineParser()(context)
 		if err != nil {
 			fmt.Printf("Error parsing message: %v in '%s'\n", err, message)
 			return models.HttpRequestLine{}, err
