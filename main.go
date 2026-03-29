@@ -15,7 +15,7 @@ import (
 func main() {
 	port := flag.Int("port", 3128, "listening port")
 	outputProxyUri := flag.String("output-proxy-uri", "", "URI to output proxy information")                                                                                                         // -output-proxy-uri=http://localhost:3129/
-	requireWindowsAuthentication := flag.Bool("require-negotiate", false, "specifies that browsers need negotiate authentication (Windows supported only)")                                          //-require-negotiate=true
+	requireWindowsAuthentication := flag.Bool("windows-auth-require-ntlm", false, "specifies that browsers need negotiate authentication (Windows supported only)")                                  //-require-negotiate=true
 	addWindowsAuthenticationToOutputProxy := flag.Bool("output-proxy-add-windows-auth", false, "specifies that this proxy adds windows authentication to the remote proxy (Windows supported only)") //-output-proxy-add-windows-auth=true
 	flag.Parse()
 
