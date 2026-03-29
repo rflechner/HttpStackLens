@@ -67,13 +67,20 @@ func TestReadProxyRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("Failure: Invalid CONNECT line", func(t *testing.T) {
+	t.Run("Success: GET request line", func(t *testing.T) {
 		input := "GET example.com:443 HTTP/1.1\n"
 		reader := strings.NewReader(input)
-		_, err := ReadProxyRequest(reader)
+		result, err := ReadProxyRequest(reader)
 
-		if err == nil {
+		if err != nil {
 			t.Fatal("Expected error for invalid CONNECT line, but got none")
+		}
+
+		if result.HttpRequestLine.HostPort.Host != "example.com" || result.HttpRequestLine.HostPort.Port != 443 {
+			t.Errorf("Expected example.com:443, got %s:%d", result.HttpRequestLine.HostPort.Host, result.HttpRequestLine.HostPort.Port)
+		}
+		if result.HttpRequestLine.HttpMethod != "GET" {
+			t.Errorf("Expected GET method, got %s", result.HttpRequestLine.HttpMethod)
 		}
 	})
 
