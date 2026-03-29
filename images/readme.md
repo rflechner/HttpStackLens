@@ -18,3 +18,12 @@ docker run --rm -v ${PWD}:/app -w /app alpine sh -c "apk add --no-cache pngquant
 
 This uses [`pngquant`](https://pngquant.org/) for lossy PNG compression and overwrites the originals in place.
 
+## Generating a .ico from logo.png
+
+To generate a multi-resolution `.ico` file from `logo.png`, run the following Docker command from the `images/` folder:
+
+```sh
+docker run --rm -v ${PWD}:/app -w /app alpine sh -c "apk add --no-cache imagemagick && convert logo.png -define icon:auto-resize=256,128,64,48,32,16 logo.ico"
+```
+
+This uses [ImageMagick](https://imagemagick.org/) to produce a `logo.ico` containing multiple resolutions (16×16 to 256×256), suitable for Windows application icons.

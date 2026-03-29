@@ -26,6 +26,14 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 
 - [Go](https://go.dev/dl/) 1.21 or later
 
+### Application icons
+
+```
+go install github.com/tc-hib/go-winres@latest
+go-winres init       # génère un fichier winres/winres.json
+go-winres make       # génère le .syso automatiquement
+```
+
 ### macOS
 
 ```sh
