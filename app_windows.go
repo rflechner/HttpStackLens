@@ -1,6 +1,11 @@
 package main
 
-import "flag"
+import (
+	"flag"
+	"httpStackLens/proxy"
+	"log"
+	"net/url"
+)
 
 func CreateOsSpecificProxyPipeline() (AppContext, error) {
 	port := flag.Int("port", 3128, "listening port")
@@ -14,7 +19,7 @@ func CreateOsSpecificProxyPipeline() (AppContext, error) {
 		u, err := url.Parse(*outputProxyUri)
 		if err != nil {
 			log.Printf("Invalid output proxy URI: %v\n", err)
-			return
+			return AppContext{}, err
 		}
 		outputProxy = u
 	}
