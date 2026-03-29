@@ -21,14 +21,14 @@ func TestReadProxyRequest(t *testing.T) {
 		}
 
 		// Verify Connect
-		if request.Connect.HostPort.Host != "example.com" {
-			t.Errorf("Expected host 'example.com', got %q", request.Connect.HostPort.Host)
+		if request.HttpRequestLine.HostPort.Host != "example.com" {
+			t.Errorf("Expected host 'example.com', got %q", request.HttpRequestLine.HostPort.Host)
 		}
-		if request.Connect.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", request.Connect.HostPort.Port)
+		if request.HttpRequestLine.HostPort.Port != 443 {
+			t.Errorf("Expected port 443, got %d", request.HttpRequestLine.HostPort.Port)
 		}
-		if request.Connect.Version.Major != 1 || request.Connect.Version.Minor != 1 {
-			t.Errorf("Expected HTTP/1.1, got HTTP/%d.%d", request.Connect.Version.Major, request.Connect.Version.Minor)
+		if request.HttpRequestLine.Version.Major != 1 || request.HttpRequestLine.Version.Minor != 1 {
+			t.Errorf("Expected HTTP/1.1, got HTTP/%d.%d", request.HttpRequestLine.Version.Major, request.HttpRequestLine.Version.Minor)
 		}
 
 		// Verify Headers
@@ -58,8 +58,8 @@ func TestReadProxyRequest(t *testing.T) {
 			t.Fatalf("Expected no error, got %v", err)
 		}
 
-		if request.Connect.HostPort.Host != "example.com" || request.Connect.HostPort.Port != 80 {
-			t.Errorf("Expected example.com:80, got %s:%d", request.Connect.HostPort.Host, request.Connect.HostPort.Port)
+		if request.HttpRequestLine.HostPort.Host != "example.com" || request.HttpRequestLine.HostPort.Port != 80 {
+			t.Errorf("Expected example.com:80, got %s:%d", request.HttpRequestLine.HostPort.Host, request.HttpRequestLine.HostPort.Port)
 		}
 
 		if len(request.Headers) != 0 {
@@ -149,12 +149,12 @@ func TestReadProxyRequest(t *testing.T) {
 			t.Errorf("Expected header, got %+v", request.Headers[0])
 		}
 
-		if request.Connect.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", request.Connect.HostPort.Port)
+		if request.HttpRequestLine.HostPort.Port != 443 {
+			t.Errorf("Expected port 443, got %d", request.HttpRequestLine.HostPort.Port)
 		}
 
-		if request.Connect.HostPort.Host != "example.com" {
-			t.Errorf("Expected host example.com, got %s", request.Connect.HostPort.Host)
+		if request.HttpRequestLine.HostPort.Host != "example.com" {
+			t.Errorf("Expected host example.com, got %s", request.HttpRequestLine.HostPort.Host)
 		}
 	})
 }

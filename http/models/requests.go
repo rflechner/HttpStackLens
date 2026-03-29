@@ -10,14 +10,28 @@ type Command interface {
 	isCommand()
 }
 
-type Connect struct {
-	HostPort HostPort
-	Version  Version
+type HttpMethod string
+
+const (
+	GET     HttpMethod = "GET"
+	POST    HttpMethod = "POST"
+	PUT     HttpMethod = "PUT"
+	PATCH   HttpMethod = "PATCH"
+	HEAD    HttpMethod = "HEAD"
+	OPTIONS HttpMethod = "OPTIONS"
+	DELETE  HttpMethod = "DELETE"
+	CONNECT HttpMethod = "CONNECT"
+)
+
+type HttpRequestLine struct {
+	HttpMethod HttpMethod
+	HostPort   HostPort
+	Version    Version
 }
 
 type ProxyRequest struct {
-	Connect Connect
-	Headers []Header
+	HttpRequestLine HttpRequestLine
+	Headers         []Header
 }
 
 func (r *ProxyRequest) GetHeader(name string) []string {
@@ -37,8 +51,10 @@ func (r *ProxyRequest) AddHeader(name, value string) {
 func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int64, error) {
 	var total int64
 
-	n, err := fmt.Fprintf(w, "CONNECT %s:%d HTTP/%d.%d\r\n",
-		r.Connect.HostPort.Host, r.Connect.HostPort.Port, r.Connect.Version.Major, r.Connect.Version.Minor)
+	n, err := fmt.Fprintf(w, "%s %s:%d HTTP/%d.%d\r\n",
+		r.HttpRequestLine.HttpMethod,
+		r.HttpRequestLine.HostPort.Host, r.HttpRequestLine.HostPort.Port,
+		r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
 	total += int64(n)
 	if err != nil {
 		return total, err

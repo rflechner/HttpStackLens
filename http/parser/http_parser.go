@@ -117,27 +117,27 @@ func UrlParser() p.Parser[url.URL] {
 	}
 }
 
-func ConnectParser() p.Parser[models.Connect] {
-	return func(context p.ParsingContext) (p.ParseResult[models.Connect], error) {
+func ConnectParser() p.Parser[models.HttpRequestLine] {
+	return func(context p.ParsingContext) (p.ParseResult[models.HttpRequestLine], error) {
 		verbParser := p.Left(p.StringMatch("CONNECT"), SpacesParser())
 
 		verbResult, err := verbParser(context)
 		if err != nil {
-			return p.ParseResult[models.Connect]{Context: context}, err
+			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
 		hostPortResult, err := HostPortParser()(verbResult.Context)
 		if err != nil {
-			return p.ParseResult[models.Connect]{Context: context}, err
+			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
 		versionResult, err := VersionParser()(hostPortResult.Context)
 		if err != nil {
-			return p.ParseResult[models.Connect]{Context: context}, err
+			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
-		return p.ParseResult[models.Connect]{
-			Result: models.Connect{
+		return p.ParseResult[models.HttpRequestLine]{
+			Result: models.HttpRequestLine{
 				HostPort: models.HostPort{
 					Host: hostPortResult.Result.Host,
 					Port: hostPortResult.Result.Port,
