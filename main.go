@@ -1,41 +1,22 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"httpStackLens/http"
-	"httpStackLens/proxy"
 	"httpStackLens/proxy/middlewares"
 	"log"
 	"net"
-	"net/url"
 	"os"
 )
 
 func main() {
-	port := flag.Int("port", 3128, "listening port")
-	outputProxyUri := flag.String("output-proxy-uri", "", "URI to output proxy information")                                                                                                         // -output-proxy-uri=http://localhost:3129/
-	requireWindowsAuthentication := flag.Bool("windows-auth-require-ntlm", false, "specifies that browsers need negotiate authentication (Windows supported only)")                                  //-require-negotiate=true
-	addWindowsAuthenticationToOutputProxy := flag.Bool("output-proxy-add-windows-auth", false, "specifies that this proxy adds windows authentication to the remote proxy (Windows supported only)") //-output-proxy-add-windows-auth=true
-	flag.Parse()
-
-	var outputProxy *url.URL
-	if len(*outputProxyUri) > 0 {
-		u, err := url.Parse(*outputProxyUri)
-		if err != nil {
-			log.Printf("Invalid output proxy URI: %v\n", err)
-			return
-		}
-		outputProxy = u
-	}
-
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(outputProxy, *requireWindowsAuthentication, *addWindowsAuthenticationToOutputProxy)
+	app_context, err := CreateOsSpecificProxyPipeline()
 	if err != nil {
 		log.Printf("Failed to configure proxy pipeline: %v\n", err)
 		return
 	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", app_context.port))
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		os.Exit(1)
@@ -47,7 +28,7 @@ func main() {
 		}
 	}(listener)
 
-	log.Printf("Socket server started on port %v\n", *port)
+	log.Printf("Socket server started on port %v\n", app_context.port)
 
 	for {
 		browser, err := listener.Accept()
@@ -56,7 +37,7 @@ func main() {
 			continue
 		}
 		fmt.Printf("New connection from %s\n", browser.RemoteAddr().String())
-		go handleRequest(browser)(pipeline)
+		go handleRequest(browser)(app_context.pipeline)
 	}
 }
 
