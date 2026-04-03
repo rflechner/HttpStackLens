@@ -42,7 +42,7 @@ func ReadProxyRequest(reader io.Reader) (models.ProxyRequest, error) {
 		return models.ProxyRequest{}, err
 	}
 
-	return models.ProxyRequest{Connect: connect, Headers: ListToSlice[models.Header](headers)}, nil
+	return models.ProxyRequest{HttpRequestLine: connect, Headers: ListToSlice[models.Header](headers)}, nil
 }
 
 func ReadHttpResponse(reader io.Reader) (models.HttpResponseHead, error) {
@@ -85,17 +85,17 @@ func ReadHttpResponse(reader io.Reader) (models.HttpResponseHead, error) {
 	return head, nil
 }
 
-func readConnect(scanner *bufio.Scanner) (models.Connect, error) {
+func readConnect(scanner *bufio.Scanner) (models.HttpRequestLine, error) {
 	if scanner.Scan() {
 		message := strings.TrimSpace(scanner.Text())
 		context := p.NewParsingContext(message)
-		result, err := parser.ConnectParser()(context)
+		result, err := parser.HttpRequestLineParser()(context)
 		if err != nil {
 			fmt.Printf("Error parsing message: %v in '%s'\n", err, message)
-			return models.Connect{}, err
+			return models.HttpRequestLine{}, err
 		}
 
 		return result.Result, nil
 	}
-	return models.Connect{}, errors.New("Connection seems to be closed")
+	return models.HttpRequestLine{}, errors.New("Connection seems to be closed")
 }

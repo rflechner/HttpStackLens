@@ -7,9 +7,10 @@ import (
 
 func TestProxyRequest_WriteTo(t *testing.T) {
 	req := ProxyRequest{
-		Connect: Connect{
-			HostPort: HostPort{Host: "example.com", Port: 443},
-			Version:  Version{Major: 1, Minor: 1},
+		HttpRequestLine: HttpRequestLine{
+			HttpMethod: CONNECT,
+			Endpoint:   ResourceEndpoint{Host: "example.com", Port: 443},
+			Version:    Version{Major: 1, Minor: 1},
 		},
 		Headers: []Header{
 			{Name: "Host", Value: "example.com:443"},

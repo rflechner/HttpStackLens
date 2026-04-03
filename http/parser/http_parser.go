@@ -53,7 +53,7 @@ func NewLineParser() p.Parser[string] {
 		p.StringMatch("\n"))
 }
 
-func HostPortParser() p.Parser[models.HostPort] {
+func ResourceEndpointParser() p.Parser[models.ResourceEndpoint] {
 	onlyHostPortParser := p.Map(
 		p.Left(
 			p.Combine(
@@ -65,12 +65,12 @@ func HostPortParser() p.Parser[models.HostPort] {
 		func(hostPort struct {
 			Left  string
 			Right helpers.Option[int]
-		}) models.HostPort {
-			return models.HostPort{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
+		}) models.ResourceEndpoint {
+			return models.ResourceEndpoint{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
 		},
 	)
 
-	urlParser := p.Map(UrlParser(), func(url url.URL) models.HostPort {
+	urlParser := p.Map(UrlParser(), func(url url.URL) models.ResourceEndpoint {
 
 		var defaultPort int
 		if strings.ToLower(url.Scheme) == "https" {
@@ -79,16 +79,35 @@ func HostPortParser() p.Parser[models.HostPort] {
 			defaultPort = 80
 		}
 
+		var pathAndQuery string
+		if url.RawQuery != "" {
+			pathAndQuery = url.Path + "?" + url.RawQuery
+		} else {
+			pathAndQuery = url.Path
+		}
+
+		if pathAndQuery == "" {
+			pathAndQuery = "/"
+		}
+
 		if strings.ContainsRune(url.Host, ':') {
 			portText := url.Port()
 			port, err := strconv.Atoi(portText)
 			if err != nil {
-				return models.HostPort{Host: url.Hostname(), Port: defaultPort}
+				return models.ResourceEndpoint{Host: url.Hostname(), Port: defaultPort}
 			}
-			return models.HostPort{Host: url.Hostname(), Port: port}
+			return models.ResourceEndpoint{
+				Host:         url.Hostname(),
+				Port:         port,
+				PathAndQuery: pathAndQuery,
+			}
 		}
 
-		return models.HostPort{Host: url.Hostname(), Port: defaultPort}
+		return models.ResourceEndpoint{
+			Host:         url.Hostname(),
+			Port:         defaultPort,
+			PathAndQuery: pathAndQuery,
+		}
 	})
 
 	return p.OrElse(urlParser, onlyHostPortParser)
@@ -117,32 +136,38 @@ func UrlParser() p.Parser[url.URL] {
 	}
 }
 
-func ConnectParser() p.Parser[models.Connect] {
-	return func(context p.ParsingContext) (p.ParseResult[models.Connect], error) {
-		verbParser := p.Left(p.StringMatch("CONNECT"), SpacesParser())
+func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
+	return func(context p.ParsingContext) (p.ParseResult[models.HttpRequestLine], error) {
+		vp := p.Map(p.Many(p.Alphanumeric()), func(runes []rune) string { return string(runes) })
+		verbParser := p.Left(
+			vp,
+			SpacesParser(),
+		)
 
 		verbResult, err := verbParser(context)
 		if err != nil {
-			return p.ParseResult[models.Connect]{Context: context}, err
+			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
+		}
+		httpMethod, err := models.ParseHttpMethod(verbResult.Result)
+		if err != nil {
+			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
-		hostPortResult, err := HostPortParser()(verbResult.Context)
+		hostPortResult, err := ResourceEndpointParser()(verbResult.Context)
 		if err != nil {
-			return p.ParseResult[models.Connect]{Context: context}, err
+			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
 		versionResult, err := VersionParser()(hostPortResult.Context)
 		if err != nil {
-			return p.ParseResult[models.Connect]{Context: context}, err
+			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
-		return p.ParseResult[models.Connect]{
-			Result: models.Connect{
-				HostPort: models.HostPort{
-					Host: hostPortResult.Result.Host,
-					Port: hostPortResult.Result.Port,
-				},
-				Version: versionResult.Result,
+		return p.ParseResult[models.HttpRequestLine]{
+			Result: models.HttpRequestLine{
+				HttpMethod: httpMethod,
+				Endpoint:   hostPortResult.Result,
+				Version:    versionResult.Result,
 			},
 			Context: versionResult.Context,
 		}, nil
