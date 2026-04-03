@@ -138,5 +138,4 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 		// But usually it's kept open for the handshake.
 	}
 
-	return fmt.Errorf("unexpected end of authentication loop")
 }

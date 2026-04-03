@@ -27,9 +27,9 @@ func (m *ForwardProxyServer) HandleProxyRequest(browser net.Conn, request models
 func (m *ForwardProxyServer) ConnectToGateway(browser net.Conn, request models.ProxyRequest) (net.Conn, error) {
 	gateway, err := net.Dial("tcp", m.OutputProxy.Host)
 	if err != nil {
-		_, err := browser.Write([]byte(fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\n\r\nProxy %v not available", m.OutputProxy)))
-		if err != nil {
-			return nil, err
+		_, err2 := browser.Write([]byte(fmt.Sprintf("HTTP/1.1 502 Bad Gateway\r\n\r\nProxy %v not available", m.OutputProxy)))
+		if err2 != nil {
+			return nil, err2
 		}
 		log.Println(err)
 		return nil, err
