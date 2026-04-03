@@ -80,14 +80,22 @@ func (r *ProxyRequest) AddHeader(name, value string) {
 	r.Headers = append(r.Headers, Header{Name: name, Value: value})
 }
 
-func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int64, error) {
-	var total int64
+func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int, error) {
+	var total int
+	var err error
 
-	n, err := fmt.Fprintf(w, "%s %s:%d HTTP/%d.%d\r\n",
-		r.HttpRequestLine.HttpMethod,
-		r.HttpRequestLine.Endpoint.Host, r.HttpRequestLine.Endpoint.Port,
-		r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
-	total += int64(n)
+	if r.HttpRequestLine.IsConnect() {
+		total, err = fmt.Fprintf(w, "%s %s:%d HTTP/%d.%d\r\n",
+			r.HttpRequestLine.HttpMethod,
+			r.HttpRequestLine.Endpoint.Host, r.HttpRequestLine.Endpoint.Port,
+			r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
+	} else {
+		total, err = fmt.Fprintf(w, "%s %s HTTP/%d.%d\r\n",
+			r.HttpRequestLine.HttpMethod,
+			r.HttpRequestLine.Endpoint.PathAndQuery,
+			r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
+	}
+
 	if err != nil {
 		return total, err
 	}
@@ -97,13 +105,13 @@ func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int64, error
 			continue
 		}
 		n, err := fmt.Fprintf(w, "%s: %s\r\n", header.Name, header.Value)
-		total += int64(n)
+		total += n
 		if err != nil {
 			return total, err
 		}
 	}
 
-	n, err = io.WriteString(w, "\r\n")
-	total += int64(n)
+	n, err := io.WriteString(w, "\r\n")
+	total += n
 	return total, err
 }

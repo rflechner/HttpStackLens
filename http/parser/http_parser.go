@@ -79,20 +79,28 @@ func ResourceEndpointParser() p.Parser[models.ResourceEndpoint] {
 			defaultPort = 80
 		}
 
+		var pathAndQuery string
+		if url.RawQuery != "" {
+			pathAndQuery = url.Path + "?" + url.RawQuery
+		} else {
+			pathAndQuery = url.Path
+		}
+
+		if pathAndQuery == "" {
+			pathAndQuery = "/"
+		}
+
 		if strings.ContainsRune(url.Host, ':') {
 			portText := url.Port()
 			port, err := strconv.Atoi(portText)
 			if err != nil {
 				return models.ResourceEndpoint{Host: url.Hostname(), Port: defaultPort}
 			}
-			return models.ResourceEndpoint{Host: url.Hostname(), Port: port}
-		}
-
-		var pathAndQuery string
-		if url.RawQuery != "" {
-			pathAndQuery = url.Path + "?" + url.RawQuery
-		} else {
-			pathAndQuery = url.Path
+			return models.ResourceEndpoint{
+				Host:         url.Hostname(),
+				Port:         port,
+				PathAndQuery: pathAndQuery,
+			}
 		}
 
 		return models.ResourceEndpoint{
