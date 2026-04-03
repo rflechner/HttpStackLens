@@ -32,15 +32,17 @@ func main() {
 		}
 	}()
 
-	go proxyServer.Run(stopChan)
+	go proxyServer.Run()
 
 	keyboard := bufio.NewReader(os.Stdin)
 
 	go func() {
-		fmt.Println("Press 'q' to quit")
-		r, _, _ := keyboard.ReadRune()
-		if r == 'q' {
-			close(stopChan)
+		fmt.Println("Type 'exit' to quit")
+		for {
+			line, _, _ := keyboard.ReadLine()
+			if string(line) == "exit" {
+				close(stopChan)
+			}
 		}
 	}()
 

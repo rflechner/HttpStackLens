@@ -37,7 +37,7 @@ func (s *ProxyServer) Close() {
 	s.mu.Unlock()
 }
 
-func (s *ProxyServer) Run(chan bool) {
+func (s *ProxyServer) Run() {
 	for {
 		browser, err := s.listener.Accept()
 		if err != nil {
