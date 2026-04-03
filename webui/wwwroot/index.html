@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HTTP Stack Lens</title>
+</head>
+<body>
+
+
+<img src="images/logo-with-text.png" alt="HTTP Stack Lens" width="200" height="150">
+
+<div class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-slate-800">HTTP Stack Lens</h1>
+    <div class="flex items-center gap-3">
+        <span id="sse-status"  class="text-xs text-amber-500">⏳ Connecting SSE...</span>
+        <span id="wasm-status" class="text-xs text-amber-500">⏳ Loading WASM...</span>
+    </div>
+</div>
+
+<div id="summary"></div>
+
+<script src="js/wasm_exec.js"></script>
+<script>
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch("wasm/app.wasm"), go.importObject)
+        .then(result => {
+            go.run(result.instance);
+            document.getElementById("wasm-status").textContent = "✅ Go WASM activated";
+            document.getElementById("wasm-status").className = "text-xs text-emerald-500";
+        });
+</script>
+</body>
+</html>

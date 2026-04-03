@@ -24,7 +24,7 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 
 ### Prerequisites
 
-- [Go](https://go.dev/dl/) 1.21 or later
+- [Go](https://go.dev/dl/) 1.26.1 or later
 
 ### Application icons
 
@@ -34,7 +34,36 @@ go-winres init       # génère un fichier winres/winres.json
 go-winres make       # génère le .syso automatiquement
 ```
 
-### macOS
+### Build WebUI
+
+We must copy wasm_exec.js to the root directory of the project.
+
+#### Unix
+
+```sh
+cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" webui/wwwroot/js/wasm_exec.js
+```
+
+#### Windows
+
+```powershell
+$goroot = go env GOROOT
+mkdir webui\wwwroot\js
+Copy-Item "$goroot\lib\wasm\wasm_exec.js" -Destination "webui\wwwroot\js\wasm_exec.js"
+
+# Compile Go to WASM
+$env:GOOS = "js"
+$env:GOARCH = "wasm"
+go build -o static\wasm\app.wasm .\wasm\
+
+# back to normal
+$env:GOOS = ""
+$env:GOARCH = ""
+```
+
+### Build Application
+
+#### macOS
 
 ```sh
 go build -ldflags="-s -w" -o httpStackLens .
@@ -43,7 +72,7 @@ go build -ldflags="-s -w" -o httpStackLens .
 
 > **Note:** Windows authentication (`--windows-auth-require-ntlm`, `--output-proxy-add-windows-auth`) is not supported on macOS and will return an error if used.
 
-### Windows
+#### Windows
 
 ```sh
 go build -ldflags="-s -w" -o httpStackLens.exe .
@@ -57,7 +86,7 @@ Windows-specific features are available on this platform:
 
 These features rely on the Windows SSPI API (`secur32.dll`) and are compiled in automatically when targeting Windows.
 
-### Cross-compilation
+#### Cross-compilation
 
 You can produce a Windows binary from macOS (and vice versa) using Go's built-in cross-compilation:
 

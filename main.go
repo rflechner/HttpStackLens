@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"httpStackLens/http"
 	"httpStackLens/proxy/middlewares"
+	"httpStackLens/webui"
 	"log"
 	"net"
 	"os"
@@ -29,6 +30,8 @@ func main() {
 	}(listener)
 
 	log.Printf("Socket server started on port %v\n", app_context.port)
+
+	go webui.ServeWebUi(9000)
 
 	for {
 		browser, err := listener.Accept()
