@@ -61,6 +61,10 @@ func (r *HttpRequestLine) IsConnect() bool {
 	return strings.EqualFold(string(r.HttpMethod), string(CONNECT))
 }
 
+func (r *HttpRequestLine) String() string {
+	return fmt.Sprintf("%s %s HTTP/%d.%d", r.HttpMethod, r.Endpoint, r.Version.Major, r.Version.Minor)
+}
+
 type ProxyRequest struct {
 	HttpRequestLine HttpRequestLine
 	Headers         []Header
