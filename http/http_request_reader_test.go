@@ -21,11 +21,11 @@ func TestReadProxyRequest(t *testing.T) {
 		}
 
 		// Verify Connect
-		if request.HttpRequestLine.HostPort.Host != "example.com" {
-			t.Errorf("Expected host 'example.com', got %q", request.HttpRequestLine.HostPort.Host)
+		if request.HttpRequestLine.Endpoint.Host != "example.com" {
+			t.Errorf("Expected host 'example.com', got %q", request.HttpRequestLine.Endpoint.Host)
 		}
-		if request.HttpRequestLine.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", request.HttpRequestLine.HostPort.Port)
+		if request.HttpRequestLine.Endpoint.Port != 443 {
+			t.Errorf("Expected port 443, got %d", request.HttpRequestLine.Endpoint.Port)
 		}
 		if request.HttpRequestLine.Version.Major != 1 || request.HttpRequestLine.Version.Minor != 1 {
 			t.Errorf("Expected HTTP/1.1, got HTTP/%d.%d", request.HttpRequestLine.Version.Major, request.HttpRequestLine.Version.Minor)
@@ -58,8 +58,8 @@ func TestReadProxyRequest(t *testing.T) {
 			t.Fatalf("Expected no error, got %v", err)
 		}
 
-		if request.HttpRequestLine.HostPort.Host != "example.com" || request.HttpRequestLine.HostPort.Port != 80 {
-			t.Errorf("Expected example.com:80, got %s:%d", request.HttpRequestLine.HostPort.Host, request.HttpRequestLine.HostPort.Port)
+		if request.HttpRequestLine.Endpoint.Host != "example.com" || request.HttpRequestLine.Endpoint.Port != 80 {
+			t.Errorf("Expected example.com:80, got %s:%d", request.HttpRequestLine.Endpoint.Host, request.HttpRequestLine.Endpoint.Port)
 		}
 
 		if len(request.Headers) != 0 {
@@ -76,8 +76,8 @@ func TestReadProxyRequest(t *testing.T) {
 			t.Fatal("Expected error for invalid CONNECT line, but got none")
 		}
 
-		if result.HttpRequestLine.HostPort.Host != "example.com" || result.HttpRequestLine.HostPort.Port != 443 {
-			t.Errorf("Expected example.com:443, got %s:%d", result.HttpRequestLine.HostPort.Host, result.HttpRequestLine.HostPort.Port)
+		if result.HttpRequestLine.Endpoint.Host != "example.com" || result.HttpRequestLine.Endpoint.Port != 443 {
+			t.Errorf("Expected example.com:443, got %s:%d", result.HttpRequestLine.Endpoint.Host, result.HttpRequestLine.Endpoint.Port)
 		}
 		if result.HttpRequestLine.HttpMethod != "GET" {
 			t.Errorf("Expected GET method, got %s", result.HttpRequestLine.HttpMethod)
@@ -156,12 +156,38 @@ func TestReadProxyRequest(t *testing.T) {
 			t.Errorf("Expected header, got %+v", request.Headers[0])
 		}
 
-		if request.HttpRequestLine.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", request.HttpRequestLine.HostPort.Port)
+		if request.HttpRequestLine.Endpoint.Port != 443 {
+			t.Errorf("Expected port 443, got %d", request.HttpRequestLine.Endpoint.Port)
 		}
 
-		if request.HttpRequestLine.HostPort.Host != "example.com" {
-			t.Errorf("Expected host example.com, got %s", request.HttpRequestLine.HostPort.Host)
+		if request.HttpRequestLine.Endpoint.Host != "example.com" {
+			t.Errorf("Expected host example.com, got %s", request.HttpRequestLine.Endpoint.Host)
+		}
+	})
+
+	t.Run("Success: Clean HTTP GET request having a path and query parameters", func(t *testing.T) {
+		input := "GET http://www.example.com/dir1/dir2/page.html?popo=123 HTTP/1.1\n" +
+			"Host: www.example.com\n" +
+			"User-Agent: Mozilla/5.0\n" +
+			"Accept: text/html\n" +
+			"Proxy-Authorization: Basic dXNlcjpwYXNz\n" +
+			"Connection: keep-alive\n" +
+			"\n"
+		reader := strings.NewReader(input)
+		result, err := ReadProxyRequest(reader)
+
+		if err != nil {
+			t.Fatalf("Expected no error, but got: %v", err)
+		}
+
+		if result.HttpRequestLine.Endpoint.Host != "www.example.com" || result.HttpRequestLine.Endpoint.Port != 80 {
+			t.Errorf("Expected www.example.com:80, got %s:%d", result.HttpRequestLine.Endpoint.Host, result.HttpRequestLine.Endpoint.Port)
+		}
+		if result.HttpRequestLine.HttpMethod != "GET" {
+			t.Errorf("Expected GET method, got %s", result.HttpRequestLine.HttpMethod)
+		}
+		if result.HttpRequestLine.Endpoint.PathAndQuery != "/dir1/dir2/page.html?popo=123" {
+			t.Errorf("Expected path /dir1/dir2/page.html?popo=123, got %s", result.HttpRequestLine.Endpoint.PathAndQuery)
 		}
 	})
 }

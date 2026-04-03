@@ -53,7 +53,7 @@ func ParseHttpMethod(input string) (HttpMethod, error) {
 
 type HttpRequestLine struct {
 	HttpMethod HttpMethod
-	HostPort   HostPort
+	Endpoint   ResourceEndpoint
 	Version    Version
 }
 
@@ -85,7 +85,7 @@ func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int64, error
 
 	n, err := fmt.Fprintf(w, "%s %s:%d HTTP/%d.%d\r\n",
 		r.HttpRequestLine.HttpMethod,
-		r.HttpRequestLine.HostPort.Host, r.HttpRequestLine.HostPort.Port,
+		r.HttpRequestLine.Endpoint.Host, r.HttpRequestLine.Endpoint.Port,
 		r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
 	total += int64(n)
 	if err != nil {

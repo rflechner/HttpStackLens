@@ -53,7 +53,7 @@ func NewLineParser() p.Parser[string] {
 		p.StringMatch("\n"))
 }
 
-func HostPortParser() p.Parser[models.HostPort] {
+func ResourceEndpointParser() p.Parser[models.ResourceEndpoint] {
 	onlyHostPortParser := p.Map(
 		p.Left(
 			p.Combine(
@@ -65,12 +65,12 @@ func HostPortParser() p.Parser[models.HostPort] {
 		func(hostPort struct {
 			Left  string
 			Right helpers.Option[int]
-		}) models.HostPort {
-			return models.HostPort{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
+		}) models.ResourceEndpoint {
+			return models.ResourceEndpoint{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
 		},
 	)
 
-	urlParser := p.Map(UrlParser(), func(url url.URL) models.HostPort {
+	urlParser := p.Map(UrlParser(), func(url url.URL) models.ResourceEndpoint {
 
 		var defaultPort int
 		if strings.ToLower(url.Scheme) == "https" {
@@ -83,12 +83,23 @@ func HostPortParser() p.Parser[models.HostPort] {
 			portText := url.Port()
 			port, err := strconv.Atoi(portText)
 			if err != nil {
-				return models.HostPort{Host: url.Hostname(), Port: defaultPort}
+				return models.ResourceEndpoint{Host: url.Hostname(), Port: defaultPort}
 			}
-			return models.HostPort{Host: url.Hostname(), Port: port}
+			return models.ResourceEndpoint{Host: url.Hostname(), Port: port}
 		}
 
-		return models.HostPort{Host: url.Hostname(), Port: defaultPort}
+		var pathAndQuery string
+		if url.RawQuery != "" {
+			pathAndQuery = url.Path + "?" + url.RawQuery
+		} else {
+			pathAndQuery = url.Path
+		}
+
+		return models.ResourceEndpoint{
+			Host:         url.Hostname(),
+			Port:         defaultPort,
+			PathAndQuery: pathAndQuery,
+		}
 	})
 
 	return p.OrElse(urlParser, onlyHostPortParser)
@@ -134,7 +145,7 @@ func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
 			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
-		hostPortResult, err := HostPortParser()(verbResult.Context)
+		hostPortResult, err := ResourceEndpointParser()(verbResult.Context)
 		if err != nil {
 			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
@@ -147,11 +158,8 @@ func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
 		return p.ParseResult[models.HttpRequestLine]{
 			Result: models.HttpRequestLine{
 				HttpMethod: httpMethod,
-				HostPort: models.HostPort{
-					Host: hostPortResult.Result.Host,
-					Port: hostPortResult.Result.Port,
-				},
-				Version: versionResult.Result,
+				Endpoint:   hostPortResult.Result,
+				Version:    versionResult.Result,
 			},
 			Context: versionResult.Context,
 		}, nil

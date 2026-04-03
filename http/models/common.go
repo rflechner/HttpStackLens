@@ -1,8 +1,9 @@
 package models
 
-type HostPort struct {
-	Host string
-	Port int
+type ResourceEndpoint struct {
+	Host         string
+	Port         int
+	PathAndQuery string
 }
 
 type Header struct {

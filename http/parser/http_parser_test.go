@@ -16,11 +16,11 @@ func TestConnectParser(t *testing.T) {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
 
-		if result.Result.HostPort.Host != "example.com" {
-			t.Errorf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
+		if result.Result.Endpoint.Host != "example.com" {
+			t.Errorf("Expected host 'example.com', got %q", result.Result.Endpoint.Host)
 		}
-		if result.Result.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", result.Result.HostPort.Port)
+		if result.Result.Endpoint.Port != 443 {
+			t.Errorf("Expected port 443, got %d", result.Result.Endpoint.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
@@ -37,11 +37,11 @@ func TestConnectParser(t *testing.T) {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
 
-		if result.Result.HostPort.Host != "www.youtube.com" {
-			t.Errorf("Expected host 'www.youtube.com', got %q", result.Result.HostPort.Host)
+		if result.Result.Endpoint.Host != "www.youtube.com" {
+			t.Errorf("Expected host 'www.youtube.com', got %q", result.Result.Endpoint.Host)
 		}
-		if result.Result.HostPort.Port != 443 {
-			t.Errorf("Expected port 443, got %d", result.Result.HostPort.Port)
+		if result.Result.Endpoint.Port != 443 {
+			t.Errorf("Expected port 443, got %d", result.Result.Endpoint.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
@@ -62,12 +62,12 @@ func TestConnectParser(t *testing.T) {
 			t.Fatalf("Expected method 'CONNECT', got %q", result.Result.HttpMethod)
 		}
 
-		if result.Result.HostPort.Host != "example.com" {
-			t.Fatalf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
+		if result.Result.Endpoint.Host != "example.com" {
+			t.Fatalf("Expected host 'example.com', got %q", result.Result.Endpoint.Host)
 		}
 
-		if result.Result.HostPort.Port != 443 {
-			t.Fatalf("Expected port 443, got %d", result.Result.HostPort.Port)
+		if result.Result.Endpoint.Port != 443 {
+			t.Fatalf("Expected port 443, got %d", result.Result.Endpoint.Port)
 		}
 	})
 
@@ -84,11 +84,11 @@ func TestConnectParser(t *testing.T) {
 		if result.Result.HttpMethod != "GET" {
 			t.Fatalf("Expected method 'GET', got %q", result.Result.HttpMethod)
 		}
-		if result.Result.HostPort.Host != "example.com" {
-			t.Fatalf("Expected host 'example.com', got %q", result.Result.HostPort.Host)
+		if result.Result.Endpoint.Host != "example.com" {
+			t.Fatalf("Expected host 'example.com', got %q", result.Result.Endpoint.Host)
 		}
-		if result.Result.HostPort.Port != 443 {
-			t.Fatalf("Expected port 443, got %d", result.Result.HostPort.Port)
+		if result.Result.Endpoint.Port != 443 {
+			t.Fatalf("Expected port 443, got %d", result.Result.Endpoint.Port)
 		}
 		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
 			t.Fatalf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
