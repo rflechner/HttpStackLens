@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -10,12 +12,42 @@ import (
 )
 
 type Hub struct {
-	clients map[chan string]struct{}
-	mu      sync.Mutex
+	clients  map[chan string]struct{}
+	mu       sync.Mutex
+	shutdown chan bool
+	closed   bool
 }
 
 func newHub() *Hub {
-	return &Hub{clients: make(map[chan string]struct{})}
+	h := &Hub{
+		clients:  make(map[chan string]struct{}),
+		shutdown: make(chan bool),
+	}
+	go h.run()
+	return h
+}
+
+func (h *Hub) run() {
+	for {
+		select {
+		case <-h.shutdown:
+			h.mu.Lock()
+			h.closed = true
+			for client := range h.clients {
+				fmt.Println("closing client")
+				close(client)
+				fmt.Println("closed client")
+			}
+			h.mu.Unlock()
+			return
+		}
+	}
+}
+
+func (h *Hub) Close() {
+	fmt.Println("closing hub")
+	close(h.shutdown)
+	fmt.Println("closed hub")
 }
 
 func (h *Hub) subscribe() chan string {
@@ -32,9 +64,13 @@ func (h *Hub) unsubscribe(ch chan string) {
 	h.mu.Unlock()
 }
 
-func (h *Hub) publish(eventType, data string) {
+func (h *Hub) Publish(eventType, data string) {
 	msg := fmt.Sprintf("event: %s\ndata: %s", eventType, data)
 	h.mu.Lock()
+	if h.closed {
+		fmt.Println("hub is closed")
+		return
+	}
 	for ch := range h.clients {
 		select {
 		case ch <- msg:
@@ -46,7 +82,7 @@ func (h *Hub) publish(eventType, data string) {
 
 func sseHandler(hub *Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Headers obligatoires pour SSE
+		// Mandatory headers for SSE
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -63,6 +99,9 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 
 		for {
 			select {
+			case <-hub.shutdown:
+				fmt.Println("[SSE] hub is closing => closing SSE")
+				return
 			case msg := <-ch:
 				_, _ = fmt.Fprintf(w, "%s\n\n", msg)
 				flusher.Flush()
@@ -74,7 +113,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int) {
+func ServeWebUi(port int, stop <-chan bool) *Hub {
 	rootFS := getFS()
 
 	jsFS, err := fs.Sub(rootFS, "wwwroot/js")
@@ -100,7 +139,7 @@ func ServeWebUi(port int) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
+		_, _ = w.Write(data)
 	})
 
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.FS(jsFS))))
@@ -110,15 +149,44 @@ func ServeWebUi(port int) {
 	hub := newHub()
 	mux.HandleFunc("/events", sseHandler(hub))
 
-	ticker := time.NewTicker(1 * time.Second)
+	//ticker := time.NewTicker(1 * time.Second)
+	//
+	//go func() {
+	//	for range ticker.C {
+	//		hub.publish("request_occurred", "coucou")
+	//	}
+	//}()
 
+	addr := fmt.Sprintf("localhost:%d", port)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	// Start web server
 	go func() {
-		for range ticker.C {
-			hub.publish("request_occurred", "coucou")
+		fmt.Printf("Web UI started at http://%s\n", addr)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Web UI server error: %v", err)
 		}
 	}()
 
-	addr := fmt.Sprintf("localhost:%d", port)
-	fmt.Printf("Web UI start at http://%s\n", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	go func() {
+		<-stop // wait for stop signal
+
+		log.Println("Shutting down Web UI server...")
+
+		hub.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("Web UI server shutdown error: %v", err)
+		} else {
+			log.Println("Web UI server stopped gracefully")
+		}
+	}()
+
+	return hub
 }

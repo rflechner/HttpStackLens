@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"httpStackLens/http"
 	"httpStackLens/proxy/middlewares"
@@ -8,39 +9,44 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 )
 
 func main() {
-	app_context, err := CreateOsSpecificProxyPipeline()
+	appContext, err := CreateOsSpecificProxyPipeline()
 	if err != nil {
 		log.Printf("Failed to configure proxy pipeline: %v\n", err)
 		return
 	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", app_context.port))
-	if err != nil {
-		fmt.Println("Error starting server:", err)
-		os.Exit(1)
-	}
-	defer func(listener net.Listener) {
-		err = listener.Close()
-		if err != nil {
-			log.Printf("Warning when closing browser connection: %v\n", err.Error())
+	proxyServer := CreateProxyServer(appContext)
+
+	stopChan := make(chan bool)
+
+	hub := webui.ServeWebUi(9000, stopChan)
+	ticker := time.NewTicker(1 * time.Second)
+
+	go func() {
+		for range ticker.C {
+			hub.Publish("request_occurred", "coucou")
 		}
-	}(listener)
+	}()
 
-	log.Printf("Socket server started on port %v\n", app_context.port)
+	go proxyServer.Run(stopChan)
 
-	go webui.ServeWebUi(9000)
+	keyboard := bufio.NewReader(os.Stdin)
 
-	for {
-		browser, err := listener.Accept()
-		if err != nil {
-			log.Println("Error accepting connection:", err)
-			continue
+	go func() {
+		fmt.Println("Press 'q' to quit")
+		r, _, _ := keyboard.ReadRune()
+		if r == 'q' {
+			close(stopChan)
 		}
-		fmt.Printf("New connection from %s\n", browser.RemoteAddr().String())
-		go handleRequest(browser)(app_context.pipeline)
+	}()
+
+	select {
+	case <-stopChan:
+		proxyServer.Close()
 	}
 }
 
