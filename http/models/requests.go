@@ -62,7 +62,20 @@ func (r *HttpRequestLine) IsConnect() bool {
 }
 
 func (r *HttpRequestLine) String() string {
-	return fmt.Sprintf("%s %s HTTP/%d.%d", r.HttpMethod, r.Endpoint, r.Version.Major, r.Version.Minor)
+	if r.IsConnect() {
+		return fmt.Sprintf("🔐 %s %s:%d HTTP/%d.%d",
+			r.HttpMethod,
+			r.Endpoint.Host,
+			r.Endpoint.Port,
+			r.Version.Major,
+			r.Version.Minor)
+	}
+	return fmt.Sprintf("👀 %s %s%s HTTP/%d.%d",
+		r.HttpMethod,
+		r.Endpoint.Host,
+		r.Endpoint.PathAndQuery,
+		r.Version.Major,
+		r.Version.Minor)
 }
 
 type ProxyRequest struct {

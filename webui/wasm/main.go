@@ -9,6 +9,11 @@ import (
 
 type StateModel struct {
 	RequestCount int
+	Lines        []string
+}
+
+func consoleLog(message string) {
+	js.Global().Get("console").Call("log", message)
 }
 
 func (m *StateModel) connectSSE() {
@@ -31,6 +36,14 @@ func (m *StateModel) connectSSE() {
 	}))
 
 	es.Call("addEventListener", "request_occurred", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		data := event.Get("data").String()
+		if data == "" {
+			consoleLog("Empty event received")
+			return nil
+		}
+		consoleLog("Received event data: " + data)
+		m.Lines = append(m.Lines, data)
 		m.RequestCount++
 		m.render()
 		return nil
@@ -40,9 +53,16 @@ func (m *StateModel) connectSSE() {
 func (m *StateModel) render() {
 	doc := js.Global().Get("document")
 
-	doc.Call("getElementById", "summary").Set("innerHTML",
-		fmt.Sprintf("request count: <strong>%d</strong>", m.RequestCount),
-	)
+	html := fmt.Sprintf("request count: <strong>%d</strong>", m.RequestCount)
+	html += "<table>"
+
+	for _, line := range m.Lines {
+		html += "<tr><td>" + line + "</td></tr>"
+	}
+
+	html += "</table>"
+
+	doc.Call("getElementById", "summary").Set("innerHTML", html)
 }
 
 func main() {
