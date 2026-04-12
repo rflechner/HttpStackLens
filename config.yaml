@@ -1,6 +1,6 @@
 proxy:
-  enable_remote_connection: true
+  enable_remote_connection: false
   port: 3128
 webui:
   port: 9000
-  enable_remote_connection: true
+  enable_remote_connection: false

@@ -74,7 +74,7 @@ func main() {
 	hub := webui.ServeWebUi(webUiPort, stopChan, config)
 
 	logger := CreateWebUiEventLogger(hub)
-	proxyServer := CreateProxyServer(appContext, logger)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy)
 
 	go proxyServer.Run()
 

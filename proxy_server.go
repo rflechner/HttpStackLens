@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"httpStackLens/configuration"
 	"httpStackLens/http"
 	"httpStackLens/http/models"
 	"httpStackLens/proxy/middlewares"
@@ -24,10 +25,18 @@ type ProxyEventLogger interface {
 	LogRequest(id int, request models.ProxyRequest)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger) ProxyServer {
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig) ProxyServer {
 	log.Printf("Socket server started on port %v\n", appContext.port)
+	var addr string
+	if config.EnableRemoteConnection {
+		addr = fmt.Sprintf("0.0.0.0:%d", appContext.port)
+		fmt.Printf("❗🔓 Proxy accepting remote connections on port %d\n", appContext.port)
+	} else {
+		addr = fmt.Sprintf("127.0.0.1:%d", appContext.port)
+		fmt.Printf("✅🔒 Proxy restricted to localhost on port %d\n", appContext.port)
+	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", appContext.port))
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		os.Exit(1)
