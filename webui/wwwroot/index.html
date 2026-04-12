@@ -1,44 +1,72 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HTTP Stack Lens</title>
+    <link rel="stylesheet" href="css/output.css">
+</head>
+<body class="h-full flex flex-col">
 
-    <style>
+    <!-- Header -->
+    <header class="flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-700 shrink-0">
+        <div class="flex items-center gap-3">
+            <img src="images/logo-with-text-small.png" alt="HTTP Stack Lens" class="h-8 w-auto">
+            <span class="text-sm font-semibold text-slate-100 tracking-wide">HTTP Stack Lens</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <span id="sse-status"  class="flex items-center gap-1.5 text-xs text-amber-400">
+                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                Connecting SSE…
+            </span>
+            <span id="wasm-status" class="flex items-center gap-1.5 text-xs text-amber-400">
+                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                Loading WASM…
+            </span>
+        </div>
+    </header>
 
-        body {
-            font-family: "Times New Roman", Times, sans-serif;
-            height: 100vh;
-            margin: 0;
-            background-color: #f2f6f8;
+    <!-- Toolbar -->
+    <div class="flex items-center gap-4 px-5 py-2 bg-slate-900/60 border-b border-slate-800 text-xs text-slate-400 shrink-0">
+        <span id="request-count">0 requests</span>
+        <button onclick="clearRequests()" class="ml-auto px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
+            Clear
+        </button>
+    </div>
+
+    <!-- Request table -->
+    <main class="flex-1 overflow-auto px-5 py-4">
+        <div id="summary">
+            <table class="w-full border-collapse text-sm">
+                <thead>
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700 w-12">#</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700 w-32">Method</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700">Host</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700">Path</th>
+                    </tr>
+                </thead>
+                <tbody id="request-rows"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="js/wasm_exec.js"></script>
+    <script>
+        function clearRequests() {
+            document.getElementById("request-rows").innerHTML = "";
+            document.getElementById("request-count").textContent = "0 requests";
+            if (window.wasmClear) window.wasmClear();
         }
 
-    </style>
-</head>
-<body>
-
-
-<img src="images/logo-with-text.png" alt="HTTP Stack Lens" width="200" height="150">
-
-<div class="flex items-center justify-between">
-    <h1 class="text-2xl font-bold text-slate-800">HTTP Stack Lens</h1>
-    <div class="flex items-center gap-3">
-        <span id="sse-status"  class="text-xs text-amber-500">⏳ Connecting SSE...</span>
-        <span id="wasm-status" class="text-xs text-amber-500">⏳ Loading WASM...</span>
-    </div>
-</div>
-
-<div id="summary"></div>
-
-<script src="js/wasm_exec.js"></script>
-<script>
-    const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("wasm/app.wasm"), go.importObject)
-        .then(result => {
-            go.run(result.instance);
-            document.getElementById("wasm-status").textContent = "✅ Go WASM activated";
-            document.getElementById("wasm-status").className = "text-xs text-emerald-500";
-        });
-</script>
+        const go = new Go();
+        WebAssembly.instantiateStreaming(fetch("wasm/app.wasm"), go.importObject)
+            .then(result => {
+                go.run(result.instance);
+                const el = document.getElementById("wasm-status");
+                el.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span> WASM ready';
+                el.className = "flex items-center gap-1.5 text-xs text-emerald-400";
+            });
+    </script>
 </body>
 </html>

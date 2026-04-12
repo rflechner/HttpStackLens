@@ -116,14 +116,21 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 func ServeWebUi(port int, stop <-chan bool) *Hub {
 	rootFS := getFS()
 
+	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	jsFS, err := fs.Sub(rootFS, "wwwroot/js")
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	imagesFS, err := fs.Sub(rootFS, "wwwroot/images")
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	wasmFS, err := fs.Sub(rootFS, "wwwroot/wasm")
 	if err != nil {
 		log.Fatal(err)
@@ -142,6 +149,7 @@ func ServeWebUi(port int, stop <-chan bool) *Hub {
 		_, _ = w.Write(data)
 	})
 
+	mux.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.FS(cssFS))))
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.FS(jsFS))))
 	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.FS(imagesFS))))
 

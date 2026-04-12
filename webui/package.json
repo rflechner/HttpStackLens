@@ -1,0 +1,13 @@
+{
+  "name": "httpstacklens-webui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --minify",
+    "dev:css": "tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

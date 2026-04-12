@@ -56,45 +56,75 @@ func (m *StateModel) connectSSE() {
 
 		m.Lines = append(m.Lines, req)
 		m.RequestCount++
-		m.render()
+		m.appendRow(req)
 		return nil
 	}))
 }
 
-func (m *StateModel) render() {
-	doc := js.Global().Get("document")
-
-	html := fmt.Sprintf("request count: <strong>%d</strong>", m.RequestCount)
-	html += "<table>"
-
-	for _, line := range m.Lines {
-		html += "<tr>"
-		html += "<td>" + fmt.Sprintf("%d", line.ID) + "</td>"
-
-		if line.Method == "CONNECT" {
-			html += "<td>🔐" + line.Method + "</td>"
-		} else {
-			html += "<td>👀" + line.Method + "</td>"
-		}
-
-		html += "<td>" + line.Host + "</td>"
-		html += "<td>" + line.Path + "</td>"
-		html += "</tr>"
+func methodClass(method string) string {
+	switch method {
+	case "CONNECT":
+		return "method-connect"
+	case "GET":
+		return "method-get"
+	case "POST":
+		return "method-post"
+	default:
+		return ""
 	}
+}
 
-	html += "</table>"
+func methodIcon(method string) string {
+	switch method {
+	case "CONNECT":
+		return "🔐"
+	case "GET":
+		return "🔵"
+	case "POST":
+		return "🟢"
+	default:
+		return "👀"
+	}
+}
 
-	doc.Call("getElementById", "summary").Set("innerHTML", html)
+func (m *StateModel) appendRow(line shared.RequestEventDto) {
+	doc := js.Global().Get("document")
+	tbody := doc.Call("getElementById", "request-rows")
+
+	tr := doc.Call("createElement", "tr")
+	tr.Set("className", "border-b border-slate-800 hover:bg-slate-800/50 transition-colors "+methodClass(line.Method))
+
+	tdID := doc.Call("createElement", "td")
+	tdID.Set("className", "px-3 py-2 text-slate-500 tabular-nums")
+	tdID.Set("textContent", fmt.Sprintf("%d", line.ID))
+
+	tdMethod := doc.Call("createElement", "td")
+	tdMethod.Set("className", "px-3 py-2 font-mono font-semibold")
+	tdMethod.Set("textContent", methodIcon(line.Method)+" "+line.Method)
+
+	tdHost := doc.Call("createElement", "td")
+	tdHost.Set("className", "px-3 py-2 text-slate-300")
+	tdHost.Set("textContent", line.Host)
+
+	tdPath := doc.Call("createElement", "td")
+	tdPath.Set("className", "px-3 py-2 text-slate-400 truncate max-w-xs")
+	tdPath.Set("textContent", line.Path)
+
+	tr.Call("appendChild", tdID)
+	tr.Call("appendChild", tdMethod)
+	tr.Call("appendChild", tdHost)
+	tr.Call("appendChild", tdPath)
+	tbody.Call("appendChild", tr)
+
+	doc.Call("getElementById", "request-count").Set("textContent",
+		fmt.Sprintf("%d requests", m.RequestCount))
 }
 
 func main() {
 
-	js.Global().Call("alert", "Hello, World!")
-
 	model := &StateModel{
 		RequestCount: 0,
 	}
-	model.render()
 	model.connectSSE()
 
 	// block forever
