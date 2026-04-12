@@ -24,25 +24,51 @@ func main() {
 	}
 	flag.Parse()
 
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "build error:", err)
+		os.Exit(1)
+	}
+
 	targets := flag.Args()
 	if len(targets) == 0 {
 		targets = allTargets
 	}
 
 	for _, target := range targets {
-		if err := runTarget(target); err != nil {
+		if err := runTarget(target, projectRoot); err != nil {
 			fmt.Fprintf(os.Stderr, "build error [%s]: %v\n", target, err)
 			os.Exit(1)
 		}
 	}
 }
 
-func runTarget(target string) error {
+// findProjectRoot walks up from cwd until it finds go.mod.
+func findProjectRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", fmt.Errorf("cannot find go.mod from %s", cwd)
+}
+
+func runTarget(target, projectRoot string) error {
 	switch target {
 	case "webui":
-		return buildWebUI()
+		return buildWebUI(projectRoot)
 	case "app":
-		return buildApp()
+		return buildApp(projectRoot)
 	default:
 		return fmt.Errorf("unknown target %q (available: %s)", target, strings.Join(allTargets, ", "))
 	}
@@ -50,22 +76,23 @@ func runTarget(target string) error {
 
 // --- webui ---
 
-func buildWebUI() error {
+func buildWebUI(projectRoot string) error {
+	webuiDir := filepath.Join(projectRoot, "webui")
 	fmt.Println("→ Building WebUI...")
-	if err := copyWasmExec(); err != nil {
+	if err := copyWasmExec(webuiDir); err != nil {
 		return fmt.Errorf("copy wasm_exec.js: %w", err)
 	}
-	if err := buildWasm(); err != nil {
+	if err := buildWasm(webuiDir); err != nil {
 		return fmt.Errorf("build wasm: %w", err)
 	}
-	if err := buildCSS(); err != nil {
+	if err := buildCSS(webuiDir); err != nil {
 		return fmt.Errorf("build css: %w", err)
 	}
 	fmt.Println("✓ WebUI built")
 	return nil
 }
 
-func copyWasmExec() error {
+func copyWasmExec(webuiDir string) error {
 	out, err := exec.Command("go", "env", "GOROOT").Output()
 	if err != nil {
 		return fmt.Errorf("go env GOROOT: %w", err)
@@ -73,7 +100,7 @@ func copyWasmExec() error {
 	goroot := strings.TrimSpace(string(out))
 
 	src := filepath.Join(goroot, "lib", "wasm", "wasm_exec.js")
-	destDir := filepath.Join("wwwroot", "js")
+	destDir := filepath.Join(webuiDir, "wwwroot", "js")
 	dest := filepath.Join(destDir, "wasm_exec.js")
 
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -86,12 +113,13 @@ func copyWasmExec() error {
 	return nil
 }
 
-func buildWasm() error {
-	if err := os.MkdirAll(filepath.Join("wwwroot", "wasm"), 0o755); err != nil {
+func buildWasm(webuiDir string) error {
+	outDir := filepath.Join(webuiDir, "wwwroot", "wasm")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	cmd := exec.Command("go", "build", "-o", "../wwwroot/wasm/app.wasm", ".")
-	cmd.Dir = "wasm"
+	cmd := exec.Command("go", "build", "-o", filepath.Join(outDir, "app.wasm"), ".")
+	cmd.Dir = filepath.Join(webuiDir, "wasm")
 	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -102,14 +130,17 @@ func buildWasm() error {
 	return nil
 }
 
-func buildCSS() error {
-	args := []string{"-i", "./src/input.css", "-o", "./wwwroot/css/output.css", "--minify"}
+func buildCSS(webuiDir string) error {
+	input := filepath.Join(webuiDir, "src", "input.css")
+	output := filepath.Join(webuiDir, "wwwroot", "css", "output.css")
+
+	bin := filepath.Join(webuiDir, "node_modules", ".bin", "tailwindcss")
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", append([]string{"/c", `node_modules\.bin\tailwindcss.cmd`}, args...)...)
+		cmd = exec.Command("cmd", "/c", bin+".cmd", "-i", input, "-o", output, "--minify")
 	} else {
-		cmd = exec.Command("node_modules/.bin/tailwindcss", args...)
+		cmd = exec.Command(bin, "-i", input, "-o", output, "--minify")
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -122,16 +153,16 @@ func buildCSS() error {
 
 // --- app ---
 
-func buildApp() error {
+func buildApp(projectRoot string) error {
 	fmt.Printf("→ Building app for %s/%s...\n", runtime.GOOS, runtime.GOARCH)
 
-	output := "httpStackLens"
+	output := filepath.Join(projectRoot, "httpStackLens")
 	if runtime.GOOS == "windows" {
 		output += ".exe"
 	}
 
 	cmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", output, ".")
-	cmd.Dir = ".."
+	cmd.Dir = projectRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
