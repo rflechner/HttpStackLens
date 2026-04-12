@@ -4,6 +4,11 @@ proxy:
   output_proxy_uri: "" #http://localhost:3129
   add_windows_authentication_to_output_proxy: false # only for windows
   require_windows_authentication: false # only for windows
+
 webui:
   port: 9000
   enable_remote_connection: false
+
+cert_manager:
+  ca_cert_file: "debug-https-ca.crt"
+  ca_key_file: "debug-https-ca.key"

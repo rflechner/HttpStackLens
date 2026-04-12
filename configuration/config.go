@@ -9,8 +9,14 @@ import (
 )
 
 type AppConfig struct {
-	Proxy ProxyConfig `json:"proxy"`
-	WebUi WebUiConfig `json:"webui"`
+	Proxy       ProxyConfig       `json:"proxy"`
+	WebUi       WebUiConfig       `json:"webui"`
+	CertManager CertManagerConfig `json:"cert_manager"`
+}
+
+type CertManagerConfig struct {
+	CaCertFile string `yaml:"ca_cert_file"`
+	CaKeyFile  string `yaml:"ca_key_file"`
 }
 
 type ProxyConfig struct {
@@ -28,8 +34,9 @@ type WebUiConfig struct {
 
 func DefaultAppConfig() AppConfig {
 	return AppConfig{
-		Proxy: ProxyConfig{Port: 3128, EnableRemoteConnection: false},
-		WebUi: WebUiConfig{Port: 9000, EnableRemoteConnection: false},
+		Proxy:       ProxyConfig{Port: 3128, EnableRemoteConnection: false},
+		WebUi:       WebUiConfig{Port: 9000, EnableRemoteConnection: false},
+		CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key"},
 	}
 }
 

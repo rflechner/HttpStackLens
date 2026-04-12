@@ -43,3 +43,7 @@ go.work.sum
 /webui/node_modules/
 /webui/wwwroot/css/output.css
 /wwwroot/js/wasm_exec.js
+
+*.key
+
+*.crt

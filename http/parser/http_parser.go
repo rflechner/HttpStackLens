@@ -73,7 +73,7 @@ func ResourceEndpointParser() p.Parser[models.ResourceEndpoint] {
 	urlParser := p.Map(UrlParser(), func(url url.URL) models.ResourceEndpoint {
 
 		var defaultPort int
-		if strings.ToLower(url.Scheme) == "https" {
+		if strings.ToLower(url.Scheme) == "certManager" {
 			defaultPort = 443
 		} else {
 			defaultPort = 80
