@@ -27,25 +27,27 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 
 ## Build
 
-All build commands live in `webui/` and are driven by a Go build tool (`build-tools/`) invoked via npm scripts.
+A Go build tool in `build-tools/` handles the entire build pipeline (npm install, WASM compilation, CSS generation, native binary). **This is the recommended way to build the project.**
 
-### Install dependencies (once)
+If you prefer to run each step manually, see [Manual steps](#manual-steps) below.
 
-```sh
-cd webui
-npm install
-```
+### Using the build tool
 
-### Build everything
-
-Builds the Web UI (WASM + CSS) and the native application binary:
+From the project root — **this is all you need:**
 
 ```sh
-cd webui
-npm run build
+go run .\build-tools\main.go
 ```
 
-### Build targets individually
+Additional targets:
+
+```sh
+go run .\build-tools\main.go webui        # Web UI only (WASM + CSS)
+go run .\build-tools\main.go app          # Native binary only
+go run .\build-tools\main.go --help       # Usage
+```
+
+Or via npm scripts from `webui/`:
 
 | Command | What it does |
 |---|---|
@@ -56,17 +58,66 @@ npm run build
 
 The build tool auto-detects the current platform and produces `httpStackLens.exe` on Windows or `httpStackLens` on macOS/Linux.
 
-> You can also invoke the build tool directly from the project root:
-> ```sh
-> go run ./build-tools              # everything
-> go run ./build-tools webui        # Web UI only
-> go run ./build-tools app          # binary only
-> go run ./build-tools --help       # usage
-> ```
+---
+
+### Manual steps
+
+<details>
+<summary>Click to expand</summary>
+
+#### 1. Install npm dependencies
+
+```sh
+cd webui
+npm install
+```
+
+#### 2. Copy wasm_exec.js
+
+```sh
+# macOS / Linux
+cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" webui/wwwroot/js/wasm_exec.js
+
+# Windows (PowerShell)
+Copy-Item "$(go env GOROOT)\lib\wasm\wasm_exec.js" -Destination webui\wwwroot\js\wasm_exec.js
+```
+
+#### 3. Compile Go to WASM
+
+```sh
+# macOS / Linux
+GOOS=js GOARCH=wasm go build -o webui/wwwroot/wasm/app.wasm ./webui/wasm
+
+# Windows (PowerShell)
+$env:GOOS = "js"; $env:GOARCH = "wasm"
+go build -o webui\wwwroot\wasm\app.wasm .\webui\wasm
+$env:GOOS = ""; $env:GOARCH = ""
+```
+
+#### 4. Build Tailwind CSS
+
+```sh
+cd webui
+npx tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --minify
+```
+
+#### 5. Build the native binary
+
+```sh
+# macOS / Linux
+go build -ldflags="-s -w" -o httpStackLens .
+
+# Windows
+go build -ldflags="-s -w" -o httpStackLens.exe .
+```
+
+</details>
+
+---
 
 ### Cross-compilation
 
-You can produce a binary for another platform using Go's built-in cross-compilation. The `build-tools` target does not yet support cross-compilation, so use `go build` directly:
+The `build-tools` target builds for the current platform only. For cross-compilation, use `go build` directly:
 
 **macOS → Windows:**
 
@@ -77,8 +128,7 @@ GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o httpStackLens.exe .
 **Windows → macOS:**
 
 ```powershell
-$env:GOOS = "darwin"
-$env:GOARCH = "amd64"
+$env:GOOS = "darwin"; $env:GOARCH = "amd64"
 go build -ldflags="-s -w" -o httpStackLens .
 ```
 
