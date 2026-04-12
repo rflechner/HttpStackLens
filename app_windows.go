@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	configuration "httpStackLens/configuration"
 	"httpStackLens/proxy"
 	"log"
@@ -21,9 +22,15 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 	}
 	outputProxyUri = *flag.String("output-proxy-uri", outputProxyUri, "URI to output proxy information") // -output-proxy-uri=http://localhost:3129/
 
-	requireWindowsAuthentication := flag.Bool("windows-auth-require-ntlm", false, "specifies that browsers need negotiate authentication (Windows supported only)") //-require-negotiate=true
+	requireWindowsAuthentication := *flag.Bool("windows-auth-require-ntlm", config.Proxy.RequireWindowsAuthentication, "specifies that browsers need negotiate authentication (Windows supported only)") //-require-negotiate=true
+	if requireWindowsAuthentication {
+		fmt.Println("👮 Enabling Windows authentication for browsers")
+	}
 
 	addWindowsAuthenticationToOutputProxy := *flag.Bool("output-proxy-add-windows-auth", config.Proxy.AddWindowsAuthenticationToOutputProxy, "specifies that this proxy adds windows authentication to the remote proxy (Windows supported only)") //-output-proxy-add-windows-auth=true
+	if addWindowsAuthenticationToOutputProxy {
+		fmt.Println("🙎 Adding Windows authentication to output proxy")
+	}
 
 	flag.Parse()
 
@@ -37,11 +44,12 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		}
 		outputProxy = u
 		useOutputProxy = true
+		fmt.Printf("🌍 Using output proxy: %s\n", outputProxyUri)
 	} else {
 		outputProxy = &(url.URL{})
 	}
 
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, *requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy)
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy)
 	if err != nil {
 		return AppContext{}, err
 	}
