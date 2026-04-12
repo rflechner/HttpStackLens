@@ -1,6 +1,7 @@
 package configuration
 
 import (
+	"httpStackLens/webui/wasm/shared"
 	"log"
 	"os"
 
@@ -8,8 +9,8 @@ import (
 )
 
 type AppConfig struct {
-	Proxy ProxyConfig
-	WebUi WebUiConfig
+	Proxy ProxyConfig `json:"proxy"`
+	WebUi WebUiConfig `json:"webui"`
 }
 
 type ProxyConfig struct {
@@ -43,4 +44,17 @@ func ReadConfiguration() AppConfig {
 	}
 
 	return conf
+}
+
+func (c *AppConfig) ToDto() shared.AppConfigDto {
+	return shared.AppConfigDto{
+		Proxy: shared.ProxyConfigDto{
+			Port:                   c.Proxy.Port,
+			EnableRemoteConnection: c.Proxy.EnableRemoteConnection,
+		},
+		WebUi: shared.WebUiConfigDto{
+			Port:                   c.WebUi.Port,
+			EnableRemoteConnection: c.WebUi.EnableRemoteConnection,
+		},
+	}
 }

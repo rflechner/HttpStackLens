@@ -2,8 +2,10 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	configuration "httpStackLens/configuration"
 	"io/fs"
 	"log"
 	"net/http"
@@ -113,7 +115,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool) *Hub {
+func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig) *Hub {
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -163,6 +165,16 @@ func ServeWebUi(port int, stop <-chan bool) *Hub {
 
 	hub := newHub()
 	mux.HandleFunc("/events", sseHandler(hub))
+
+	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		jsonData, err := json.Marshal(config.ToDto())
+		if err != nil {
+			log.Printf("Error marshaling request event: %v", err)
+			return
+		}
+		_, _ = w.Write(jsonData)
+	})
 
 	addr := fmt.Sprintf("localhost:%d", port)
 	server := &http.Server{

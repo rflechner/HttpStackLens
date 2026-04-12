@@ -71,7 +71,7 @@ func main() {
 		webUiPort = config.WebUi.Port
 	}
 
-	hub := webui.ServeWebUi(webUiPort, stopChan)
+	hub := webui.ServeWebUi(webUiPort, stopChan, config)
 
 	logger := CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger)

@@ -120,7 +120,52 @@ func (m *StateModel) appendRow(line shared.RequestEventDto) {
 		fmt.Sprintf("%d requests", m.RequestCount))
 }
 
+func fetch(url string, callback js.Func) {
+	js.Global().Call("fetch", url).
+		Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+			return args[0].Call("text")
+		})).
+		Call("then", callback).
+		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+			consoleLog("Error fetching config: " + args[0].String())
+			return nil
+		}))
+}
+
+func DisplayConfig(this js.Value, args []js.Value) any {
+	consoleLog("DisplayConfig called")
+
+	fetch("/config", js.FuncOf(func(this js.Value, args []js.Value) any {
+		fetched := args[0].String()
+
+		consoleLog("Fetched config: " + fetched)
+
+		var config shared.AppConfigDto
+		if err := json.Unmarshal([]byte(fetched), &config); err != nil {
+			consoleLog("Error parsing JSON: " + err.Error())
+			return nil
+		}
+
+		doc := js.Global().Get("document")
+
+		doc.Call("getElementById", "config-proxy-port").Set("textContent",
+			fmt.Sprintf("%d", config.Proxy.Port))
+		doc.Call("getElementById", "config-proxy-remote").Set("textContent",
+			fmt.Sprintf("%t", config.Proxy.EnableRemoteConnection))
+		doc.Call("getElementById", "config-webui-port").Set("textContent",
+			fmt.Sprintf("%d", config.WebUi.Port))
+		doc.Call("getElementById", "config-webui-remote").Set("textContent",
+			fmt.Sprintf("%t", config.WebUi.EnableRemoteConnection))
+
+		return nil
+	}))
+
+	return nil
+}
+
 func main() {
+
+	js.Global().Set("DisplayConfig", js.FuncOf(DisplayConfig))
 
 	model := &StateModel{
 		RequestCount: 0,

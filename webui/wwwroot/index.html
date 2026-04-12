@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="css/output.css">
     <!-- Apply saved theme before paint to avoid flash -->
     <script>
+
         document.documentElement.dataset.theme =
             localStorage.getItem('hsl-theme') || 'slate';
     </script>
@@ -38,46 +39,140 @@
         </div>
     </header>
 
-    <!-- Toolbar -->
-    <div class="bg-surface border-b border-border-subtle flex items-center gap-4 px-5 py-2 shrink-0">
-        <span id="request-count" class="text-dim text-xs">0 requests</span>
-        <button onclick="clearRequests()"
-                class="bg-surface-alt text-muted hover:text-foreground ml-auto rounded px-2 py-1 text-xs transition-colors">
-            Clear
-        </button>
+    <!-- Tab bar -->
+    <nav class="bg-surface border-b border-border flex items-end gap-1 px-5 shrink-0">
+        <button data-tab="traffic"       class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Traffic</button>
+        <button data-tab="configuration" class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Configuration</button>
+    </nav>
+
+    <!-- Tab: Traffic -->
+    <div id="tab-traffic" class="tab-panel flex flex-col flex-1 overflow-hidden">
+
+        <!-- Toolbar -->
+        <div class="bg-surface border-b border-border-subtle flex items-center gap-4 px-5 py-2 shrink-0">
+            <span id="request-count" class="text-dim text-xs">0 requests</span>
+            <button onclick="clearRequests()"
+                    class="bg-surface-alt text-muted hover:text-foreground ml-auto rounded px-2 py-1 text-xs transition-colors">
+                Clear
+            </button>
+        </div>
+
+        <!-- Request table -->
+        <main class="flex-1 overflow-auto px-5 py-4">
+            <div id="summary">
+                <table class="w-full border-collapse text-sm">
+                    <thead>
+                        <tr>
+                            <th class="border-b border-border text-dim w-12 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">#</th>
+                            <th class="border-b border-border text-dim w-32 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Method</th>
+                            <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Host</th>
+                            <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Path</th>
+                        </tr>
+                    </thead>
+                    <tbody id="request-rows"></tbody>
+                </table>
+            </div>
+        </main>
     </div>
 
-    <!-- Request table -->
-    <main class="flex-1 overflow-auto px-5 py-4">
-        <div id="summary">
-            <table class="w-full border-collapse text-sm">
-                <thead>
-                    <tr>
-                        <th class="border-b border-border text-dim w-12 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">#</th>
-                        <th class="border-b border-border text-dim w-32 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Method</th>
-                        <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Host</th>
-                        <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Path</th>
-                    </tr>
-                </thead>
-                <tbody id="request-rows"></tbody>
-            </table>
+    <!-- Tab: Configuration -->
+    <div id="tab-configuration" class="tab-panel flex-col flex-1 overflow-auto hidden">
+        <div class="max-w-xl px-5 py-6 flex flex-col gap-6">
+
+            <!-- Section: Proxy -->
+            <section>
+                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Proxy</h2>
+                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">Port</span>
+                        <span id="config-proxy-port" class="text-foreground text-sm tabular-nums">—</span>
+                    </div>
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">Remote connections</span>
+                        <span id="config-proxy-remote" class="text-sm">—</span>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Section: Web UI -->
+            <section>
+                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Web UI</h2>
+                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">Port</span>
+                        <span id="config-webui-port" class="text-foreground text-sm tabular-nums">—</span>
+                    </div>
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">Remote connections</span>
+                        <span id="config-webui-remote" class="text-sm">—</span>
+                    </div>
+
+                </div>
+            </section>
+
         </div>
-    </main>
+    </div>
 
     <script src="js/wasm_exec.js"></script>
     <script>
+        // ── Tabs ────────────────────────────────────────────────────────────
+        const TAB_KEY = 'hsl-tab';
+
+        function setTab(id) {
+            localStorage.setItem(TAB_KEY, id);
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const active = btn.dataset.tab === id;
+                btn.classList.toggle('text-foreground',  active);
+                btn.classList.toggle('border-b-2',       active);
+                btn.classList.toggle('border-foreground', active);
+                btn.classList.toggle('text-dim',         !active);
+            });
+            document.querySelectorAll('.tab-panel').forEach(panel => {
+                const active = panel.id === 'tab-' + id;
+                panel.classList.toggle('hidden', !active);
+                panel.classList.toggle('flex',    active);
+            });
+
+            if (id === 'configuration') {
+                if (window.wasmLoaded === true){
+                    DisplayConfig();
+                } else {
+                    setTimeout(() => {
+                        try{
+                            DisplayConfig()
+                        } catch(e){
+                            console.error('Failed to load configuration tab:', e);
+                            setTab('traffic');
+                        }
+                    }, 1000);
+                    // setTab('traffic');
+                }
+            }
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => setTab(btn.dataset.tab));
+        });
+
+        setTab(localStorage.getItem(TAB_KEY) || 'traffic');
+
         // ── Theme switcher ──────────────────────────────────────────────────
         const themes = [
-            { id: 'slate',      accent: '#38bdf8', label: 'Slate' },
-            { id: 'dracula',    accent: '#bd93f9', label: 'Dracula' },
-            { id: 'nord',       accent: '#88c0d0', label: 'Nord' },
-            { id: 'catppuccin', accent: '#89b4fa', label: 'Catppuccin' },
-            { id: 'solarized',  accent: '#268bd2', label: 'Solarized' },
-            { id: 'everforest', accent: '#a7c080',                            label: 'Everforest' },
-            { id: 'aurora',    accent: 'color(display-p3 0.393 0.920 0.699)', label: 'Aurora' },
-            { id: 'neon',      accent: 'color(display-p3 0.044 0.923 0.767)', label: 'Neon' },
-            { id: 'solar',     accent: 'color(display-p3 0.963 0.897 0.036)', label: 'Solar' },
-            { id: 'matrix',    accent: 'color(display-p3 0.716 0.901 0.589)', label: 'Matrix' },
+            { id: 'slate',      accent: '#38bdf8',                             label: 'Slate' },
+            { id: 'dracula',    accent: '#bd93f9',                             label: 'Dracula' },
+            { id: 'nord',       accent: '#88c0d0',                             label: 'Nord' },
+            { id: 'catppuccin', accent: '#89b4fa',                             label: 'Catppuccin' },
+            { id: 'solarized',  accent: '#268bd2',                             label: 'Solarized' },
+            { id: 'everforest', accent: '#a7c080',                             label: 'Everforest' },
+            { id: 'aurora',     accent: 'color(display-p3 0.393 0.920 0.699)', label: 'Aurora' },
+            { id: 'neon',       accent: 'color(display-p3 0.044 0.923 0.767)', label: 'Neon' },
+            { id: 'solar',      accent: 'color(display-p3 0.963 0.897 0.036)', label: 'Solar' },
+            { id: 'matrix',     accent: 'color(display-p3 0.716 0.901 0.589)', label: 'Matrix' },
         ];
 
         function setTheme(id) {
@@ -116,6 +211,8 @@
                 const el = document.getElementById('wasm-status');
                 el.innerHTML = '<span class="bg-success inline-block h-2 w-2 rounded-full"></span> WASM ready';
                 el.className = 'text-success flex items-center gap-1.5 text-xs';
+
+                window.wasmLoaded = true;
             });
     </script>
 </body>
