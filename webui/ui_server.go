@@ -144,18 +144,17 @@ func ServeWebUi(port int, stop <-chan bool) *Hub {
 
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.FS(jsFS))))
 	mux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.FS(imagesFS))))
-	mux.Handle("/wasm/", http.StripPrefix("/wasm/", http.FileServer(http.FS(wasmFS))))
+
+	mux.HandleFunc("/wasm/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/wasm")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		http.StripPrefix("/wasm/", http.FileServer(http.FS(wasmFS))).ServeHTTP(w, r)
+	})
 
 	hub := newHub()
 	mux.HandleFunc("/events", sseHandler(hub))
-
-	//ticker := time.NewTicker(1 * time.Second)
-	//
-	//go func() {
-	//	for range ticker.C {
-	//		hub.publish("request_occurred", "coucou")
-	//	}
-	//}()
 
 	addr := fmt.Sprintf("localhost:%d", port)
 	server := &http.Server{

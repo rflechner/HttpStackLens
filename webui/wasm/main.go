@@ -3,13 +3,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"httpStackLens/webui/wasm/shared"
 	"syscall/js"
 )
 
 type StateModel struct {
 	RequestCount int
-	Lines        []string
+	Lines        []shared.RequestEventDto
 }
 
 func consoleLog(message string) {
@@ -42,8 +44,17 @@ func (m *StateModel) connectSSE() {
 			consoleLog("Empty event received")
 			return nil
 		}
-		consoleLog("Received event data: " + data)
-		m.Lines = append(m.Lines, data)
+
+		var req shared.RequestEventDto
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			consoleLog("Error parsing JSON: " + err.Error())
+			return nil
+		}
+
+		consoleLog(fmt.Sprintf("Received request #%d: %s %s:%d%s",
+			req.ID, req.Method, req.Host, req.Port, req.Path))
+
+		m.Lines = append(m.Lines, req)
 		m.RequestCount++
 		m.render()
 		return nil
@@ -57,7 +68,18 @@ func (m *StateModel) render() {
 	html += "<table>"
 
 	for _, line := range m.Lines {
-		html += "<tr><td>" + line + "</td></tr>"
+		html += "<tr>"
+		html += "<td>" + fmt.Sprintf("%d", line.ID) + "</td>"
+
+		if line.Method == "CONNECT" {
+			html += "<td>🔐" + line.Method + "</td>"
+		} else {
+			html += "<td>👀" + line.Method + "</td>"
+		}
+
+		html += "<td>" + line.Host + "</td>"
+		html += "<td>" + line.Path + "</td>"
+		html += "</tr>"
 	}
 
 	html += "</table>"

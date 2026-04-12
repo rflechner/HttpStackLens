@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"httpStackLens/http/models"
 	"httpStackLens/webui"
+	"httpStackLens/webui/wasm/shared"
 	"log"
 	"os"
 )
@@ -16,7 +18,7 @@ func (c *ConsoleEventLogger) LogEvent(event string) {
 }
 
 func (c *ConsoleEventLogger) LogRequest(id int, request models.ProxyRequest) {
-	fmt.Printf("Console Request: %v\n", request)
+	fmt.Printf("Console Request: %v\n", request.HttpRequestLine.String())
 }
 
 func CreateConsoleEventLogger() ConsoleEventLogger {
@@ -32,7 +34,20 @@ func (c *WebUiEventLogger) LogEvent(event string) {
 }
 
 func (c *WebUiEventLogger) LogRequest(id int, request models.ProxyRequest) {
-	c.Hub.Publish("request_occurred", request.HttpRequestLine.String())
+	event := shared.RequestEventDto{
+		ID:      id,
+		Method:  string(request.HttpRequestLine.HttpMethod),
+		Host:    request.HttpRequestLine.Endpoint.Host,
+		Port:    request.HttpRequestLine.Endpoint.Port,
+		Path:    request.HttpRequestLine.Endpoint.PathAndQuery,
+		Version: fmt.Sprintf("HTTP/%d.%d", request.HttpRequestLine.Version.Major, request.HttpRequestLine.Version.Minor),
+	}
+	jsonData, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("Error marshaling request event: %v", err)
+		return
+	}
+	c.Hub.Publish("request_occurred", string(jsonData))
 }
 
 func CreateWebUiEventLogger(hub *webui.Hub) *WebUiEventLogger {
