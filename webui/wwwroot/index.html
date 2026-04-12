@@ -43,6 +43,7 @@
     <nav class="bg-surface border-b border-border flex items-end gap-1 px-5 shrink-0">
         <button data-tab="traffic"       class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Traffic</button>
         <button data-tab="configuration" class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Configuration</button>
+        <button data-tab="certificates"  class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Certificates</button>
     </nav>
 
     <!-- Tab: Traffic -->
@@ -110,6 +111,67 @@
                     <div class="flex items-center justify-between px-4 py-3">
                         <span class="text-muted text-sm">Remote connections</span>
                         <span id="config-webui-remote" class="text-sm">—</span>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Section: Certificates -->
+            <section>
+                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Certificates</h2>
+                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">CA cert file</span>
+                        <span id="config-cert-ca-file" class="text-foreground text-sm tabular-nums">—</span>
+                    </div>
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">CA key file</span>
+                        <span id="config-cert-ca-key-file" class="text-sm">—</span>
+                    </div>
+
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <!-- Tab: Certificates -->
+    <div id="tab-certificates" class="tab-panel flex-col flex-1 overflow-auto hidden">
+        <div class="max-w-xl px-5 py-6 flex flex-col gap-6">
+
+            <!-- Section: Certificate Authority -->
+            <section>
+                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Certificate Authority</h2>
+                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">CA Common Name</span>
+                        <span id="cert-ca-common-name" class="text-foreground text-sm">—</span>
+                    </div>
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">Installed</span>
+                        <span id="cert-ca-installed" class="text-sm">—</span>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Section: HTTPS Debugging -->
+            <section>
+                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">HTTPS Debugging</h2>
+                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">Intercept HTTPS</span>
+                        <span id="config-https-enabled" class="text-sm">—</span>
+                    </div>
+
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-muted text-sm">Signed certificates</span>
+                        <span id="config-signed-certs-count" class="text-foreground text-sm tabular-nums">—</span>
                     </div>
 
                 </div>

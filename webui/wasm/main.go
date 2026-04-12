@@ -65,6 +65,9 @@ func setTab(id string) {
 	if id == "configuration" {
 		DisplayConfig(js.Undefined(), nil)
 	}
+	if id == "certificates" {
+		DisplayCertificates(js.Undefined(), nil)
+	}
 }
 
 func initTabs() {
@@ -115,10 +118,31 @@ func DisplayConfig(this js.Value, args []js.Value) any {
 			fmt.Sprintf("%d", config.Proxy.Port))
 		doc.Call("getElementById", "config-proxy-remote").Set("textContent",
 			fmt.Sprintf("%t", config.Proxy.EnableRemoteConnection))
+
 		doc.Call("getElementById", "config-webui-port").Set("textContent",
 			fmt.Sprintf("%d", config.WebUi.Port))
 		doc.Call("getElementById", "config-webui-remote").Set("textContent",
 			fmt.Sprintf("%t", config.WebUi.EnableRemoteConnection))
+
+		doc.Call("getElementById", "config-cert-ca-file").Set("textContent", config.CertManager.CaCertFile)
+		doc.Call("getElementById", "config-cert-ca-key-file").Set("textContent", config.CertManager.CaKeyFile)
+
+		return nil
+	}))
+	return nil
+}
+
+func DisplayCertificates(this js.Value, args []js.Value) any {
+	fetchText("/certificates-infos", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var certsInfos shared.CertificatesInfosDto
+		if err := json.Unmarshal([]byte(args[0].String()), &certsInfos); err != nil {
+			consoleLog("Error parsing config JSON: " + err.Error())
+			return nil
+		}
+
+		doc := js.Global().Get("document")
+
+		doc.Call("getElementById", "cert-ca-common-name").Set("textContent", certsInfos.CaCertSubject)
 
 		return nil
 	}))
@@ -239,6 +263,7 @@ func main() {
 	initTabs()
 
 	js.Global().Set("DisplayConfig", js.FuncOf(DisplayConfig))
+	js.Global().Set("DisplayCertificates", js.FuncOf(DisplayCertificates))
 
 	model := &StateModel{}
 	model.connectSSE()

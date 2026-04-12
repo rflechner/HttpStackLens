@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"httpStackLens/certManager"
 	configuration "httpStackLens/configuration"
+	"httpStackLens/webui/wasm/shared"
 	"io/fs"
 	"log"
 	"net/http"
@@ -169,6 +171,25 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig) *Hub
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		jsonData, err := json.Marshal(config.ToDto())
+		if err != nil {
+			log.Printf("Error marshaling request event: %v", err)
+			return
+		}
+		_, _ = w.Write(jsonData)
+	})
+
+	mux.HandleFunc("/certificates-infos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		caCert, _, err := certManager.LoadCA(config.CertManager.CaCertFile, config.CertManager.CaKeyFile)
+		if err != nil {
+			log.Printf("Failed to load CA: %v\n", err)
+			return
+		}
+
+		rs := shared.CertificatesInfosDto{
+			CaCertSubject: caCert.Subject.CommonName,
+		}
+		jsonData, err := json.Marshal(rs)
 		if err != nil {
 			log.Printf("Error marshaling request event: %v", err)
 			return

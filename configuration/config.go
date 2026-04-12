@@ -66,5 +66,9 @@ func (c *AppConfig) ToDto() shared.AppConfigDto {
 			Port:                   c.WebUi.Port,
 			EnableRemoteConnection: c.WebUi.EnableRemoteConnection,
 		},
+		CertManager: shared.CertManagerConfigDto{
+			CaCertFile: c.CertManager.CaCertFile,
+			CaKeyFile:  c.CertManager.CaKeyFile,
+		},
 	}
 }
