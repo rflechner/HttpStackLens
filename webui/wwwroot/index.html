@@ -5,12 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HTTP Stack Lens</title>
     <link rel="stylesheet" href="css/output.css">
-    <!-- Apply saved theme before paint to avoid flash -->
-    <script>
-
-        document.documentElement.dataset.theme =
-            localStorage.getItem('hsl-theme') || 'slate';
-    </script>
 </head>
 <body class="h-full flex flex-col">
 
@@ -120,47 +114,6 @@
 
     <script src="js/wasm_exec.js"></script>
     <script>
-        // ── Tabs ────────────────────────────────────────────────────────────
-        const TAB_KEY = 'hsl-tab';
-
-        function setTab(id) {
-            localStorage.setItem(TAB_KEY, id);
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                const active = btn.dataset.tab === id;
-                btn.classList.toggle('text-foreground',  active);
-                btn.classList.toggle('border-b-2',       active);
-                btn.classList.toggle('border-foreground', active);
-                btn.classList.toggle('text-dim',         !active);
-            });
-            document.querySelectorAll('.tab-panel').forEach(panel => {
-                const active = panel.id === 'tab-' + id;
-                panel.classList.toggle('hidden', !active);
-                panel.classList.toggle('flex',    active);
-            });
-
-            if (id === 'configuration') {
-                if (window.wasmLoaded === true){
-                    DisplayConfig();
-                } else {
-                    setTimeout(() => {
-                        try{
-                            DisplayConfig()
-                        } catch(e){
-                            console.error('Failed to load configuration tab:', e);
-                            setTab('traffic');
-                        }
-                    }, 1000);
-                    // setTab('traffic');
-                }
-            }
-        }
-
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => setTab(btn.dataset.tab));
-        });
-
-        setTab(localStorage.getItem(TAB_KEY) || 'traffic');
-
         // ── Theme switcher ──────────────────────────────────────────────────
         const themes = [
             { id: 'paper',      accent: 'color(display-p3 0.020 0.184 0.398)', label: 'Paper' },
@@ -212,8 +165,6 @@
                 const el = document.getElementById('wasm-status');
                 el.innerHTML = '<span class="bg-success inline-block h-2 w-2 rounded-full"></span> WASM ready';
                 el.className = 'text-success flex items-center gap-1.5 text-xs';
-
-                window.wasmLoaded = true;
             });
     </script>
 </body>
