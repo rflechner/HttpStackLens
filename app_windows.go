@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	configuration "httpStackLens/config"
+	configuration "httpStackLens/configuration"
 	"httpStackLens/proxy"
 	"log"
 	"net/url"

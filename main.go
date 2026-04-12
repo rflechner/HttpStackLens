@@ -4,14 +4,12 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	configuration "httpStackLens/config"
+	configuration "httpStackLens/configuration"
 	"httpStackLens/http/models"
 	"httpStackLens/webui"
 	"httpStackLens/webui/wasm/shared"
 	"log"
 	"os"
-
-	"github.com/goccy/go-yaml"
 )
 
 type ConsoleEventLogger struct{}
@@ -58,11 +56,7 @@ func CreateWebUiEventLogger(hub *webui.Hub) *WebUiEventLogger {
 }
 
 func main() {
-	config, err := readConfiguration()
-	if err != nil {
-		log.Printf("Failed to parse config file: %v\n", err)
-		return
-	}
+	config := configuration.ReadConfiguration()
 
 	appContext, err := CreateOsSpecificProxyPipeline(config)
 	if err != nil {
@@ -100,18 +94,4 @@ func main() {
 	case <-stopChan:
 		proxyServer.Close()
 	}
-}
-
-func readConfiguration() (configuration.AppConfig, error) {
-	configData, err := os.ReadFile("config.yaml")
-	if err != nil {
-		return configuration.AppConfig{}, err
-	}
-	var conf configuration.AppConfig
-	err = yaml.Unmarshal(configData, &conf)
-	if err != nil {
-		return configuration.AppConfig{}, err
-	}
-
-	return conf, nil
 }
