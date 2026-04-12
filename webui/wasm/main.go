@@ -154,6 +154,11 @@ func (m *StateModel) connectSSE() {
 			consoleLog("Error parsing request JSON: " + err.Error())
 			return nil
 		}
+
+		if len(m.Lines) > 100 {
+			m.Lines = m.Lines[50:]
+		}
+
 		m.Lines = append(m.Lines, req)
 		m.RequestCount++
 		m.appendRow(req)

@@ -2,58 +2,13 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
-	configuration "httpStackLens/configuration"
-	"httpStackLens/http/models"
+	"httpStackLens/configuration"
+	"httpStackLens/logging"
 	"httpStackLens/webui"
-	"httpStackLens/webui/wasm/shared"
 	"log"
 	"os"
 )
-
-type ConsoleEventLogger struct{}
-
-func (c *ConsoleEventLogger) LogEvent(event string) {
-	fmt.Printf("Console Event: %s\n", event)
-}
-
-func (c *ConsoleEventLogger) LogRequest(id int, request models.ProxyRequest) {
-	fmt.Printf("Console Request: %v\n", request.HttpRequestLine.String())
-}
-
-func CreateConsoleEventLogger() ConsoleEventLogger {
-	return ConsoleEventLogger{}
-}
-
-type WebUiEventLogger struct {
-	Hub *webui.Hub
-}
-
-func (c *WebUiEventLogger) LogEvent(event string) {
-	c.Hub.Publish("event_occurred", event)
-}
-
-func (c *WebUiEventLogger) LogRequest(id int, request models.ProxyRequest) {
-	event := shared.RequestEventDto{
-		ID:      id,
-		Method:  string(request.HttpRequestLine.HttpMethod),
-		Host:    request.HttpRequestLine.Endpoint.Host,
-		Port:    request.HttpRequestLine.Endpoint.Port,
-		Path:    request.HttpRequestLine.Endpoint.PathAndQuery,
-		Version: fmt.Sprintf("HTTP/%d.%d", request.HttpRequestLine.Version.Major, request.HttpRequestLine.Version.Minor),
-	}
-	jsonData, err := json.Marshal(event)
-	if err != nil {
-		log.Printf("Error marshaling request event: %v", err)
-		return
-	}
-	c.Hub.Publish("request_occurred", string(jsonData))
-}
-
-func CreateWebUiEventLogger(hub *webui.Hub) *WebUiEventLogger {
-	return &WebUiEventLogger{Hub: hub}
-}
 
 func main() {
 	config := configuration.ReadConfiguration()
@@ -73,7 +28,7 @@ func main() {
 
 	hub := webui.ServeWebUi(webUiPort, stopChan, config)
 
-	logger := CreateWebUiEventLogger(hub)
+	logger := logging.CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger, config.Proxy)
 
 	go proxyServer.Run()
