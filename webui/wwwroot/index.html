@@ -5,31 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HTTP Stack Lens</title>
     <link rel="stylesheet" href="css/output.css">
+    <!-- Apply saved theme before paint to avoid flash -->
+    <script>
+        document.documentElement.dataset.theme =
+            localStorage.getItem('hsl-theme') || 'slate';
+    </script>
 </head>
 <body class="h-full flex flex-col">
 
     <!-- Header -->
-    <header class="flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-700 shrink-0">
+    <header class="bg-surface border-b border-border flex items-center justify-between px-5 py-3 shrink-0">
         <div class="flex items-center gap-3">
-            <img src="images/logo-with-text-small.png" alt="HTTP Stack Lens" class="h-8 w-auto">
-            <span class="text-sm font-semibold text-slate-100 tracking-wide">HTTP Stack Lens</span>
+            <img src="images/logo-with-text.png" alt="HTTP Stack Lens" class="h-8 w-auto">
+            <span class="text-foreground text-sm font-semibold tracking-wide">HTTP Stack Lens</span>
         </div>
-        <div class="flex items-center gap-4">
-            <span id="sse-status"  class="flex items-center gap-1.5 text-xs text-amber-400">
-                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                Connecting SSE…
-            </span>
-            <span id="wasm-status" class="flex items-center gap-1.5 text-xs text-amber-400">
-                <span class="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                Loading WASM…
-            </span>
+        <div class="flex items-center gap-5">
+
+            <!-- Theme switcher -->
+            <div id="theme-switcher" class="flex items-center gap-2"></div>
+
+            <!-- Status badges -->
+            <div class="flex items-center gap-4">
+                <span id="sse-status" class="text-warning flex items-center gap-1.5 text-xs">
+                    <span class="bg-warning inline-block h-2 w-2 animate-pulse rounded-full"></span>
+                    Connecting SSE…
+                </span>
+                <span id="wasm-status" class="text-warning flex items-center gap-1.5 text-xs">
+                    <span class="bg-warning inline-block h-2 w-2 animate-pulse rounded-full"></span>
+                    Loading WASM…
+                </span>
+            </div>
         </div>
     </header>
 
     <!-- Toolbar -->
-    <div class="flex items-center gap-4 px-5 py-2 bg-slate-900/60 border-b border-slate-800 text-xs text-slate-400 shrink-0">
-        <span id="request-count">0 requests</span>
-        <button onclick="clearRequests()" class="ml-auto px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
+    <div class="bg-surface border-b border-border-subtle flex items-center gap-4 px-5 py-2 shrink-0">
+        <span id="request-count" class="text-dim text-xs">0 requests</span>
+        <button onclick="clearRequests()"
+                class="bg-surface-alt text-muted hover:text-foreground ml-auto rounded px-2 py-1 text-xs transition-colors">
             Clear
         </button>
     </div>
@@ -40,10 +53,10 @@
             <table class="w-full border-collapse text-sm">
                 <thead>
                     <tr>
-                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700 w-12">#</th>
-                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700 w-32">Method</th>
-                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700">Host</th>
-                        <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-700">Path</th>
+                        <th class="border-b border-border text-dim w-12 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">#</th>
+                        <th class="border-b border-border text-dim w-32 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Method</th>
+                        <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Host</th>
+                        <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Path</th>
                     </tr>
                 </thead>
                 <tbody id="request-rows"></tbody>
@@ -53,19 +66,56 @@
 
     <script src="js/wasm_exec.js"></script>
     <script>
+        // ── Theme switcher ──────────────────────────────────────────────────
+        const themes = [
+            { id: 'slate',      accent: '#38bdf8', label: 'Slate' },
+            { id: 'dracula',    accent: '#bd93f9', label: 'Dracula' },
+            { id: 'nord',       accent: '#88c0d0', label: 'Nord' },
+            { id: 'catppuccin', accent: '#89b4fa', label: 'Catppuccin' },
+            { id: 'solarized',  accent: '#268bd2', label: 'Solarized' },
+            { id: 'everforest', accent: '#a7c080',                            label: 'Everforest' },
+            { id: 'aurora',    accent: 'color(display-p3 0.393 0.920 0.699)', label: 'Aurora' },
+            { id: 'neon',      accent: 'color(display-p3 0.044 0.923 0.767)', label: 'Neon' },
+            { id: 'solar',     accent: 'color(display-p3 0.963 0.897 0.036)', label: 'Solar' },
+            { id: 'matrix',    accent: 'color(display-p3 0.716 0.901 0.589)', label: 'Matrix' },
+        ];
+
+        function setTheme(id) {
+            document.documentElement.dataset.theme = id;
+            localStorage.setItem('hsl-theme', id);
+            document.querySelectorAll('.theme-swatch').forEach(el => {
+                el.classList.toggle('active', el.dataset.themeId === id);
+            });
+        }
+
+        const switcher = document.getElementById('theme-switcher');
+        const current  = document.documentElement.dataset.theme;
+
+        themes.forEach(t => {
+            const btn = document.createElement('button');
+            btn.className = 'theme-swatch' + (t.id === current ? ' active' : '');
+            btn.dataset.themeId = t.id;
+            btn.style.backgroundColor = t.accent;
+            btn.title = t.label;
+            btn.addEventListener('click', () => setTheme(t.id));
+            switcher.appendChild(btn);
+        });
+
+        // ── Clear ───────────────────────────────────────────────────────────
         function clearRequests() {
-            document.getElementById("request-rows").innerHTML = "";
-            document.getElementById("request-count").textContent = "0 requests";
+            document.getElementById('request-rows').innerHTML = '';
+            document.getElementById('request-count').textContent = '0 requests';
             if (window.wasmClear) window.wasmClear();
         }
 
+        // ── WASM ────────────────────────────────────────────────────────────
         const go = new Go();
-        WebAssembly.instantiateStreaming(fetch("wasm/app.wasm"), go.importObject)
+        WebAssembly.instantiateStreaming(fetch('wasm/app.wasm'), go.importObject)
             .then(result => {
                 go.run(result.instance);
-                const el = document.getElementById("wasm-status");
-                el.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span> WASM ready';
-                el.className = "flex items-center gap-1.5 text-xs text-emerald-400";
+                const el = document.getElementById('wasm-status');
+                el.innerHTML = '<span class="bg-success inline-block h-2 w-2 rounded-full"></span> WASM ready';
+                el.className = 'text-success flex items-center gap-1.5 text-xs';
             });
     </script>
 </body>

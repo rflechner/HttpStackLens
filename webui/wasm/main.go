@@ -92,10 +92,10 @@ func (m *StateModel) appendRow(line shared.RequestEventDto) {
 	tbody := doc.Call("getElementById", "request-rows")
 
 	tr := doc.Call("createElement", "tr")
-	tr.Set("className", "border-b border-slate-800 hover:bg-slate-800/50 transition-colors "+methodClass(line.Method))
+	tr.Set("className", "border-b border-border-subtle hover:bg-surface-alt/50 transition-colors "+methodClass(line.Method))
 
 	tdID := doc.Call("createElement", "td")
-	tdID.Set("className", "px-3 py-2 text-slate-500 tabular-nums")
+	tdID.Set("className", "px-3 py-2 text-dim tabular-nums")
 	tdID.Set("textContent", fmt.Sprintf("%d", line.ID))
 
 	tdMethod := doc.Call("createElement", "td")
@@ -103,11 +103,11 @@ func (m *StateModel) appendRow(line shared.RequestEventDto) {
 	tdMethod.Set("textContent", methodIcon(line.Method)+" "+line.Method)
 
 	tdHost := doc.Call("createElement", "td")
-	tdHost.Set("className", "px-3 py-2 text-slate-300")
+	tdHost.Set("className", "px-3 py-2 text-muted")
 	tdHost.Set("textContent", line.Host)
 
 	tdPath := doc.Call("createElement", "td")
-	tdPath.Set("className", "px-3 py-2 text-slate-400 truncate max-w-xs")
+	tdPath.Set("className", "px-3 py-2 text-dim truncate max-w-xs")
 	tdPath.Set("textContent", line.Path)
 
 	tr.Call("appendChild", tdID)
