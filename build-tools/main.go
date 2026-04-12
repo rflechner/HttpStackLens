@@ -79,6 +79,9 @@ func runTarget(target, projectRoot string) error {
 func buildWebUI(projectRoot string) error {
 	webuiDir := filepath.Join(projectRoot, "webui")
 	fmt.Println("→ Building WebUI...")
+	if err := npmInstall(webuiDir); err != nil {
+		return fmt.Errorf("npm install: %w", err)
+	}
 	if err := copyWasmExec(webuiDir); err != nil {
 		return fmt.Errorf("copy wasm_exec.js: %w", err)
 	}
@@ -127,6 +130,23 @@ func buildWasm(webuiDir string) error {
 		return err
 	}
 	fmt.Println("  WASM built")
+	return nil
+}
+
+func npmInstall(webuiDir string) error {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", "npm", "install")
+	} else {
+		cmd = exec.Command("npm", "install")
+	}
+	cmd.Dir = webuiDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	fmt.Println("  npm install done")
 	return nil
 }
 
