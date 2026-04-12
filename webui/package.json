@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build:wasm": "go run ../build-tools",
-    "build:css": "tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --minify",
-    "build": "npm run build:wasm && npm run build:css",
+    "build": "go run ../build-tools",
+    "build:webui": "go run ../build-tools webui",
+    "build:app": "go run ../build-tools app",
     "dev:css": "tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --watch"
   },
   "devDependencies": {
