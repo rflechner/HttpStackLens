@@ -42,3 +42,4 @@ go.work.sum
 *.wasm
 /webui/node_modules/
 /webui/wwwroot/css/output.css
+/wwwroot/js/wasm_exec.js

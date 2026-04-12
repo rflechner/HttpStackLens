@@ -176,7 +176,14 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig) *Hub
 		_, _ = w.Write(jsonData)
 	})
 
-	addr := fmt.Sprintf("localhost:%d", port)
+	var addr string
+	if config.WebUi.EnableRemoteConnection {
+		addr = fmt.Sprintf("0.0.0.0:%d", port)
+		fmt.Printf("⚠️  Web UI accepting remote connections on port %d\n", port)
+	} else {
+		addr = fmt.Sprintf("127.0.0.1:%d", port)
+		fmt.Printf("🔒 Web UI restricted to localhost on port %d\n", port)
+	}
 	server := &http.Server{
 		Addr:    addr,
 		Handler: mux,

@@ -31,7 +31,7 @@ func DefaultAppConfig() AppConfig {
 }
 
 func ReadConfiguration() AppConfig {
-	configData, err := os.ReadFile("configuration.yaml")
+	configData, err := os.ReadFile("config.yaml")
 	if err != nil {
 		log.Printf("Failed to parse configuration file: %v\n", err)
 		return DefaultAppConfig()
