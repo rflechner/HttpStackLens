@@ -1,5 +1,7 @@
 # HttpStackLens
 
+![Logo](images/logo-with-text.png)
+
 > **Work in progress** — this project is far from finished and evolves over time.
 
 HttpStackLens is a local HTTP/HTTPS proxy designed **for local development only**. It allows inspecting and visualizing HTTP traffic passing between a client and a server, acting as a minimal network debugging tool.
