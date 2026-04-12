@@ -25,6 +25,22 @@
 /* ─── Themes ─────────────────────────────────────────────────────────────── */
 /* Explicit [data-theme] blocks so switching back to a theme always works     */
 
+[data-theme="paper"] {
+  --color-background:     #ffffff;
+  --color-surface:        #f1f5f9;
+  --color-surface-alt:    #e2e8f0;
+  --color-border:         #cbd5e1;
+  --color-border-subtle:  #e2e8f0;
+  --color-foreground:     color(display-p3 0.020 0.184 0.398);
+  --color-muted:          color(display-p3 0.100 0.300 0.520);
+  --color-dim:            color(display-p3 0.350 0.480 0.620);
+  --color-success:        color(display-p3 0.100 0.560 0.220);
+  --color-warning:        color(display-p3 0.760 0.460 0.020);
+  --color-method-get:     color(display-p3 0.100 0.560 0.220);
+  --color-method-post:    color(display-p3 0.020 0.184 0.398);
+  --color-method-connect: color(display-p3 0.760 0.460 0.020);
+}
+
 [data-theme="slate"] {
   --color-background:     #020617;
   --color-surface:        #0f172a;
