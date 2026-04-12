@@ -1,0 +1,6 @@
+proxy:
+  enable_remote_connection: true
+  port: 3128
+webui:
+  port: 9000
+  enable_remote_connection: true

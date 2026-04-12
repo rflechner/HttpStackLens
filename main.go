@@ -4,11 +4,14 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	configuration "httpStackLens/config"
 	"httpStackLens/http/models"
 	"httpStackLens/webui"
 	"httpStackLens/webui/wasm/shared"
 	"log"
 	"os"
+
+	"github.com/goccy/go-yaml"
 )
 
 type ConsoleEventLogger struct{}
@@ -55,7 +58,13 @@ func CreateWebUiEventLogger(hub *webui.Hub) *WebUiEventLogger {
 }
 
 func main() {
-	appContext, err := CreateOsSpecificProxyPipeline()
+	config, err := readConfiguration()
+	if err != nil {
+		log.Printf("Failed to parse config file: %v\n", err)
+		return
+	}
+
+	appContext, err := CreateOsSpecificProxyPipeline(config)
 	if err != nil {
 		log.Printf("Failed to configure proxy pipeline: %v\n", err)
 		return
@@ -63,18 +72,15 @@ func main() {
 
 	stopChan := make(chan bool)
 
-	hub := webui.ServeWebUi(9000, stopChan)
+	webUiPort := 9000
+	if config.WebUi.Port != 0 {
+		webUiPort = config.WebUi.Port
+	}
+
+	hub := webui.ServeWebUi(webUiPort, stopChan)
 
 	logger := CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger)
-
-	//ticker := time.NewTicker(1 * time.Second)
-	//
-	//go func() {
-	//	for range ticker.C {
-	//		hub.Publish("request_occurred", "coucou")
-	//	}
-	//}()
 
 	go proxyServer.Run()
 
@@ -94,4 +100,18 @@ func main() {
 	case <-stopChan:
 		proxyServer.Close()
 	}
+}
+
+func readConfiguration() (configuration.AppConfig, error) {
+	configData, err := os.ReadFile("config.yaml")
+	if err != nil {
+		return configuration.AppConfig{}, err
+	}
+	var conf configuration.AppConfig
+	err = yaml.Unmarshal(configData, &conf)
+	if err != nil {
+		return configuration.AppConfig{}, err
+	}
+
+	return conf, nil
 }

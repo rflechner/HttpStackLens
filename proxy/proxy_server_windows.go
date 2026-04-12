@@ -5,11 +5,11 @@ import (
 	"net/url"
 )
 
-func ConfigureOsSpecificProxyPipeline(outputProxy *url.URL, requireWindowsAuthentication bool, addWindowsAuthenticationToOutputProxy bool) (middlewares.Middleware, error) {
-	basePipeline := ConfigureProxyPipelineBase(outputProxy)
+func ConfigureOsSpecificProxyPipeline(outputProxy url.URL, useOutputProxy bool, requireWindowsAuthentication bool, addWindowsAuthenticationToOutputProxy bool) (middlewares.Middleware, error) {
+	basePipeline := ConfigureProxyPipelineBase(outputProxy, useOutputProxy)
 	if addWindowsAuthenticationToOutputProxy {
 		basePipeline = &middlewares.ForwardProxyServerWithWindowsAuthentication{
-			Forwarder: middlewares.ForwardProxyServer{OutputProxy: *outputProxy},
+			Forwarder: middlewares.ForwardProxyServer{OutputProxy: outputProxy},
 		}
 	}
 

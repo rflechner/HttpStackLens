@@ -7,8 +7,13 @@ import (
 	"net/url"
 )
 
-func CreateOsSpecificProxyPipeline() (AppContext, error) {
-	port := flag.Int("port", 3128, "listening port")
+func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, error) {
+	port := 3128
+	if config.Proxy.Port != 0 {
+		port = config.Proxy.Port
+	}
+	port = *flag.Int("port", port, "listening port")
+
 	outputProxyUri := flag.String("output-proxy-uri", "", "URI to output proxy information")
 	flag.Parse()
 
@@ -29,6 +34,6 @@ func CreateOsSpecificProxyPipeline() (AppContext, error) {
 
 	return AppContext{
 		pipeline: pipeline,
-		port:     *port,
+		port:     port,
 	}, nil
 }

@@ -1,4 +1,6 @@
 github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e h1:4dAU9FXIyQktpoUAgOJK3OTFc/xug0PCXYCqU0FgDKI=
 github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e/go.mod h1:cEWa1LVoE5KvSD9ONXsZrj0z6KqySlCCNKHlLzbqAt4=
+github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
+github.com/goccy/go-yaml v1.19.2/go.mod h1:XBurs7gK8ATbW4ZPGKgcbrY1Br56PdM69F7LkFRi1kA=
 github.com/rflechner/EasyParsingForGo v0.1.2 h1:6F+HWuVFP9cc4blEtUDR3ZsrQVBpOFhxISL1X2100NE=
 github.com/rflechner/EasyParsingForGo v0.1.2/go.mod h1:ZVvMagpIGs36Mksk0agU3XwswhGs4wykPPHBWA0ozPM=
