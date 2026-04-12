@@ -15,15 +15,22 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 	}
 	port = *flag.Int("port", port, "listening port")
 
-	outputProxyUri := flag.String("output-proxy-uri", "", "URI to output proxy information")                                                                                                         // -output-proxy-uri=http://localhost:3129/
-	requireWindowsAuthentication := flag.Bool("windows-auth-require-ntlm", false, "specifies that browsers need negotiate authentication (Windows supported only)")                                  //-require-negotiate=true
-	addWindowsAuthenticationToOutputProxy := flag.Bool("output-proxy-add-windows-auth", false, "specifies that this proxy adds windows authentication to the remote proxy (Windows supported only)") //-output-proxy-add-windows-auth=true
+	outputProxyUri := ""
+	if config.Proxy.OutputProxyUri != "" {
+		outputProxyUri = config.Proxy.OutputProxyUri
+	}
+	outputProxyUri = *flag.String("output-proxy-uri", outputProxyUri, "URI to output proxy information") // -output-proxy-uri=http://localhost:3129/
+
+	requireWindowsAuthentication := flag.Bool("windows-auth-require-ntlm", false, "specifies that browsers need negotiate authentication (Windows supported only)") //-require-negotiate=true
+
+	addWindowsAuthenticationToOutputProxy := *flag.Bool("output-proxy-add-windows-auth", config.Proxy.AddWindowsAuthenticationToOutputProxy, "specifies that this proxy adds windows authentication to the remote proxy (Windows supported only)") //-output-proxy-add-windows-auth=true
+
 	flag.Parse()
 
 	var outputProxy *url.URL
 	useOutputProxy := false
-	if len(*outputProxyUri) > 0 {
-		u, err := url.Parse(*outputProxyUri)
+	if len(outputProxyUri) > 0 {
+		u, err := url.Parse(outputProxyUri)
 		if err != nil {
 			log.Printf("Invalid output proxy URI: %v\n", err)
 			return AppContext{}, err
@@ -34,7 +41,7 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		outputProxy = &(url.URL{})
 	}
 
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, *requireWindowsAuthentication, *addWindowsAuthenticationToOutputProxy)
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, *requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy)
 	if err != nil {
 		return AppContext{}, err
 	}

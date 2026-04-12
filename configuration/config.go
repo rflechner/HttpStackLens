@@ -14,8 +14,11 @@ type AppConfig struct {
 }
 
 type ProxyConfig struct {
-	Port                   int  `yaml:"port"`
-	EnableRemoteConnection bool `yaml:"enable_remote_connection"`
+	Port                                  int    `yaml:"port"`
+	EnableRemoteConnection                bool   `yaml:"enable_remote_connection"`
+	OutputProxyUri                        string `yaml:"output_proxy_uri"`
+	AddWindowsAuthenticationToOutputProxy bool   `yaml:"add_windows_authentication_to_output_proxy"`
+	RequireWindowsAuthentication          bool   `yaml:"require_windows_authentication"`
 }
 
 type WebUiConfig struct {
