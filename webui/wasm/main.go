@@ -114,7 +114,7 @@ func (m *StateModel) appendRow(line shared.RequestEventDto) {
 	tr.Call("appendChild", tdMethod)
 	tr.Call("appendChild", tdHost)
 	tr.Call("appendChild", tdPath)
-	tbody.Call("appendChild", tr)
+	tbody.Call("prepend", tr)
 
 	doc.Call("getElementById", "request-count").Set("textContent",
 		fmt.Sprintf("%d requests", m.RequestCount))
