@@ -38,3 +38,7 @@ go.work.sum
 .claude/
 
 *.syso
+/webui/wwwroot/js/wasm_exec.js
+*.wasm
+/webui/node_modules/
+/webui/wwwroot/css/output.css

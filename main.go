@@ -1,60 +1,97 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
-	"httpStackLens/http"
-	"httpStackLens/proxy/middlewares"
+	"httpStackLens/http/models"
+	"httpStackLens/webui"
+	"httpStackLens/webui/wasm/shared"
 	"log"
-	"net"
 	"os"
 )
 
+type ConsoleEventLogger struct{}
+
+func (c *ConsoleEventLogger) LogEvent(event string) {
+	fmt.Printf("Console Event: %s\n", event)
+}
+
+func (c *ConsoleEventLogger) LogRequest(id int, request models.ProxyRequest) {
+	fmt.Printf("Console Request: %v\n", request.HttpRequestLine.String())
+}
+
+func CreateConsoleEventLogger() ConsoleEventLogger {
+	return ConsoleEventLogger{}
+}
+
+type WebUiEventLogger struct {
+	Hub *webui.Hub
+}
+
+func (c *WebUiEventLogger) LogEvent(event string) {
+	c.Hub.Publish("event_occurred", event)
+}
+
+func (c *WebUiEventLogger) LogRequest(id int, request models.ProxyRequest) {
+	event := shared.RequestEventDto{
+		ID:      id,
+		Method:  string(request.HttpRequestLine.HttpMethod),
+		Host:    request.HttpRequestLine.Endpoint.Host,
+		Port:    request.HttpRequestLine.Endpoint.Port,
+		Path:    request.HttpRequestLine.Endpoint.PathAndQuery,
+		Version: fmt.Sprintf("HTTP/%d.%d", request.HttpRequestLine.Version.Major, request.HttpRequestLine.Version.Minor),
+	}
+	jsonData, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("Error marshaling request event: %v", err)
+		return
+	}
+	c.Hub.Publish("request_occurred", string(jsonData))
+}
+
+func CreateWebUiEventLogger(hub *webui.Hub) *WebUiEventLogger {
+	return &WebUiEventLogger{Hub: hub}
+}
+
 func main() {
-	app_context, err := CreateOsSpecificProxyPipeline()
+	appContext, err := CreateOsSpecificProxyPipeline()
 	if err != nil {
 		log.Printf("Failed to configure proxy pipeline: %v\n", err)
 		return
 	}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", app_context.port))
-	if err != nil {
-		fmt.Println("Error starting server:", err)
-		os.Exit(1)
-	}
-	defer func(listener net.Listener) {
-		err = listener.Close()
-		if err != nil {
-			log.Printf("Warning when closing browser connection: %v\n", err.Error())
+	stopChan := make(chan bool)
+
+	hub := webui.ServeWebUi(9000, stopChan)
+
+	logger := CreateWebUiEventLogger(hub)
+	proxyServer := CreateProxyServer(appContext, logger)
+
+	//ticker := time.NewTicker(1 * time.Second)
+	//
+	//go func() {
+	//	for range ticker.C {
+	//		hub.Publish("request_occurred", "coucou")
+	//	}
+	//}()
+
+	go proxyServer.Run()
+
+	keyboard := bufio.NewReader(os.Stdin)
+
+	go func() {
+		fmt.Println("Type 'exit' to quit")
+		for {
+			line, _, _ := keyboard.ReadLine()
+			if string(line) == "exit" {
+				close(stopChan)
+			}
 		}
-	}(listener)
+	}()
 
-	log.Printf("Socket server started on port %v\n", app_context.port)
-
-	for {
-		browser, err := listener.Accept()
-		if err != nil {
-			log.Println("Error accepting connection:", err)
-			continue
-		}
-		fmt.Printf("New connection from %s\n", browser.RemoteAddr().String())
-		go handleRequest(browser)(app_context.pipeline)
-	}
-}
-
-func handleRequest(browser net.Conn) func(pipeline middlewares.Middleware) {
-	request, err := http.ReadProxyRequest(browser)
-	if err != nil {
-		fmt.Printf("Error reading request from %s: %v\n", browser.RemoteAddr().String(), err)
-		return func(pipeline middlewares.Middleware) {}
-	}
-
-	return func(pipeline middlewares.Middleware) {
-		defer func(browser net.Conn) {
-			_ = browser.Close()
-		}(browser)
-		err := pipeline.HandleProxyRequest(browser, request)
-		if err != nil {
-			fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
-		}
+	select {
+	case <-stopChan:
+		proxyServer.Close()
 	}
 }

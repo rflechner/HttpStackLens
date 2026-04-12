@@ -1,0 +1,216 @@
+@import "tailwindcss";
+
+/* Scan Go WASM source for Tailwind classes used in dynamic HTML */
+@source "../wasm/**/*.go";
+
+/* ─── Design tokens (Tailwind @theme auto-generates bg-*, text-*, border-*…) ── */
+
+@theme {
+  /* Default: Slate */
+  --color-background:     #020617;
+  --color-surface:        #0f172a;
+  --color-surface-alt:    #1e293b;
+  --color-border:         #334155;
+  --color-border-subtle:  #1e293b;
+  --color-foreground:     #f1f5f9;
+  --color-muted:          #cbd5e1;
+  --color-dim:            #64748b;
+  --color-success:        #34d399;
+  --color-warning:        #fbbf24;
+  --color-method-get:     #34d399;
+  --color-method-post:    #38bdf8;
+  --color-method-connect: #fbbf24;
+}
+
+/* ─── Themes ─────────────────────────────────────────────────────────────── */
+/* Explicit [data-theme] blocks so switching back to a theme always works     */
+
+[data-theme="slate"] {
+  --color-background:     #020617;
+  --color-surface:        #0f172a;
+  --color-surface-alt:    #1e293b;
+  --color-border:         #334155;
+  --color-border-subtle:  #1e293b;
+  --color-foreground:     #f1f5f9;
+  --color-muted:          #cbd5e1;
+  --color-dim:            #64748b;
+  --color-success:        #34d399;
+  --color-warning:        #fbbf24;
+  --color-method-get:     #34d399;
+  --color-method-post:    #38bdf8;
+  --color-method-connect: #fbbf24;
+}
+
+[data-theme="dracula"] {
+  --color-background:     #1a1b26;
+  --color-surface:        #282a36;
+  --color-surface-alt:    #44475a;
+  --color-border:         #44475a;
+  --color-border-subtle:  #373844;
+  --color-foreground:     #f8f8f2;
+  --color-muted:          #cdd6f4;
+  --color-dim:            #6272a4;
+  --color-success:        #50fa7b;
+  --color-warning:        #ffb86c;
+  --color-method-get:     #50fa7b;
+  --color-method-post:    #8be9fd;
+  --color-method-connect: #ffb86c;
+}
+
+[data-theme="nord"] {
+  --color-background:     #2e3440;
+  --color-surface:        #3b4252;
+  --color-surface-alt:    #434c5e;
+  --color-border:         #4c566a;
+  --color-border-subtle:  #434c5e;
+  --color-foreground:     #eceff4;
+  --color-muted:          #d8dee9;
+  --color-dim:            #616e88;
+  --color-success:        #a3be8c;
+  --color-warning:        #ebcb8b;
+  --color-method-get:     #a3be8c;
+  --color-method-post:    #88c0d0;
+  --color-method-connect: #ebcb8b;
+}
+
+[data-theme="catppuccin"] {
+  --color-background:     #1e1e2e;
+  --color-surface:        #181825;
+  --color-surface-alt:    #313244;
+  --color-border:         #313244;
+  --color-border-subtle:  #262637;
+  --color-foreground:     #cdd6f4;
+  --color-muted:          #bac2de;
+  --color-dim:            #585b70;
+  --color-success:        #a6e3a1;
+  --color-warning:        #f9e2af;
+  --color-method-get:     #a6e3a1;
+  --color-method-post:    #89b4fa;
+  --color-method-connect: #fab387;
+}
+
+[data-theme="solarized"] {
+  --color-background:     #002b36;
+  --color-surface:        #073642;
+  --color-surface-alt:    #0d4a57;
+  --color-border:         #586e75;
+  --color-border-subtle:  #0d4a57;
+  --color-foreground:     #fdf6e3;
+  --color-muted:          #eee8d5;
+  --color-dim:            #657b83;
+  --color-success:        #859900;
+  --color-warning:        #b58900;
+  --color-method-get:     #859900;
+  --color-method-post:    #268bd2;
+  --color-method-connect: #b58900;
+}
+
+[data-theme="everforest"] {
+  --color-background:     #2d353b;
+  --color-surface:        #272e33;
+  --color-surface-alt:    #3d484d;
+  --color-border:         #475258;
+  --color-border-subtle:  #343f44;
+  --color-foreground:     #d3c6aa;
+  --color-muted:          #859289;
+  --color-dim:            #525c62;
+  --color-success:        #a7c080;
+  --color-warning:        #dbbc7f;
+  --color-method-get:     #a7c080;
+  --color-method-post:    #7fbbb3;
+  --color-method-connect: #e69875;
+}
+
+[data-theme="matrix"] {
+  --color-background:     color(display-p3 0.126 0.134 0.176);
+  --color-surface:        color(display-p3 0.155 0.163 0.215);
+  --color-surface-alt:    color(display-p3 0.188 0.198 0.255);
+  --color-border:         color(display-p3 0.245 0.260 0.335);
+  --color-border-subtle:  color(display-p3 0.168 0.178 0.228);
+  --color-foreground:     color(display-p3 0.716 0.901 0.589);
+  --color-muted:          color(display-p3 0.540 0.700 0.440);
+  --color-dim:            color(display-p3 0.300 0.410 0.250);
+  --color-success:        color(display-p3 0.716 0.901 0.589);
+  --color-warning:        color(display-p3 0.970 0.750 0.150);
+  --color-method-get:     color(display-p3 0.716 0.901 0.589);
+  --color-method-post:    color(display-p3 0.350 0.750 0.980);
+  --color-method-connect: color(display-p3 0.980 0.680 0.200);
+}
+
+[data-theme="solar"] {
+  --color-background:     color(display-p3 0.126 0.134 0.176);
+  --color-surface:        color(display-p3 0.155 0.163 0.215);
+  --color-surface-alt:    color(display-p3 0.188 0.198 0.255);
+  --color-border:         color(display-p3 0.245 0.260 0.335);
+  --color-border-subtle:  color(display-p3 0.168 0.178 0.228);
+  --color-foreground:     color(display-p3 0.963 0.897 0.036);
+  --color-muted:          color(display-p3 0.760 0.705 0.120);
+  --color-dim:            color(display-p3 0.430 0.400 0.160);
+  --color-success:        color(display-p3 0.380 0.860 0.440);
+  --color-warning:        color(display-p3 0.963 0.897 0.036);
+  --color-method-get:     color(display-p3 0.380 0.860 0.440);
+  --color-method-post:    color(display-p3 0.350 0.750 0.980);
+  --color-method-connect: color(display-p3 0.963 0.897 0.036);
+}
+
+[data-theme="neon"] {
+  --color-background:     color(display-p3 0.126 0.134 0.176);
+  --color-surface:        color(display-p3 0.155 0.163 0.215);
+  --color-surface-alt:    color(display-p3 0.188 0.198 0.255);
+  --color-border:         color(display-p3 0.245 0.260 0.335);
+  --color-border-subtle:  color(display-p3 0.168 0.178 0.228);
+  --color-foreground:     color(display-p3 0.044 0.923 0.767);
+  --color-muted:          color(display-p3 0.090 0.720 0.605);
+  --color-dim:            color(display-p3 0.145 0.420 0.395);
+  --color-success:        color(display-p3 0.044 0.923 0.767);
+  --color-warning:        color(display-p3 0.970 0.750 0.150);
+  --color-method-get:     color(display-p3 0.044 0.923 0.767);
+  --color-method-post:    color(display-p3 0.350 0.750 0.980);
+  --color-method-connect: color(display-p3 0.980 0.680 0.200);
+}
+
+[data-theme="aurora"] {
+  --color-background:     color(display-p3 0.152 0.190 0.410);
+  --color-surface:        color(display-p3 0.180 0.225 0.480);
+  --color-surface-alt:    color(display-p3 0.210 0.265 0.550);
+  --color-border:         color(display-p3 0.260 0.330 0.620);
+  --color-border-subtle:  color(display-p3 0.195 0.240 0.505);
+  --color-foreground:     color(display-p3 0.393 0.920 0.699);
+  --color-muted:          color(display-p3 0.340 0.720 0.570);
+  --color-dim:            color(display-p3 0.265 0.435 0.465);
+  --color-success:        color(display-p3 0.393 0.920 0.699);
+  --color-warning:        color(display-p3 0.960 0.760 0.220);
+  --color-method-get:     color(display-p3 0.393 0.920 0.699);
+  --color-method-post:    color(display-p3 0.400 0.760 0.970);
+  --color-method-connect: color(display-p3 0.980 0.720 0.380);
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+}
+
+/* ─── Components ──────────────────────────────────────────────────────────── */
+
+@layer components {
+  /* Method row colours apply to all td children */
+  .method-get     td { color: var(--color-method-get); }
+  .method-post    td { color: var(--color-method-post); }
+  .method-connect td { color: var(--color-method-connect); }
+
+  /* Theme swatch button */
+  .theme-swatch {
+    width:         1rem;
+    height:        1rem;
+    border-radius: 9999px;
+    border:        2px solid transparent;
+    cursor:        pointer;
+    transition:    transform 100ms, border-color 100ms;
+  }
+  .theme-swatch:hover  { transform: scale(1.25); }
+  .theme-swatch.active { border-color: var(--color-foreground); }
+}

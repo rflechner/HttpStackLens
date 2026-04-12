@@ -13,53 +13,60 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 - Listens for incoming connections on a local port (default `3128`)
 - Handles HTTPS tunnels via the `CONNECT` method
 - Forwards requests and responses bidirectionally
+- Web UI (WASM-based) to inspect live HTTP traffic
 
 ## What it doesn't do (yet)
 
-- No traffic inspection UI
 - Does not decrypt SSL/TLS traffic — HTTPS tunnels are forwarded as-is
 - Not intended for production use or shared networks
 
+## Prerequisites
+
+- [Go](https://go.dev/dl/) 1.26.1 or later
+- [Node.js](https://nodejs.org/) (for the Web UI build — Tailwind CSS)
+
 ## Build
 
-### Prerequisites
+All build commands live in `webui/` and are driven by a Go build tool (`build-tools/`) invoked via npm scripts.
 
-- [Go](https://go.dev/dl/) 1.21 or later
-
-### Application icons
-
-```
-go install github.com/tc-hib/go-winres@latest
-go-winres init       # génère un fichier winres/winres.json
-go-winres make       # génère le .syso automatiquement
-```
-
-### macOS
+### Install dependencies (once)
 
 ```sh
-go build -ldflags="-s -w" -o httpStackLens .
-./httpStackLens
+cd webui
+npm install
 ```
 
-> **Note:** Windows authentication (`--windows-auth-require-ntlm`, `--output-proxy-add-windows-auth`) is not supported on macOS and will return an error if used.
+### Build everything
 
-### Windows
+Builds the Web UI (WASM + CSS) and the native application binary:
 
 ```sh
-go build -ldflags="-s -w" -o httpStackLens.exe .
-.\httpStackLens.exe
+cd webui
+npm run build
 ```
 
-Windows-specific features are available on this platform:
+### Build targets individually
 
-- `--windows-auth-require-ntlm` — require NTLM/Negotiate authentication from connecting clients
-- `--output-proxy-add-windows-auth` — inject Windows authentication credentials when forwarding to an upstream proxy
+| Command | What it does |
+|---|---|
+| `npm run build` | Web UI + native binary |
+| `npm run build:webui` | WASM + Tailwind CSS only |
+| `npm run build:app` | Native binary only |
+| `npm run dev:css` | Tailwind CSS in watch mode (dev) |
 
-These features rely on the Windows SSPI API (`secur32.dll`) and are compiled in automatically when targeting Windows.
+The build tool auto-detects the current platform and produces `httpStackLens.exe` on Windows or `httpStackLens` on macOS/Linux.
+
+> You can also invoke the build tool directly from the project root:
+> ```sh
+> go run ./build-tools              # everything
+> go run ./build-tools webui        # Web UI only
+> go run ./build-tools app          # binary only
+> go run ./build-tools --help       # usage
+> ```
 
 ### Cross-compilation
 
-You can produce a Windows binary from macOS (and vice versa) using Go's built-in cross-compilation:
+You can produce a binary for another platform using Go's built-in cross-compilation. The `build-tools` target does not yet support cross-compilation, so use `go build` directly:
 
 **macOS → Windows:**
 
@@ -75,7 +82,14 @@ $env:GOARCH = "amd64"
 go build -ldflags="-s -w" -o httpStackLens .
 ```
 
-> The Windows-authentication features are compiled into the binary when `GOOS=windows` but will only function at runtime on a Windows host.
+### Windows-specific features
+
+Two flags are available on Windows only (compiled in automatically when targeting `GOOS=windows`):
+
+- `--windows-auth-require-ntlm` — require NTLM/Negotiate authentication from connecting clients
+- `--output-proxy-add-windows-auth` — inject Windows credentials when forwarding to an upstream proxy
+
+These rely on the Windows SSPI API (`secur32.dll`) and will return an error if used on other platforms.
 
 ## Usage
 

@@ -1,0 +1,15 @@
+{
+  "name": "httpstacklens-webui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "go run ../build-tools",
+    "build:webui": "go run ../build-tools webui",
+    "build:app": "go run ../build-tools app",
+    "dev:css": "tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "tailwindcss": "^4.1.0"
+  }
+}
