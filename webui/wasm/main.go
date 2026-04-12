@@ -224,6 +224,11 @@ func (m *StateModel) appendRow(line shared.RequestEventDto) {
 
 // ── Main ──────────────────────────────────────────────────────────────────
 
+func dismissLoader() {
+	loader := js.Global().Get("document").Call("getElementById", "loader")
+	loader.Get("classList").Call("add", "fade-out")
+}
+
 func main() {
 	initTheme()
 	initTabs()
@@ -232,6 +237,8 @@ func main() {
 
 	model := &StateModel{}
 	model.connectSSE()
+
+	dismissLoader()
 
 	select {}
 }

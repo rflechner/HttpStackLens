@@ -218,6 +218,35 @@
   .method-post    td { color: var(--color-method-post); }
   .method-connect td { color: var(--color-method-connect); }
 
+  /* Page loader overlay */
+  #loader {
+    position:         fixed;
+    inset:            0;
+    z-index:          50;
+    display:          flex;
+    flex-direction:   column;
+    align-items:      center;
+    justify-content:  center;
+    gap:              1rem;
+    background-color: var(--color-background);
+    transition:       opacity 400ms ease, visibility 400ms ease;
+  }
+  #loader.fade-out {
+    opacity:    0;
+    visibility: hidden;
+  }
+  .loader-spinner {
+    width:         2.5rem;
+    height:        2.5rem;
+    border-radius: 9999px;
+    border:        3px solid color-mix(in srgb, var(--color-foreground) 15%, transparent);
+    border-top-color: var(--color-foreground);
+    animation:     spin 700ms linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
   /* Tab buttons */
   .tab-btn {
     cursor:           pointer;
