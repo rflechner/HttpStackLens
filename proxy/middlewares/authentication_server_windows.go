@@ -52,7 +52,7 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 			return header.Name == "Proxy-Authorization"
 		})
 		if proxyAuthIndex == -1 {
-			_, err := m.sendEmpty407Response(browser)
+			_, err := m.send407Response(browser, "Invalid token format")
 			if err != nil {
 				log.Printf("Failed to write 407 response to %s: %v\n", clientAddr, err)
 				return fmt.Errorf("Failed to write 407 response to %s: %v\n", clientAddr, err)
