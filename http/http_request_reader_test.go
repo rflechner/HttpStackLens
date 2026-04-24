@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bufio"
 	"httpStackLens/http/models"
 	"strings"
 	"testing"
@@ -14,7 +15,8 @@ func TestReadProxyRequest(t *testing.T) {
 			"Proxy-Connection: Keep-Alive\n"
 
 		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		scanner := bufio.NewScanner(reader)
+		request, err := ReadProxyRequest(scanner)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -52,7 +54,8 @@ func TestReadProxyRequest(t *testing.T) {
 	t.Run("Success: Only CONNECT", func(t *testing.T) {
 		input := "CONNECT example.com:80 HTTP/1.1\n"
 		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		scanner := bufio.NewScanner(reader)
+		request, err := ReadProxyRequest(scanner)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -70,7 +73,9 @@ func TestReadProxyRequest(t *testing.T) {
 	t.Run("Success: GET request line", func(t *testing.T) {
 		input := "GET example.com:443 HTTP/1.1\n"
 		reader := strings.NewReader(input)
-		result, err := ReadProxyRequest(reader)
+
+		scanner := bufio.NewScanner(reader)
+		result, err := ReadProxyRequest(scanner)
 
 		if err != nil {
 			t.Fatal("Expected error for invalid CONNECT line, but got none")
@@ -87,7 +92,8 @@ func TestReadProxyRequest(t *testing.T) {
 	t.Run("Failure: Empty reader", func(t *testing.T) {
 		input := ""
 		reader := strings.NewReader(input)
-		_, err := ReadProxyRequest(reader)
+		scanner := bufio.NewScanner(reader)
+		_, err := ReadProxyRequest(scanner)
 
 		if err == nil {
 			t.Fatal("Expected error for empty reader, but got none")
@@ -102,7 +108,8 @@ func TestReadProxyRequest(t *testing.T) {
 			"Another: header\n"
 
 		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		scanner := bufio.NewScanner(reader)
+		request, err := ReadProxyRequest(scanner)
 
 		if err != nil {
 			t.Fatalf("Expected no error (it breaks from loop), got %v", err)
@@ -122,7 +129,8 @@ func TestReadProxyRequest(t *testing.T) {
 			"Another: value\n"
 
 		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		scanner := bufio.NewScanner(reader)
+		request, err := ReadProxyRequest(scanner)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -142,7 +150,8 @@ func TestReadProxyRequest(t *testing.T) {
 			"Cookie: user=toto\n"
 
 		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		scanner := bufio.NewScanner(reader)
+		request, err := ReadProxyRequest(scanner)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -174,7 +183,8 @@ func TestReadProxyRequest(t *testing.T) {
 			"Connection: keep-alive\n" +
 			"\n"
 		reader := strings.NewReader(input)
-		result, err := ReadProxyRequest(reader)
+		scanner := bufio.NewScanner(reader)
+		result, err := ReadProxyRequest(scanner)
 
 		if err != nil {
 			t.Fatalf("Expected no error, but got: %v", err)

@@ -37,7 +37,8 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 	var err error
 	for {
 		if firstLoop == false {
-			request, err = http.ReadProxyRequest(browser)
+			scanner := bufio.NewScanner(browser)
+			request, err = http.ReadProxyRequest(scanner)
 		}
 		firstLoop = false
 		if err != nil {

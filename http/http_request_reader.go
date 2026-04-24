@@ -13,9 +13,7 @@ import (
 	p "github.com/rflechner/EasyParsingForGo/combinator"
 )
 
-func ReadProxyRequest(reader io.Reader) (models.ProxyRequest, error) {
-	scanner := bufio.NewScanner(reader)
-
+func ReadProxyRequest(scanner *bufio.Scanner) (models.ProxyRequest, error) {
 	connect, err := readConnect(scanner)
 	if err != nil {
 		return models.ProxyRequest{}, err
