@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"bufio"
 	"encoding/base64"
 	"fmt"
 	"httpStackLens/http"
