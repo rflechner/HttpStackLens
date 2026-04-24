@@ -59,6 +59,12 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 			return nil
 		}
 
+		// Read response body from gateway
+		_, err = http.ReadHttpResponseBody(gateway, responseHead)
+		if err != nil {
+			return fmt.Errorf("failed to read response body from gateway: %w", err)
+		}
+
 		// It's a 407 Proxy Authentication Required
 		authHeaders := responseHead.GetHeader("Proxy-Authenticate")
 		if len(authHeaders) == 0 {
