@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"httpStackLens/configuration"
 	"httpStackLens/http"
@@ -78,8 +77,8 @@ func (s *ProxyServer) Run() {
 }
 
 func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeline middlewares.Middleware) {
-	scanner := bufio.NewScanner(browser)
-	request, err := http.ReadProxyRequest(scanner)
+	stream := http.NewNetworkStream(browser)
+	request, err := http.ReadProxyRequest(stream)
 	if err != nil {
 		fmt.Printf("Error reading request from %s: %v\n", browser.RemoteAddr().String(), err)
 		return func(pipeline middlewares.Middleware) {}

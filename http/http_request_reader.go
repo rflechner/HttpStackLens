@@ -1,9 +1,7 @@
 package http
 
 import (
-	"bufio"
 	"container/list"
-	"errors"
 	"fmt"
 	"httpStackLens/http/models"
 	"httpStackLens/http/parser"
@@ -15,16 +13,20 @@ import (
 	p "github.com/rflechner/EasyParsingForGo/combinator"
 )
 
-func ReadProxyRequest(scanner *bufio.Scanner) (models.ProxyRequest, error) {
-	connect, err := readConnect(scanner)
+func ReadProxyRequest(stream *NetworkStream) (models.ProxyRequest, error) {
+	connect, err := readConnect(stream)
 	if err != nil {
 		return models.ProxyRequest{}, err
 	}
 
 	headers := list.New()
 
-	for scanner.Scan() {
-		message := strings.TrimSpace(scanner.Text())
+	for {
+		line, err := stream.ReadLine()
+		if err != nil {
+			break
+		}
+		message := strings.TrimSpace(line)
 		if len(message) == 0 {
 			break
 		}
@@ -38,21 +40,16 @@ func ReadProxyRequest(scanner *bufio.Scanner) (models.ProxyRequest, error) {
 		headers.PushBack(result.Result)
 	}
 
-	if err := scanner.Err(); err != nil {
-		return models.ProxyRequest{}, err
-	}
-
 	return models.ProxyRequest{HttpRequestLine: connect, Headers: ListToSlice[models.Header](headers)}, nil
 }
 
-func ReadHttpResponse(reader io.Reader) (models.HttpResponseHead, error) {
-	scanner := bufio.NewScanner(reader)
-
-	if !scanner.Scan() {
-		return models.HttpResponseHead{}, errors.New("connection closed before response status")
+func ReadHttpResponse(stream *NetworkStream) (models.HttpResponseHead, error) {
+	statusLine, err := stream.ReadLine()
+	if err != nil {
+		return models.HttpResponseHead{}, fmt.Errorf("connection closed before response status: %w", err)
 	}
 
-	statusLine := strings.TrimSpace(scanner.Text())
+	statusLine = strings.TrimSpace(statusLine)
 	context := p.NewParsingContext(statusLine)
 	result, err := parser.ResponseHeadParser()(context)
 	if err != nil {
@@ -62,8 +59,12 @@ func ReadHttpResponse(reader io.Reader) (models.HttpResponseHead, error) {
 	head := result.Result
 	headers := list.New()
 
-	for scanner.Scan() {
-		message := strings.TrimSpace(scanner.Text())
+	for {
+		line, err := stream.ReadLine()
+		if err != nil {
+			break
+		}
+		message := strings.TrimSpace(line)
 		if len(message) == 0 {
 			break
 		}
@@ -77,10 +78,6 @@ func ReadHttpResponse(reader io.Reader) (models.HttpResponseHead, error) {
 	}
 
 	head.Headers = ListToSlice[models.Header](headers)
-
-	if err := scanner.Err(); err != nil {
-		return models.HttpResponseHead{}, err
-	}
 
 	return head, nil
 }
@@ -129,9 +126,10 @@ func ReadHttpResponseBody(reader io.Reader, head models.HttpResponseHead) (model
 	return models.EmptyBody{}, nil
 }
 
-func readConnect(scanner *bufio.Scanner) (models.HttpRequestLine, error) {
-	if scanner.Scan() {
-		message := strings.TrimSpace(scanner.Text())
+func readConnect(stream *NetworkStream) (models.HttpRequestLine, error) {
+	line, err := stream.ReadLine()
+	if err == nil {
+		message := strings.TrimSpace(line)
 		context := p.NewParsingContext(message)
 		result, err := parser.HttpRequestLineParser()(context)
 		if err != nil {
@@ -141,5 +139,5 @@ func readConnect(scanner *bufio.Scanner) (models.HttpRequestLine, error) {
 
 		return result.Result, nil
 	}
-	return models.HttpRequestLine{}, errors.New("Connection seems to be closed")
+	return models.HttpRequestLine{}, fmt.Errorf("connection seems to be closed: %w", err)
 }

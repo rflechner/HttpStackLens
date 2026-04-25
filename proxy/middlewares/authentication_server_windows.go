@@ -1,7 +1,6 @@
 package middlewares
 
 import (
-	"bufio"
 	"encoding/base64"
 	"fmt"
 	"httpStackLens/http"
@@ -34,12 +33,13 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 		}
 	}(auth)
 
+	browserStream := http.NewNetworkStream(browser)
+
 	firstLoop := true
 	var err error
 	for {
 		if firstLoop == false {
-			scanner := bufio.NewScanner(browser)
-			request, err = http.ReadProxyRequest(scanner)
+			request, err = http.ReadProxyRequest(browserStream)
 		}
 		firstLoop = false
 		if err != nil {

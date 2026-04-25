@@ -1,7 +1,7 @@
 proxy:
   enable_remote_connection: false
   port: 3128
-  output_proxy_uri: "http://localhost:3129" #http://localhost:3129
+  output_proxy_uri: "http://localhost:3130" #http://localhost:3129
   add_windows_authentication_to_output_proxy: true # only for windows
   require_windows_authentication: false # only for windows
 webui:

@@ -16,11 +16,13 @@ type ForwardProxyServerWithWindowsAuthentication struct {
 }
 
 func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
-	gateway, err := m.Forwarder.ConnectToGateway(browser, request)
+	gatewayConnection, err := m.Forwarder.ConnectToGateway(browser, request)
 	if err != nil {
 		return err
 	}
-	defer gateway.Close()
+	defer gatewayConnection.Close()
+
+	gateway := http.NewNetworkStream(gatewayConnection)
 
 	var clientAuth *security.ClientAuth
 	defer func() {
@@ -40,6 +42,7 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 		}
 
 		// Read response head from gateway
+
 		responseHead, err := http.ReadHttpResponse(gateway)
 		if err != nil {
 			return fmt.Errorf("failed to read response from gateway: %w", err)
