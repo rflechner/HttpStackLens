@@ -9,8 +9,14 @@ import (
 )
 
 type AppConfig struct {
-	Proxy ProxyConfig `json:"proxy"`
-	WebUi WebUiConfig `json:"webui"`
+	Proxy   ProxyConfig   `json:"proxy"`
+	WebUi   WebUiConfig   `json:"webui"`
+	Logging LoggingConfig `yaml:"logging"`
+}
+
+type LoggingConfig struct {
+	Level string `yaml:"level"` // debug | info | warn | error
+	File  string `yaml:"file"`  // path to the log file; empty disables the file sink
 }
 
 type ProxyConfig struct {
@@ -29,8 +35,9 @@ type WebUiConfig struct {
 
 func DefaultAppConfig() AppConfig {
 	return AppConfig{
-		Proxy: ProxyConfig{Port: 3128, EnableRemoteConnection: false},
-		WebUi: WebUiConfig{Port: 9000, EnableRemoteConnection: false},
+		Proxy:   ProxyConfig{Port: 3128, EnableRemoteConnection: false},
+		WebUi:   WebUiConfig{Port: 9000, EnableRemoteConnection: false},
+		Logging: LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
 	}
 }
 
