@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"io"
 	"net"
 	"testing"
 )
@@ -118,6 +119,68 @@ func TestNetworkStreamReader_MixedRead(t *testing.T) {
 	}
 	if nb.length != 11 {
 		t.Errorf("Expected length 11, got %d", nb.length)
+	}
+}
+
+// TestNetworkStream_IsNetConn ensures NetworkStream can be used anywhere a
+// net.Conn is expected, which is what lets the proxy thread a single buffered
+// stream through the whole middleware pipeline.
+func TestNetworkStream_IsNetConn(t *testing.T) {
+	conn := createMockConn("")
+	defer conn.Close()
+
+	var _ net.Conn = NewNetworkStream(conn)
+}
+
+// TestAsNetworkStream_ReusesExisting verifies AsNetworkStream does not wrap an
+// already-buffered stream a second time (which would lose buffered bytes).
+func TestAsNetworkStream_ReusesExisting(t *testing.T) {
+	conn := createMockConn("")
+	defer conn.Close()
+
+	stream := NewNetworkStream(conn)
+	if got := AsNetworkStream(stream); got != stream {
+		t.Errorf("Expected AsNetworkStream to return the same stream, got a new one")
+	}
+
+	plain := createMockConn("")
+	defer plain.Close()
+	if AsNetworkStream(plain) == nil {
+		t.Errorf("Expected AsNetworkStream to wrap a plain net.Conn")
+	}
+}
+
+// TestNetworkStream_BodyPreservedAfterHeaders reproduces the proxy pipeline:
+// the headers are read with ReadLine (which buffers the start of the body off
+// the socket), then the rest of the connection is forwarded with io.Copy. The
+// body must survive intact — this is the "reused stream" regression the
+// NetworkStream abstraction exists to prevent.
+func TestNetworkStream_BodyPreservedAfterHeaders(t *testing.T) {
+	body := "name=value&other=thing"
+	data := "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 22\r\n\r\n" + body
+	conn := createMockConn(data)
+	defer conn.Close()
+	stream := NewNetworkStream(conn)
+
+	// Drain the request line + headers exactly like ReadProxyRequest does.
+	for {
+		line, err := stream.ReadLine()
+		if err != nil {
+			t.Fatalf("Expected no error reading headers, got %v", err)
+		}
+		if line == "" {
+			break
+		}
+	}
+
+	// Forward the remainder with io.Copy, exactly like the proxy middlewares do
+	// (io.Copy uses Read, not the Copy helper).
+	var dst bytes.Buffer
+	if _, err := io.Copy(&dst, stream); err != nil {
+		t.Fatalf("Expected no error copying body, got %v", err)
+	}
+	if dst.String() != body {
+		t.Errorf("Expected body '%s', got '%s'", body, dst.String())
 	}
 }
 

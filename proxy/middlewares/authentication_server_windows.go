@@ -33,7 +33,9 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 		}
 	}(auth)
 
-	browserStream := http.NewNetworkStream(browser)
+	// Reuse the stream already wrapping this connection rather than layering a
+	// new buffer on top, which would discard bytes the existing buffer holds.
+	browserStream := http.AsNetworkStream(browser)
 
 	firstLoop := true
 	var err error

@@ -85,13 +85,16 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 	}
 
 	return func(pipeline middlewares.Middleware) {
-		defer func(browser net.Conn) {
-			_ = browser.Close()
-		}(browser)
+		defer func() {
+			_ = stream.Close()
+		}()
 
 		s.EventLogger.LogRequest(requestId, request)
 
-		err := pipeline.HandleProxyRequest(browser, request)
+		// Pass the buffered stream (not the raw connection) down the pipeline so
+		// any request body bytes already pulled into the read buffer alongside
+		// the headers are not lost when the pipeline forwards the connection.
+		err := pipeline.HandleProxyRequest(stream, request)
 		if err != nil {
 			fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
 		}
