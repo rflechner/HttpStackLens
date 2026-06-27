@@ -265,6 +265,176 @@ here — see the networking notes in [AGENTS.md](AGENTS.md).
 - `go run ./build-tools/main.go app` — build the stripped native binary.
 - no arg — both.
 
+## Capture file format (`.capture`)
+
+A capture session is persisted to a single binary file with the `.capture`
+extension: a fixed header followed by a flat, append-friendly stream of records,
+each record being either an HTTP **request** or an HTTP **response**. Responses
+reference their request by id, so a request and its response do not need to be
+adjacent — the file can be written incrementally as traffic flows.
+
+### Conventions
+
+- **Byte order: little-endian** for every integer. This matches the default of
+  C#'s `BinaryWriter` / `BinaryReader`, so an interop reader/writer is trivial.
+- **`bool`** — 1 byte, `0x00` = false, `0x01` = true.
+- **`uuid`** — 16 raw bytes (RFC 4122 layout), no string formatting.
+- **`lpstring` (length-prefixed string)** — `uint32` byte length (little-endian)
+  followed by that many UTF-8 bytes. No NUL terminator. An empty string is a
+  `uint32` `0` with no payload.
+
+  > Note: this is a plain `uint32` prefix, **not** the 7-bit-encoded length that
+  > `BinaryWriter.Write(string)` emits. A C# interop layer must read/write the
+  > `uint32` length explicitly rather than using `Write(string)` / `ReadString`.
+
+- **`httpversion` (uint8 enum)** — the HTTP version packed into one byte:
+  **high nibble = major, low nibble = minor**, so it maps directly onto the
+  project's `Version{Major, Minor}` (`major = b >> 4`, `minor = b & 0x0F`).
+  `0x00` means unknown/unspecified.
+
+  ```
+  0x00  Unknown
+  0x10  HTTP/1.0
+  0x11  HTTP/1.1
+  0x20  HTTP/2.0
+  0x30  HTTP/3.0
+  ```
+
+- **`headers` (header collection)** — `int32` header count, then that many
+  `(name: lpstring, value: lpstring)` pairs, preserving on-the-wire order and
+  duplicates.
+- **`blob` (length-prefixed bytes)** — `int64` byte length followed by the raw
+  bytes (`-1` means "absent", `0` means "present but empty"). Used for bodies,
+  which may be large or binary.
+- **`crc32c` (record checksum)** — `uint32` CRC32-C (Castagnoli polynomial,
+  `hash/crc32` with `crc32.Castagnoli`) computed over **all preceding bytes of
+  the record**, i.e. the `record_type` byte through the last body byte. Written
+  as the record's trailer. It is non-cryptographic: it detects accidental
+  corruption, not tampering.
+
+### File layout
+
+```
+┌──────────────┐
+│    Header    │   fixed size
+├──────────────┤
+│   Record 0   │ ┐
+│   Record 1   │ │  records_count records,
+│   Record 2   │ │  each tagged Request or Response
+│     ...      │ ┘
+└──────────────┘
+```
+
+### Header
+
+```
+Offset  Size  Type      Field            Notes
+------  ----  --------  ---------------  ---------------------------------------
+0       4     bytes     magic            ASCII "HSLC" (HttpStackLens Capture)
+4       2     int16     version          format version, starts at 1
+6       1     bool      https_decrypted  whether HTTPS bodies were MITM-decrypted
+7       4     int32     records_count    total number of records that follow
+------  ----  --------  ---------------  ---------------------------------------
+                        = 11 bytes
+```
+
+`records_count` counts records (requests + responses), making the file
+self-describing for a sequential reader. A writer that streams may backfill this
+field on close, or set it to `-1` to mean "read until EOF".
+
+### Record framing
+
+Every record starts with a 1-byte **record type** discriminator. The reader
+switches on it to know what to parse next:
+
+```
+RecordType (uint8)
+  0x01  Request
+  0x02  Response
+```
+
+Every record **ends** with a `crc32c` trailer covering the whole record (from the
+`record_type` byte to the last body byte). A reader validates each record
+independently: on a checksum mismatch it can report exactly which record is
+corrupt and keep reading the next ones, so a single damaged record does not make
+the rest of the file unreadable.
+
+#### Request record
+
+```
+Offset  Size      Type      Field          Notes
+------  --------  --------  -------------  --------------------------------------
+0       1         uint8     record_type    = 0x01
+1       16        uuid      request_id     unique id for this request
+17      var       lpstring  method         "GET", "POST", "CONNECT", …
+var     var       lpstring  url            request target (absolute or origin)
+var     1         uint8     http_version   HttpVersion enum (major<<4 | minor)
+var     var       headers   headers        request header collection
+var     var       blob      body           request body (may be -1 / absent)
+var     4         uint32    crc32c         CRC32-C of all preceding record bytes
+```
+
+#### Response record
+
+```
+Offset  Size      Type      Field            Notes
+------  --------  --------  ---------------  ------------------------------------
+0       1         uint8     record_type      = 0x02
+1       16        uuid      request_id       links back to the Request record
+17      1         uint8     http_version     HttpVersion enum (major<<4 | minor)
+18      2         int16     status_code      e.g. 200, 404
+var     var       lpstring  status_message   "OK", "Not Found", …
+var     var       headers   headers          response header collection
+var     var       blob      body             response body (may be -1 / absent)
+var     4         uint32    crc32c           CRC32-C of all preceding record bytes
+```
+
+### Full-file datagram
+
+```
+ HEADER
+┌────────┬─────────┬───────────────────┬─────────────────┐
+│ "HSLC" │ version │  https_decrypted  │  records_count  │
+│ 4 B    │ int16   │  bool (1 B)       │  int32          │
+└────────┴─────────┴───────────────────┴─────────────────┘
+
+ RECORD (Request)                                                          ┌─ trailer ─┐
+┌──────┬───────────┬──────────┬──────────┬──────────────┬──────────┬────────┬────────┐
+│ 0x01 │ request_id│  method  │   url    │ http_version │ headers  │  body  │ crc32c │
+│ 1 B  │ 16 B uuid │ lpstring │ lpstring │  uint8       │ int32+…  │ int64+…│ uint32 │
+└──────┴───────────┴──────────┴──────────┴──────────────┴──────────┴────────┴────────┘
+   └──────────────── CRC32-C covers these bytes ────────────────────────────┘
+
+ RECORD (Response)                                                                    ┌─ trailer ─┐
+┌──────┬───────────┬──────────────┬─────────────┬──────────────┬──────────┬────────┬────────┐
+│ 0x02 │ request_id│ http_version │ status_code │status_message│ headers  │  body  │ crc32c │
+│ 1 B  │ 16 B uuid │  uint8       │   int16     │  lpstring    │ int32+…  │ int64+…│ uint32 │
+└──────┴───────────┴──────────────┴─────────────┴──────────────┴──────────┴────────┴────────┘
+   └──────────────────── CRC32-C covers these bytes ───────────────────────────────┘
+
+ ... records repeat until records_count is reached (or EOF).
+```
+
+### Design notes
+
+- **Streaming-friendly**: records are self-delimited, so the proxy can append a
+  request as soon as it is parsed and the matching response later, without
+  seeking. A reader loops `records_count` times (or to EOF), reads the 1-byte
+  type, and dispatches to the request/response parser.
+- **Correlation**: a `Response.request_id` equals the `Request.request_id` it
+  answers. Orphan responses (request not captured) are allowed; readers should
+  tolerate a missing match.
+- **Integrity**: each record carries its own `crc32c` trailer, so corruption is
+  localized — a reader can skip a bad record and keep going instead of discarding
+  the whole capture. CRC32-C is hardware-accelerated via `hash/crc32` and
+  detects accidental damage only (use a MAC for tamper-resistance).
+- **Versioning**: `version` gates layout changes. Readers must reject a version
+  they do not understand rather than guess.
+- **Security**: bodies and headers may contain `Authorization`,
+  `Proxy-Authorization`, cookies and tokens — see the redaction guidance in
+  [AGENTS.md](AGENTS.md). Redaction (or opt-in body capture) should happen before
+  records are written, not at read time.
+
 ## Directory map
 
 ```
