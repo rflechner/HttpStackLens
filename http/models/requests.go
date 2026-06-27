@@ -97,6 +97,16 @@ func (r *ProxyRequest) AddHeader(name, value string) {
 	r.Headers = append(r.Headers, Header{Name: name, Value: value})
 }
 
+func (r *ProxyRequest) SetHeader(name, value string) {
+	for i := range r.Headers {
+		if strings.EqualFold(r.Headers[i].Name, name) {
+			r.Headers[i].Value = value
+			return
+		}
+	}
+	r.AddHeader(name, value)
+}
+
 func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int, error) {
 	var total int
 	var err error

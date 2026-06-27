@@ -12,7 +12,13 @@ import (
 )
 
 type ForwardProxyServerWithWindowsAuthentication struct {
-	Forwarder ForwardProxyServer
+	Forwarder                     ForwardProxyServer
+	Treat401AsProxyAuthentication bool
+}
+
+type upstreamAuthChallenge struct {
+	authenticateHeader  string
+	authorizationHeader string
 }
 
 func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
@@ -48,7 +54,8 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 			return fmt.Errorf("failed to read response from gateway: %w", err)
 		}
 
-		if responseHead.StatusCode != 407 {
+		challenge, ok := m.detectUpstreamAuthChallenge(responseHead)
+		if !ok {
 			_, err = responseHead.WriteTo(browser)
 			if err != nil {
 				return err
@@ -68,10 +75,8 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 			return fmt.Errorf("failed to read response body from gateway: %w", err)
 		}
 
-		// It's a 407 Proxy Authentication Required
-		authHeaders := responseHead.GetHeader("Proxy-Authenticate")
+		authHeaders := responseHead.GetHeader(challenge.authenticateHeader)
 		if len(authHeaders) == 0 {
-			// Forward 407 as is if no Proxy-Authenticate header
 			_, err = responseHead.WriteTo(browser)
 			if err != nil {
 				return err
@@ -118,22 +123,11 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 			return fmt.Errorf("auth update failed: %w", err)
 		}
 
-		// Prepare next request with Proxy-Authorization
+		// Prepare next request with the auth header expected by this upstream challenge.
 		tokenBase64 := base64.StdEncoding.EncodeToString(outputToken)
 		authValue = fmt.Sprintf("%s %s", selectedPackage.String(), tokenBase64)
 
-		// Replace or add Proxy-Authorization header
-		found := false
-		for i := range currentRequest.Headers {
-			if strings.EqualFold(currentRequest.Headers[i].Name, "Proxy-Authorization") {
-				currentRequest.Headers[i].Value = authValue
-				found = true
-				break
-			}
-		}
-		if !found {
-			currentRequest.AddHeader("Proxy-Authorization", authValue)
-		}
+		currentRequest.SetHeader(challenge.authorizationHeader, authValue)
 
 		if authDone {
 			// We might need one more request to complete if the server didn't accept it yet,
@@ -147,4 +141,22 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 		// But usually it's kept open for the handshake.
 	}
 
+}
+
+func (m *ForwardProxyServerWithWindowsAuthentication) detectUpstreamAuthChallenge(responseHead models.HttpResponseHead) (upstreamAuthChallenge, bool) {
+	if responseHead.StatusCode == 407 {
+		return upstreamAuthChallenge{
+			authenticateHeader:  "Proxy-Authenticate",
+			authorizationHeader: "Proxy-Authorization",
+		}, true
+	}
+
+	if responseHead.StatusCode == 401 && m.Treat401AsProxyAuthentication {
+		return upstreamAuthChallenge{
+			authenticateHeader:  "WWW-Authenticate",
+			authorizationHeader: "Authorization",
+		}, true
+	}
+
+	return upstreamAuthChallenge{}, false
 }

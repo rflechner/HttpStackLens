@@ -38,6 +38,11 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		fmt.Println("🙎 Adding Windows authentication to output proxy")
 	}
 
+	treat401AsProxyAuthentication := *flag.Bool("output-proxy-treat-401-as-auth-challenge", config.Proxy.Treat401AsProxyAuthentication, "treat upstream 401 WWW-Authenticate responses as proxy authentication challenges (compatibility mode)")
+	if treat401AsProxyAuthentication {
+		fmt.Println("⚠️ Treating upstream 401 responses as proxy authentication challenges")
+	}
+
 	flag.Parse()
 
 	var outputProxy *url.URL
@@ -55,7 +60,7 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		outputProxy = &(url.URL{})
 	}
 
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy)
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy, treat401AsProxyAuthentication)
 	if err != nil {
 		return AppContext{}, err
 	}
