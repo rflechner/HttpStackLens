@@ -21,12 +21,7 @@ func main() {
 
 	stopChan := make(chan bool)
 
-	webUiPort := 9000
-	if config.WebUi.Port != 0 {
-		webUiPort = config.WebUi.Port
-	}
-
-	hub := webui.ServeWebUi(webUiPort, stopChan, config)
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config)
 
 	logger := logging.CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger, config.Proxy)

@@ -33,11 +33,15 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 		}
 	}(auth)
 
+	// Reuse the stream already wrapping this connection rather than layering a
+	// new buffer on top, which would discard bytes the existing buffer holds.
+	browserStream := http.AsNetworkStream(browser)
+
 	firstLoop := true
 	var err error
 	for {
 		if firstLoop == false {
-			request, err = http.ReadProxyRequest(browser)
+			request, err = http.ReadProxyRequest(browserStream)
 		}
 		firstLoop = false
 		if err != nil {
@@ -50,7 +54,7 @@ func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.C
 			return header.Name == "Proxy-Authorization"
 		})
 		if proxyAuthIndex == -1 {
-			_, err := m.sendEmpty407Response(browser)
+			_, err := m.send407Response(browser, "Invalid token format")
 			if err != nil {
 				log.Printf("Failed to write 407 response to %s: %v\n", clientAddr, err)
 				return fmt.Errorf("Failed to write 407 response to %s: %v\n", clientAddr, err)

@@ -16,6 +16,12 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 	}
 	port = *flag.Int("port", port, "listening port")
 
+	webUiPort := 9000
+	if config.WebUi.Port != 0 {
+		webUiPort = config.WebUi.Port
+	}
+	webUiPort = *flag.Int("web-ui-port", webUiPort, "listening WEB UI port")
+
 	outputProxyUri := ""
 	if config.Proxy.OutputProxyUri != "" {
 		outputProxyUri = config.Proxy.OutputProxyUri
@@ -45,7 +51,8 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 	}
 
 	return AppContext{
-		pipeline: pipeline,
-		port:     port,
+		pipeline:  pipeline,
+		port:      port,
+		webUiPort: webUiPort,
 	}, nil
 }
