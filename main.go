@@ -7,6 +7,7 @@ import (
 	"httpStackLens/certManager"
 	"httpStackLens/configuration"
 	"httpStackLens/logging"
+	"httpStackLens/proxy/middlewares"
 	"httpStackLens/webui"
 	"log"
 	"log/slog"
@@ -50,22 +51,35 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Certificates: ", caCert, " Key: ", caKey, "")
+	// Issues and caches the per-domain certificates used to decrypt HTTPS. When
+	// decrypt_https is enabled, each new domain cert is also added to the user's
+	// personal store (see NewCertStoreFromConfig).
+	certStore := certManager.NewCertStoreFromConfig(caCert, caKey, config)
 
-	cert, key, err := certManager.CreateDomainCert(caCert, caKey, "romcyber.com", config.CertManager.DomainCertsFolder)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Signed certificate: ", cert, " Key: ", key, "")
+	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
+	// certificates we sign on the fly are accepted. A failure here is not fatal:
+	// the user can still install the CA manually.
+	if config.Proxy.DecryptHttps {
+		installer := certManager.NewCertInstaller()
+		if !installer.IsSupported() {
+			slog.Warn("Automatic certificate installation is not supported on this OS; install the CA manually",
+				"caCertFile", config.CertManager.CaCertFile)
+		} else if err := installer.InstallCACert(config.CertManager.CaCertFile); err != nil {
+			slog.Warn("Failed to install the CA certificate in the OS trust store; install it manually",
+				"caCertFile", config.CertManager.CaCertFile, "error", err)
+		}
 
-	cert_installer := certManager.NewCertInstaller()
-	err = cert_installer.InstallCACert(config.CertManager.CaCertFile)
-	if err != nil {
-		log.Fatal(err)
+		// Insert the man-in-the-middle in front of the tunnel so CONNECT requests
+		// are decrypted instead of blindly piped.
+		appContext.pipeline = &middlewares.HttpsInterceptor{
+			CertStore: certStore,
+			Next:      appContext.pipeline,
+		}
+		slog.Info("HTTPS decryption enabled")
 	}
 
 	logger := logging.CreateWebUiEventLogger(hub)
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, certStore)
 
 	go proxyServer.Run()
 

@@ -33,6 +33,7 @@ type ProxyConfig struct {
 	AddWindowsAuthenticationToOutputProxy bool   `yaml:"add_windows_authentication_to_output_proxy"`
 	Treat401AsProxyAuthentication         bool   `yaml:"treat_401_as_proxy_authentication"`
 	RequireWindowsAuthentication          bool   `yaml:"require_windows_authentication"`
+	DecryptHttps                          bool   `yaml:"decrypt_https"`
 }
 
 type WebUiConfig struct {

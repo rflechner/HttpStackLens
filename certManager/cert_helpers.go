@@ -171,8 +171,16 @@ func LoadCA(certFile, keyFile string) (*x509.Certificate, *ecdsa.PrivateKey, err
 func signServerCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, domains []string) ([]byte, *ecdsa.PrivateKey, error) {
 	serverKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 
+	// Each certificate must carry a unique serial number. Sharing one (issuer,
+	// serial) pair across domains makes browsers reject the second certificate
+	// with SEC_ERROR_REUSED_ISSUER_AND_SERIAL.
+	serialNumber, err := randomSerialNumber()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	template := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
+		SerialNumber: serialNumber,
 		Subject:      pkix.Name{CommonName: domains[0]},
 		DNSNames:     domains,
 		NotBefore:    time.Now(),
@@ -184,6 +192,13 @@ func signServerCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, domains []str
 	// Here parent = CA -> signed by CA
 	certDER, err := x509.CreateCertificate(rand.Reader, template, ca, &serverKey.PublicKey, caKey)
 	return certDER, serverKey, err
+}
+
+// randomSerialNumber returns a positive 128-bit random serial number, as
+// recommended for X.509 certificates.
+func randomSerialNumber() (*big.Int, error) {
+	limit := new(big.Int).Lsh(big.NewInt(1), 128)
+	return rand.Int(rand.Reader, limit)
 }
 
 func CreateDomainCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, domain string, certsFolder string) ([]byte, *ecdsa.PrivateKey, error) {

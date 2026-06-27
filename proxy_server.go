@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"httpStackLens/certManager"
 	"httpStackLens/configuration"
 	"httpStackLens/http"
 	"httpStackLens/http/models"
@@ -18,6 +19,9 @@ type ProxyServer struct {
 	mu          sync.Mutex
 	closed      bool
 	EventLogger ProxyEventLogger
+	// certStore issues per-domain certificates for HTTPS interception. It is
+	// used by the decryption path (when proxy.decrypt_https is enabled).
+	certStore *certManager.CertStore
 }
 
 type ProxyEventLogger interface {
@@ -25,7 +29,7 @@ type ProxyEventLogger interface {
 	LogRequest(id int, request models.ProxyRequest)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig) ProxyServer {
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, certStore *certManager.CertStore) ProxyServer {
 	log.Printf("Socket server started on port %v\n", appContext.port)
 	var addr string
 	if config.EnableRemoteConnection {
@@ -46,6 +50,7 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 		listener:    listener,
 		appContext:  appContext,
 		EventLogger: eventLogger,
+		certStore:   certStore,
 	}
 }
 
