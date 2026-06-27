@@ -19,6 +19,9 @@ var (
 	procCertOpenStore                    = crypt32.NewProc("CertOpenStore")
 	procCertCloseStore                   = crypt32.NewProc("CertCloseStore")
 	procCertAddEncodedCertificateToStore = crypt32.NewProc("CertAddEncodedCertificateToStore")
+	procCertCreateCertificateContext     = crypt32.NewProc("CertCreateCertificateContext")
+	procCertFindCertificateInStore       = crypt32.NewProc("CertFindCertificateInStore")
+	procCertFreeCertificateContext       = crypt32.NewProc("CertFreeCertificateContext")
 )
 
 const (
@@ -31,7 +34,12 @@ const (
 	pkcs7AsnEncoding = 0x00010000
 	// CERT_STORE_ADD_REPLACE_EXISTING: overwrite a previous entry instead of failing.
 	certStoreAddReplaceExisting = 3
+	// CERT_FIND_EXISTING ((CERT_COMPARE_EXISTING=13) << CERT_COMPARE_SHIFT=16):
+	// find a cert context in the store identical to the one supplied.
+	certFindExisting = 13 << 16
 )
+
+const certEncoding = x509AsnEncoding | pkcs7AsnEncoding
 
 // NewCertInstaller returns the Windows certificate installer.
 func NewCertInstaller() CertInstaller {
@@ -43,9 +51,28 @@ type windowsCertInstaller struct{}
 func (windowsCertInstaller) IsSupported() bool { return true }
 
 // InstallCACert imports the CA certificate into the current user's "Root" store,
-// next to the other trusted certificate authorities.
+// next to the other trusted certificate authorities. It first checks whether the
+// exact certificate is already present and skips the add if so — adding to the
+// Root store otherwise pops a Windows security prompt on every launch.
 func (windowsCertInstaller) InstallCACert(caCertFile string) error {
-	if err := addCertToStore("ROOT", caCertFile); err != nil {
+	der, err := readCertDER(caCertFile)
+	if err != nil {
+		return err
+	}
+	if len(der) == 0 {
+		return fmt.Errorf("no certificate found in %q", caCertFile)
+	}
+
+	exists, err := certInStore("ROOT", der)
+	if err != nil {
+		// Don't fail the launch on a check error; fall through and try to add.
+		log.Printf("⚠️  Could not check the Root store for the CA certificate: %v\n", err)
+	} else if exists {
+		log.Printf("🔒 CA certificate already trusted in the current user's Root store, skipping: %s\n", caCertFile)
+		return nil
+	}
+
+	if err := addEncodedCertToStore("ROOT", der); err != nil {
 		return err
 	}
 	log.Printf("🔒 CA certificate installed in the current user's Root store: %s\n", caCertFile)
@@ -55,29 +82,27 @@ func (windowsCertInstaller) InstallCACert(caCertFile string) error {
 // InstallDomainCert imports a signed domain certificate into the current user's
 // personal ("My") store.
 func (windowsCertInstaller) InstallDomainCert(domainCertFile string) error {
-	if err := addCertToStore("MY", domainCertFile); err != nil {
+	der, err := readCertDER(domainCertFile)
+	if err != nil {
+		return err
+	}
+	if len(der) == 0 {
+		return fmt.Errorf("no certificate found in %q", domainCertFile)
+	}
+	if err := addEncodedCertToStore("MY", der); err != nil {
 		return err
 	}
 	log.Printf("🔏 Domain certificate installed in the current user's personal store: %s\n", domainCertFile)
 	return nil
 }
 
-// addCertToStore adds the certificate found in certFile to the named current-user
-// system store (e.g. "ROOT" or "MY") using the crypt32 API.
-func addCertToStore(storeName, certFile string) error {
-	der, err := readCertDER(certFile)
-	if err != nil {
-		return err
-	}
-	if len(der) == 0 {
-		return fmt.Errorf("no certificate found in %q", certFile)
-	}
-
+// openCurrentUserStore opens a named current-user system store (e.g. "ROOT" or
+// "MY"). The caller must close the returned handle with CertCloseStore.
+func openCurrentUserStore(storeName string) (uintptr, error) {
 	storeNamePtr, err := syscall.UTF16PtrFromString(storeName)
 	if err != nil {
-		return err
+		return 0, err
 	}
-
 	store, _, callErr := procCertOpenStore.Call(
 		uintptr(certStoreProvSystemW),
 		0,
@@ -86,13 +111,22 @@ func addCertToStore(storeName, certFile string) error {
 		uintptr(unsafe.Pointer(storeNamePtr)),
 	)
 	if store == 0 {
-		return fmt.Errorf("CertOpenStore(%s) failed: %v", storeName, callErr)
+		return 0, fmt.Errorf("CertOpenStore(%s) failed: %v", storeName, callErr)
+	}
+	return store, nil
+}
+
+// addEncodedCertToStore adds a DER-encoded certificate to the named store.
+func addEncodedCertToStore(storeName string, der []byte) error {
+	store, err := openCurrentUserStore(storeName)
+	if err != nil {
+		return err
 	}
 	defer procCertCloseStore.Call(store, 0)
 
 	ret, _, callErr := procCertAddEncodedCertificateToStore.Call(
 		store,
-		uintptr(x509AsnEncoding|pkcs7AsnEncoding),
+		uintptr(certEncoding),
 		uintptr(unsafe.Pointer(&der[0])),
 		uintptr(len(der)),
 		uintptr(certStoreAddReplaceExisting),
@@ -102,6 +136,42 @@ func addCertToStore(storeName, certFile string) error {
 		return fmt.Errorf("CertAddEncodedCertificateToStore(%s) failed: %v", storeName, callErr)
 	}
 	return nil
+}
+
+// certInStore reports whether a certificate identical to der is already present
+// in the named current-user store.
+func certInStore(storeName string, der []byte) (bool, error) {
+	store, err := openCurrentUserStore(storeName)
+	if err != nil {
+		return false, err
+	}
+	defer procCertCloseStore.Call(store, 0)
+
+	// Wrap the DER bytes in a cert context to compare against the store.
+	ctx, _, callErr := procCertCreateCertificateContext.Call(
+		uintptr(certEncoding),
+		uintptr(unsafe.Pointer(&der[0])),
+		uintptr(len(der)),
+	)
+	if ctx == 0 {
+		return false, fmt.Errorf("CertCreateCertificateContext failed: %v", callErr)
+	}
+	defer procCertFreeCertificateContext.Call(ctx)
+
+	found, _, _ := procCertFindCertificateInStore.Call(
+		store,
+		uintptr(certEncoding),
+		0,
+		uintptr(certFindExisting),
+		ctx,
+		0,
+	)
+	if found != 0 {
+		// CertFindCertificateInStore returns a context the caller must free.
+		procCertFreeCertificateContext.Call(found)
+		return true, nil
+	}
+	return false, nil
 }
 
 // readCertDER returns the DER bytes of the certificate in certFile, accepting

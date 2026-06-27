@@ -42,10 +42,10 @@ func NewCertStore(ca *x509.Certificate, caKey *ecdsa.PrivateKey, certsFolder str
 // NewCertStoreFromConfig builds a store from the application configuration.
 //
 // Per-domain certificates are installed into the user's personal store only
-// when proxy.decrypt_https is true; otherwise no OS trust-store change is made.
+// when capture.decrypt_https is true; otherwise no OS trust-store change is made.
 func NewCertStoreFromConfig(ca *x509.Certificate, caKey *ecdsa.PrivateKey, config configuration.AppConfig) *CertStore {
 	var installer CertInstaller
-	if config.Proxy.DecryptHttps {
+	if config.Capture.DecryptHttps {
 		installer = NewCertInstaller()
 	}
 	return NewCertStore(ca, caKey, config.CertManager.DomainCertsFolder, installer)
