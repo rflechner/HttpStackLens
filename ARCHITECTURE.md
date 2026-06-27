@@ -12,28 +12,28 @@ contribution guidance, see [AGENTS.md](AGENTS.md).
 ## High-level picture
 
 ```
-                         ┌──────────────────────────────────────────────┐
+                         ┌───────────────────────────────────────────────┐
                          │                  main.go                      │
                          │  read config → build pipeline → start servers │
-                         └───────────────┬───────────────┬──────────────┘
+                         └───────────────┬───────────────┬───────────────┘
                                          │               │
-                  ┌──────────────────────┘               └───────────────────┐
+                  ┌──────────────────────┘               └────────────────────┐
                   ▼                                                           ▼
-        ┌───────────────────┐                                      ┌────────────────────┐
-        │  Proxy TCP server  │                                     │   Web UI HTTP server │
-        │  (proxy_server.go) │                                     │   (webui/ui_server)  │
-        └─────────┬─────────┘                                      └──────────┬──────────┘
-                  │ one goroutine per connection                              │ SSE /events
-                  ▼                                                           ▼
-        ┌───────────────────────────────┐                          ┌────────────────────┐
-        │     Middleware pipeline        │   logs requests ───────► │   Hub (fan-out)     │
-        │  (proxy/middlewares/*)         │   via EventLogger        └──────────┬──────────┘
+        ┌────────────────────┐                                      ┌──────────────────────┐
+        │  Proxy TCP server  │                                      │   Web UI HTTP server │
+        │  (proxy_server.go) │                                      │   (webui/ui_server)  │
+        └─────────┬──────────┘                                      └──────────┬───────────┘
+                  │ one goroutine per connection                               │ SSE /events
+                  ▼                                                            ▼
+        ┌───────────────────────────────┐                          ┌─────────────────────┐
+        │     Middleware pipeline       │   logs requests ───────► │   Hub (fan-out)     │
+        │  (proxy/middlewares/*)        │   via EventLogger        └──────────┬──────────┘
         └───────────────────────────────┘                                     │ event stream
-                  │ uses                                                       ▼
-                  ▼                                              ┌──────────────────────────┐
-        ┌───────────────────┐                                   │  Browser: Go/WASM client  │
-        │   CertStore /CA    │                                   │  (webui/wasm + wwwroot)   │
-        │  (certManager/*)   │                                   └──────────────────────────┘
+                  │ uses                                                      ▼
+                  ▼                                             ┌──────────────────────────┐
+        ┌───────────────────┐                                   │  Browser: Go/WASM client │
+        │   CertStore /CA   │                                   │  (webui/wasm + wwwroot)  │
+        │  (certManager/*)  │                                   └──────────────────────────┘
         └───────────────────┘
 ```
 
