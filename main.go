@@ -45,7 +45,7 @@ func main() {
 
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config)
 
-	caCert, caKey, err := certManager.GetHttpsDebugCertificates(config)
+	caCert, caKey, err := certManager.GetHttpsDebugRootCertificates(config)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,6 +57,12 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("Signed certificate: ", cert, " Key: ", key, "")
+
+	cert_installer := certManager.NewCertInstaller()
+	err = cert_installer.InstallCACert(config.CertManager.CaCertFile)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	logger := logging.CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger, config.Proxy)

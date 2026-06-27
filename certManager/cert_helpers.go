@@ -33,7 +33,7 @@ func ensureParentDir(path string) error {
 	return os.MkdirAll(dir, 0o755)
 }
 
-func GetHttpsDebugCertificates(config configuration.AppConfig) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+func GetHttpsDebugRootCertificates(config configuration.AppConfig) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	if config.CertManager.CaCertFile == "" || config.CertManager.CaKeyFile == "" {
 		log.Fatal("CA certificate and key files must be specified in config.yaml")
 		return nil, nil, errors.New("CA certificate and key files must be specified in config.yaml")
@@ -86,7 +86,7 @@ func GenerateCA(certFile string, keyFile string) error {
 			Country:      []string{"Unknown"},
 		},
 		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 ans
+		NotAfter:              time.Now().Add(30 * 24 * time.Hour), // 30 days
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
