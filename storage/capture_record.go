@@ -1,5 +1,7 @@
 package storage
 
+import "crypto/rand"
+
 // This file models the in-memory shape of everything that gets serialized into a
 // .capture file. The on-disk binary layout is documented in ARCHITECTURE.md
 // ("Capture file format"). Serialization itself lives in the writer/reader; these
@@ -70,6 +72,17 @@ func (v HttpVersion) Minor() int { return int(v & 0x0F) }
 // UUID is the 16-byte identifier (RFC 4122 layout) that uniquely tags a request
 // and links a response back to it. Stored raw, not as a formatted string.
 type UUID [16]byte
+
+// NewUUID returns a random (version 4) UUID.
+func NewUUID() (UUID, error) {
+	var u UUID
+	if _, err := rand.Read(u[:]); err != nil {
+		return u, err
+	}
+	u[6] = (u[6] & 0x0f) | 0x40 // version 4
+	u[8] = (u[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return u, nil
+}
 
 // Header is a single HTTP header name/value pair. The slice order on a record
 // preserves the on-the-wire order and any duplicates.

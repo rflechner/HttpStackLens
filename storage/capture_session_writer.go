@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"hash/crc32"
+	"sync"
 )
 
 var castagnoli = crc32.MakeTable(crc32.Castagnoli)
@@ -22,7 +23,10 @@ type CaptureSessionWriter interface {
 	Close() error
 }
 
+// fileCaptureSessionWriter is safe for concurrent use: the proxy records from
+// many connection goroutines at once, so every record is written under a mutex.
 type fileCaptureSessionWriter struct {
+	mu   sync.Mutex
 	file BinaryFileWriter
 }
 
@@ -34,7 +38,7 @@ func NewFileCaptureSessionWriter(filepath string, httpsDecrypted bool) (CaptureS
 		return nil, err
 	}
 
-	w := fileCaptureSessionWriter{file: file}
+	w := &fileCaptureSessionWriter{file: file}
 	if err := w.writeHeader(NewFileHeader(httpsDecrypted)); err != nil {
 		_ = file.Close()
 		return nil, err
@@ -42,7 +46,7 @@ func NewFileCaptureSessionWriter(filepath string, httpsDecrypted bool) (CaptureS
 	return w, nil
 }
 
-func (w fileCaptureSessionWriter) writeHeader(h FileHeader) error {
+func (w *fileCaptureSessionWriter) writeHeader(h FileHeader) error {
 	if _, err := w.file.Write(h.Magic[:]); err != nil {
 		return err
 	}
@@ -55,7 +59,7 @@ func (w fileCaptureSessionWriter) writeHeader(h FileHeader) error {
 	return w.file.WriteInt32(h.RecordsCount)
 }
 
-func (w fileCaptureSessionWriter) WriteRequest(r RequestRecord) error {
+func (w *fileCaptureSessionWriter) WriteRequest(r RequestRecord) error {
 	var buf bytes.Buffer
 	b := newBinaryWriter(&buf)
 
@@ -84,7 +88,7 @@ func (w fileCaptureSessionWriter) WriteRequest(r RequestRecord) error {
 	return w.writeRecord(buf.Bytes())
 }
 
-func (w fileCaptureSessionWriter) WriteResponse(r ResponseRecord) error {
+func (w *fileCaptureSessionWriter) WriteResponse(r ResponseRecord) error {
 	var buf bytes.Buffer
 	b := newBinaryWriter(&buf)
 
@@ -114,18 +118,26 @@ func (w fileCaptureSessionWriter) WriteResponse(r ResponseRecord) error {
 }
 
 // writeRecord appends a framed record payload followed by its CRC32-C trailer.
-func (w fileCaptureSessionWriter) writeRecord(payload []byte) error {
+// It serializes concurrent writers so records never interleave on disk.
+func (w *fileCaptureSessionWriter) writeRecord(payload []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if _, err := w.file.Write(payload); err != nil {
 		return err
 	}
 	return w.file.WriteUint32(recordChecksum(payload))
 }
 
-func (w fileCaptureSessionWriter) Flush() error {
+func (w *fileCaptureSessionWriter) Flush() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.file.Flush()
 }
 
-func (w fileCaptureSessionWriter) Close() error {
+func (w *fileCaptureSessionWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.file.Close()
 }
 
