@@ -57,3 +57,35 @@ func TestProxyRequest_WriteTo(t *testing.T) {
 		}
 	})
 }
+
+func TestProxyRequest_SetHeaderReplacesExistingHeaderCaseInsensitively(t *testing.T) {
+	request := ProxyRequest{
+		Headers: []Header{
+			{Name: "Proxy-Authorization", Value: "Negotiate old-token"},
+		},
+	}
+
+	request.SetHeader("proxy-authorization", "Negotiate new-token")
+
+	headers := request.GetHeader("Proxy-Authorization")
+	if len(headers) != 1 {
+		t.Fatalf("expected one Proxy-Authorization header, got %d", len(headers))
+	}
+	if headers[0] != "Negotiate new-token" {
+		t.Fatalf("expected header value to be replaced, got %s", headers[0])
+	}
+}
+
+func TestProxyRequest_SetHeaderAddsMissingHeader(t *testing.T) {
+	request := ProxyRequest{}
+
+	request.SetHeader("Authorization", "Negotiate token")
+
+	headers := request.GetHeader("Authorization")
+	if len(headers) != 1 {
+		t.Fatalf("expected one Authorization header, got %d", len(headers))
+	}
+	if headers[0] != "Negotiate token" {
+		t.Fatalf("expected header value to be added, got %s", headers[0])
+	}
+}
