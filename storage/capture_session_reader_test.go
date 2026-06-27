@@ -62,6 +62,51 @@ func TestCaptureSessionReaderRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCaptureSessionReaderBodySkipped(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "skipped.capture")
+	w, err := NewFileCaptureSessionWriter(path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := NewUUID()
+	// A response whose body was too large to store.
+	if err := w.WriteResponse(ResponseRecord{
+		RequestID:     id,
+		HttpVersion:   HttpVersion11,
+		StatusCode:    200,
+		StatusMessage: "OK",
+		Headers:       []Header{{Name: "Content-Type", Value: "video/mp4"}},
+		BodySkipped:   true,
+		Body:          nil,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reader, err := NewFileCaptureSessionReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	rec, err := reader.Read()
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	resp, ok := rec.(ResponseRecord)
+	if !ok {
+		t.Fatalf("record is %T, want ResponseRecord", rec)
+	}
+	if !resp.BodySkipped {
+		t.Fatalf("BodySkipped = false, want true")
+	}
+	if resp.Body != nil {
+		t.Fatalf("Body = %v, want nil", resp.Body)
+	}
+}
+
 func TestCaptureSessionReaderRejectsBadMagic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.capture")
 	if err := os.WriteFile(path, []byte("NOPExxxxxxx"), 0o644); err != nil {

@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"httpStackLens/certManager"
+	"httpStackLens/configuration"
 	"httpStackLens/http/models"
 	"httpStackLens/storage"
 	"io"
@@ -29,6 +30,9 @@ type HttpsInterceptor struct {
 	// Capture, when non-nil, receives the decrypted requests and responses so
 	// they are persisted in clear text to the capture file.
 	Capture storage.CaptureSessionWriter
+	// Limits drives the per-content-type body size caps. Bodies larger than the
+	// limit are forwarded to the browser but not stored (BodySkipped is set).
+	Limits configuration.CaptureConfig
 }
 
 func (m *HttpsInterceptor) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
@@ -104,14 +108,14 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	req.RequestURI = ""
 	req.Header.Del("Accept-Encoding")
 
-	// One id correlates the request record with its response record. Buffer the
-	// request body so we can both capture it and still forward it upstream.
+	// One id correlates the request record with its response record. The request
+	// body is captured within its size limit while still being forwarded in full.
 	recordID, _ := storage.NewUUID()
-	reqBody, err := m.bufferRequestBody(req)
+	reqBody, reqSkipped, err := m.capRequestBody(req)
 	if err != nil {
 		return err
 	}
-	m.recordRequest(recordID, req, reqBody)
+	m.recordRequest(recordID, req, reqBody, reqSkipped)
 
 	log.Printf("🔓 %s https://%s%s\n", req.Method, host, req.URL.RequestURI())
 
@@ -119,43 +123,78 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	originalBody := resp.Body
+	defer originalBody.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	contentType := resp.Header.Get("Content-Type")
+	limit, _ := m.Limits.LimitForContentType(contentType)
+
+	// capBody always yields a reader replaying the full body, whether or not it
+	// fit the limit, so the browser is never short-changed.
+	store, forward, skipped, err := capBody(originalBody, limit)
 	if err != nil {
 		return err
 	}
 
-	printIfTextual(host, req.URL.RequestURI(), resp.Header.Get("Content-Type"), body)
-	m.recordResponse(recordID, resp, body)
+	if skipped {
+		// Too large: do not store the body, but stream it untouched so the
+		// original framing is preserved.
+		m.recordResponse(recordID, resp, nil, true)
+		resp.Body = io.NopCloser(forward)
+		return resp.Write(clientTLS)
+	}
 
-	// Re-attach the buffered body and force a Content-Length framing so the
-	// response can be written back to the browser.
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	resp.ContentLength = int64(len(body))
+	// Small enough to inspect and store; re-frame with a Content-Length.
+	printIfTextual(host, req.URL.RequestURI(), contentType, store)
+	m.recordResponse(recordID, resp, store, false)
+	resp.Body = io.NopCloser(forward)
+	resp.ContentLength = int64(len(store))
 	resp.TransferEncoding = nil
 
 	return resp.Write(clientTLS)
 }
 
-// bufferRequestBody reads the request body so it can be captured, then restores
-// it for forwarding. It is a no-op (returns nil) when capture is off or the
-// request has no body.
-func (m *HttpsInterceptor) bufferRequestBody(req *http.Request) ([]byte, error) {
-	if m.Capture == nil || req.Body == nil {
-		return nil, nil
-	}
-	body, err := io.ReadAll(req.Body)
+// capBody reads up to limit+1 bytes from body to decide whether it fits.
+//
+//   - It always returns a forward reader that replays the *entire* body, so the
+//     caller can forward it in full regardless of the limit. io.LimitReader only
+//     bounds how much is read; the rest stays in body and is chained back with
+//     io.MultiReader.
+//   - When the body fits (<= limit), store holds the buffered bytes and
+//     skipped is false. When it exceeds the limit, store is nil and skipped is
+//     true (the body is forwarded but not captured).
+func capBody(body io.Reader, limit int64) (store []byte, forward io.Reader, skipped bool, err error) {
+	head, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, false, err
 	}
-	_ = req.Body.Close()
-	req.Body = io.NopCloser(bytes.NewReader(body))
-	req.ContentLength = int64(len(body))
-	return body, nil
+	if int64(len(head)) > limit {
+		return nil, io.MultiReader(bytes.NewReader(head), body), true, nil
+	}
+	return head, bytes.NewReader(head), false, nil
 }
 
-func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, body []byte) {
+// capRequestBody applies capBody to the request body, re-attaching a full
+// replay for forwarding upstream. It is a no-op when capture is off or the
+// request has no body.
+func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skipped bool, err error) {
+	if m.Capture == nil || req.Body == nil {
+		return nil, false, nil
+	}
+	limit, _ := m.Limits.LimitForContentType(req.Header.Get("Content-Type"))
+
+	store, forward, skipped, err := capBody(req.Body, limit)
+	if err != nil {
+		return nil, false, err
+	}
+	req.Body = io.NopCloser(forward)
+	if !skipped {
+		req.ContentLength = int64(len(store))
+	}
+	return store, skipped, nil
+}
+
+func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, body []byte, skipped bool) {
 	if m.Capture == nil {
 		return
 	}
@@ -165,14 +204,15 @@ func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, bod
 		URL:         req.URL.String(),
 		HttpVersion: storage.NewHttpVersion(req.ProtoMajor, req.ProtoMinor),
 		Headers:     httpHeadersToRecords(req.Header),
-		Body:        nilIfEmpty(body),
+		BodySkipped: skipped,
+		Body:        body,
 	}
 	if err := m.Capture.WriteRequest(rec); err != nil {
 		log.Printf("⚠️  capture: failed to record request: %v\n", err)
 	}
 }
 
-func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, body []byte) {
+func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, body []byte, skipped bool) {
 	if m.Capture == nil {
 		return
 	}
@@ -182,6 +222,7 @@ func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, 
 		StatusCode:    int16(resp.StatusCode),
 		StatusMessage: statusMessage(resp),
 		Headers:       httpHeadersToRecords(resp.Header),
+		BodySkipped:   skipped,
 		Body:          body,
 	}
 	if err := m.Capture.WriteResponse(rec); err != nil {
@@ -211,13 +252,6 @@ func statusMessage(resp *http.Response) string {
 		return msg
 	}
 	return http.StatusText(resp.StatusCode)
-}
-
-func nilIfEmpty(b []byte) []byte {
-	if len(b) == 0 {
-		return nil
-	}
-	return b
 }
 
 func printIfTextual(host, path, contentType string, body []byte) {

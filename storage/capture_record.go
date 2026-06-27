@@ -14,7 +14,9 @@ var CaptureFileMagic = [4]byte{'H', 'S', 'L', 'C'}
 
 // CaptureFormatVersion is the current on-disk format version. Bump it whenever
 // the layout changes; readers must reject versions they do not understand.
-const CaptureFormatVersion int16 = 1
+//
+// v2 added the body_skipped flag to request and response records.
+const CaptureFormatVersion int16 = 2
 
 // FileHeader is the fixed-size header at the start of a .capture file.
 type FileHeader struct {
@@ -105,6 +107,9 @@ type RequestRecord struct {
 	URL         string      // request target (absolute or origin form)
 	HttpVersion HttpVersion // packed major/minor
 	Headers     []Header    // request headers, in order
+	// BodySkipped is true when the body was intentionally not stored (e.g. it
+	// exceeded the configured size limit for its content type). Body is then nil.
+	BodySkipped bool
 	// Body is the request body. A nil slice means "absent" (encoded as length
 	// -1); a non-nil empty slice means "present but empty" (length 0).
 	Body []byte
@@ -119,6 +124,9 @@ type ResponseRecord struct {
 	StatusCode    int16       // e.g. 200, 404
 	StatusMessage string      // "OK", "Not Found", ...
 	Headers       []Header    // response headers, in order
+	// BodySkipped is true when the body was intentionally not stored (e.g. it
+	// exceeded the configured size limit for its content type). Body is then nil.
+	BodySkipped bool
 	// Body is the response body. A nil slice means "absent" (encoded as length
 	// -1); a non-nil empty slice means "present but empty" (length 0).
 	Body []byte

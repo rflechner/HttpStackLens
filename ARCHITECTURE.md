@@ -331,7 +331,7 @@ adjacent — the file can be written incrementally as traffic flows.
 Offset  Size  Type      Field            Notes
 ------  ----  --------  ---------------  ---------------------------------------
 0       4     bytes     magic            ASCII "HSLC" (HttpStackLens Capture)
-4       2     int16     version          format version, starts at 1
+4       2     int16     version          format version (current: 2)
 6       1     bool      https_decrypted  whether HTTPS bodies were MITM-decrypted
 7       4     int32     records_count    total number of records that follow
 ------  ----  --------  ---------------  ---------------------------------------
@@ -370,7 +370,8 @@ Offset  Size      Type      Field          Notes
 var     var       lpstring  url            request target (absolute or origin)
 var     1         uint8     http_version   HttpVersion enum (major<<4 | minor)
 var     var       headers   headers        request header collection
-var     var       blob      body           request body (may be -1 / absent)
+var     1         bool      body_skipped   1 = body intentionally not stored (too large)
+var     var       blob      body           request body (absent when body_skipped)
 var     4         uint32    crc32c         CRC32-C of all preceding record bytes
 ```
 
@@ -385,7 +386,8 @@ Offset  Size      Type      Field            Notes
 18      2         int16     status_code      e.g. 200, 404
 var     var       lpstring  status_message   "OK", "Not Found", …
 var     var       headers   headers          response header collection
-var     var       blob      body             response body (may be -1 / absent)
+var     1         bool      body_skipped     1 = body intentionally not stored (too large)
+var     var       blob      body             response body (absent when body_skipped)
 var     4         uint32    crc32c           CRC32-C of all preceding record bytes
 ```
 
@@ -400,19 +402,21 @@ All multi-byte integers are **little-endian** (see [Conventions](#conventions)).
 │ 4 B    │ int16   │  bool (1 B)       │  int32          │
 └────────┴─────────┴───────────────────┴─────────────────┘
 
- RECORD (Request)                                                          ┌─ trailer ─┐
-┌──────┬───────────┬──────────┬──────────┬──────────────┬──────────┬────────┬────────┐
-│ 0x01 │ request_id│  method  │   url    │ http_version │ headers  │  body  │ crc32c │
-│ 1 B  │ 16 B uuid │ lpstring │ lpstring │  uint8       │ int32+…  │ int64+…│ uint32 │
-└──────┴───────────┴──────────┴──────────┴──────────────┴──────────┴────────┴────────┘
-   └──────────────── CRC32-C covers these bytes ────────────────────────────┘
+ RECORD (Request)                                                                  ┌─ trailer ─┐
+┌──────┬───────────┬──────────┬──────────┬──────────────┬──────────┬──────┬────────┬────────┐
+│ 0x01 │ request_id│  method  │   url    │ http_version │ headers  │ skip │  body  │ crc32c │
+│ 1 B  │ 16 B uuid │ lpstring │ lpstring │  uint8       │ int32+…  │ bool │ int64+…│ uint32 │
+└──────┴───────────┴──────────┴──────────┴──────────────┴──────────┴──────┴────────┴────────┘
+   └──────────────── CRC32-C covers these bytes ──────────────────────────────────┘
+                                                          (skip = body_skipped)
 
- RECORD (Response)                                                                    ┌─ trailer ─┐
-┌──────┬───────────┬──────────────┬─────────────┬──────────────┬──────────┬────────┬────────┐
-│ 0x02 │ request_id│ http_version │ status_code │status_message│ headers  │  body  │ crc32c │
-│ 1 B  │ 16 B uuid │  uint8       │   int16     │  lpstring    │ int32+…  │ int64+…│ uint32 │
-└──────┴───────────┴──────────────┴─────────────┴──────────────┴──────────┴────────┴────────┘
-   └──────────────────── CRC32-C covers these bytes ───────────────────────────────┘
+ RECORD (Response)                                                                            ┌─ trailer ─┐
+┌──────┬───────────┬──────────────┬─────────────┬──────────────┬──────────┬──────┬────────┬────────┐
+│ 0x02 │ request_id│ http_version │ status_code │status_message│ headers  │ skip │  body  │ crc32c │
+│ 1 B  │ 16 B uuid │  uint8       │   int16     │  lpstring    │ int32+…  │ bool │ int64+…│ uint32 │
+└──────┴───────────┴──────────────┴─────────────┴──────────────┴──────────┴──────┴────────┴────────┘
+   └──────────────────── CRC32-C covers these bytes ─────────────────────────────────────┘
+                                                          (skip = body_skipped)
 
  ... records repeat until records_count is reached (or EOF).
 ```
@@ -426,6 +430,10 @@ All multi-byte integers are **little-endian** (see [Conventions](#conventions)).
 - **Correlation**: a `Response.request_id` equals the `Request.request_id` it
   answers. Orphan responses (request not captured) are allowed; readers should
   tolerate a missing match.
+- **Size limits**: bodies larger than the configured per-content-type limit
+  (`capture.mime_types`, falling back to `capture.default_max_bytes`) are still
+  forwarded to the client but not stored. The record sets `body_skipped` and
+  writes an absent body, so a reader can tell "empty" apart from "omitted".
 - **Integrity**: each record carries its own `crc32c` trailer, so corruption is
   localized — a reader can skip a bad record and keep going instead of discarding
   the whole capture. CRC32-C is hardware-accelerated via `hash/crc32` and

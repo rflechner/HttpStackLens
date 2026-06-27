@@ -85,6 +85,7 @@ func main() {
 			CertStore: certStore,
 			Next:      appContext.pipeline,
 			Capture:   captureWriter,
+			Limits:    config.Capture,
 		}
 		slog.Info("HTTPS decryption enabled")
 	}

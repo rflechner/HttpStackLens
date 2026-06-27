@@ -81,6 +81,9 @@ func (w *fileCaptureSessionWriter) WriteRequest(r RequestRecord) error {
 	if err := writeHeaders(b, r.Headers); err != nil {
 		return err
 	}
+	if err := b.WriteBool(r.BodySkipped); err != nil {
+		return err
+	}
 	if err := writeBlob(b, r.Body); err != nil {
 		return err
 	}
@@ -108,6 +111,9 @@ func (w *fileCaptureSessionWriter) WriteResponse(r ResponseRecord) error {
 		return err
 	}
 	if err := writeHeaders(b, r.Headers); err != nil {
+		return err
+	}
+	if err := b.WriteBool(r.BodySkipped); err != nil {
 		return err
 	}
 	if err := writeBlob(b, r.Body); err != nil {

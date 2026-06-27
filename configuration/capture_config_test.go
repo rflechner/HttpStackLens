@@ -44,6 +44,33 @@ mime_types:
 	}
 }
 
+func TestCaptureDefaultMaxBytes(t *testing.T) {
+	const data = `
+default_max_bytes: 1048576
+mime_types:
+  - name: "image/*"
+    max_size_mb: 2
+  - name: "text/*"
+`
+	var c CaptureConfig
+	if err := yaml.Unmarshal([]byte(data), &c); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Explicit rule size wins.
+	if limit, _ := c.LimitForContentType("image/jpeg"); limit != 2*1024*1024 {
+		t.Errorf("image/jpeg = %d, want %d", limit, 2*1024*1024)
+	}
+	// Matched rule without a size falls back to default_max_bytes.
+	if limit, matched := c.LimitForContentType("text/css"); limit != 1048576 || !matched {
+		t.Errorf("text/css = (%d, %v), want (1048576, true)", limit, matched)
+	}
+	// Unmatched type also uses default_max_bytes.
+	if limit, matched := c.LimitForContentType("video/mp4"); limit != 1048576 || matched {
+		t.Errorf("video/mp4 = (%d, %v), want (1048576, false)", limit, matched)
+	}
+}
+
 func TestMimeTypeRuleLimitBytesUnits(t *testing.T) {
 	bytes := int64(1234)
 	kb := 8.0

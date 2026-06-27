@@ -28,8 +28,9 @@ type StorageConfig struct {
 const DefaultCaptureSizeBytes int64 = 500 * 1024 // 500 KiB
 
 type CaptureConfig struct {
-	DecryptHttps bool           `yaml:"decrypt_https"` // intercept & decrypt HTTPS (MITM)
-	MimeTypes    []MimeTypeRule `yaml:"mime_types"`    // per-content-type capture limits
+	DecryptHttps    bool           `yaml:"decrypt_https"`     // intercept & decrypt HTTPS (MITM)
+	MimeTypes       []MimeTypeRule `yaml:"mime_types"`        // per-content-type capture limits
+	DefaultMaxBytes *int64         `yaml:"default_max_bytes"` // limit for content types not listed (and rules without an explicit size); defaults to DefaultCaptureSizeBytes
 }
 
 // MimeTypeRule caps how much of a response body is captured for a given content
@@ -42,33 +43,55 @@ type MimeTypeRule struct {
 	MaxSizeMb    *float64 `yaml:"max_size_mb"`    //
 }
 
+// explicitLimit returns the size limit set by the rule's YAML, if any. The
+// second result is false when the rule specifies no explicit size.
+func (r MimeTypeRule) explicitLimit() (int64, bool) {
+	switch {
+	case r.MaxSizeBytes != nil:
+		return *r.MaxSizeBytes, true
+	case r.MaxSizeKb != nil:
+		return int64(*r.MaxSizeKb * 1024), true
+	case r.MaxSizeMb != nil:
+		return int64(*r.MaxSizeMb * 1024 * 1024), true
+	default:
+		return 0, false
+	}
+}
+
 // LimitBytes returns the body size limit in bytes, honoring whichever unit was
 // set in the YAML and falling back to DefaultCaptureSizeBytes (500 KiB).
 func (r MimeTypeRule) LimitBytes() int64 {
-	switch {
-	case r.MaxSizeBytes != nil:
-		return *r.MaxSizeBytes
-	case r.MaxSizeKb != nil:
-		return int64(*r.MaxSizeKb * 1024)
-	case r.MaxSizeMb != nil:
-		return int64(*r.MaxSizeMb * 1024 * 1024)
-	default:
-		return DefaultCaptureSizeBytes
+	if limit, ok := r.explicitLimit(); ok {
+		return limit
 	}
+	return DefaultCaptureSizeBytes
+}
+
+// DefaultLimitBytes returns the limit applied to content types that match no
+// rule (and to rules without an explicit size): the configured
+// default_max_bytes, or DefaultCaptureSizeBytes when unset.
+func (c CaptureConfig) DefaultLimitBytes() int64 {
+	if c.DefaultMaxBytes != nil {
+		return *c.DefaultMaxBytes
+	}
+	return DefaultCaptureSizeBytes
 }
 
 // LimitForContentType returns the size limit for a content type (e.g.
 // "text/html; charset=utf-8"), matching rules in order with "type/*" wildcard
 // support. matched reports whether any rule applied; when false the returned
-// limit is the default.
+// limit is DefaultLimitBytes.
 func (c CaptureConfig) LimitForContentType(contentType string) (limit int64, matched bool) {
 	ct := normalizeContentType(contentType)
 	for _, rule := range c.MimeTypes {
 		if contentTypeMatches(rule.Name, ct) {
-			return rule.LimitBytes(), true
+			if explicit, ok := rule.explicitLimit(); ok {
+				return explicit, true
+			}
+			return c.DefaultLimitBytes(), true
 		}
 	}
-	return DefaultCaptureSizeBytes, false
+	return c.DefaultLimitBytes(), false
 }
 
 // normalizeContentType lowercases and strips any parameters ("; charset=...").

@@ -156,6 +156,9 @@ func TestCaptureSessionRoundTrip(t *testing.T) {
 	if h := r.headers(); !headersEqual(h, req.Headers) {
 		t.Fatalf("request headers = %v, want %v", h, req.Headers)
 	}
+	if r.boolVal() {
+		t.Fatalf("request body_skipped = true, want false")
+	}
 	if body := r.blob(); body != nil {
 		t.Fatalf("request body = %v, want nil", body)
 	}
@@ -181,6 +184,9 @@ func TestCaptureSessionRoundTrip(t *testing.T) {
 	}
 	if h := r.headers(); !headersEqual(h, resp.Headers) {
 		t.Fatalf("response headers = %v, want %v", h, resp.Headers)
+	}
+	if r.boolVal() {
+		t.Fatalf("response body_skipped = true, want false")
 	}
 	if body := r.blob(); string(body) != string(resp.Body) {
 		t.Fatalf("response body = %q, want %q", body, resp.Body)
@@ -211,6 +217,7 @@ func TestCaptureCorruptionIsDetected(t *testing.T) {
 	r.lpstring() // url
 	r.byteVal()  // http version
 	r.headers()
+	r.boolVal() // body_skipped
 	r.blob()
 	end := r.pos // payload is data[start:end]
 	storedCRC := binary.LittleEndian.Uint32(data[end : end+4])

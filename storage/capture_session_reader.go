@@ -159,6 +159,9 @@ func readRequest(br binaryReader) (RequestRecord, error) {
 	if r.Headers, err = readHeaders(br); err != nil {
 		return r, err
 	}
+	if r.BodySkipped, err = br.ReadBool(); err != nil {
+		return r, err
+	}
 	if r.Body, err = readBlob(br); err != nil {
 		return r, err
 	}
@@ -186,6 +189,9 @@ func readResponse(br binaryReader) (ResponseRecord, error) {
 		return r, err
 	}
 	if r.Headers, err = readHeaders(br); err != nil {
+		return r, err
+	}
+	if r.BodySkipped, err = br.ReadBool(); err != nil {
 		return r, err
 	}
 	if r.Body, err = readBlob(br); err != nil {
