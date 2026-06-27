@@ -2,9 +2,6 @@ package main
 
 import (
 	"bufio"
-	"crypto/ecdsa"
-	"crypto/x509"
-	"errors"
 	"flag"
 	"fmt"
 	"httpStackLens/certManager"
@@ -15,41 +12,6 @@ import (
 	"log/slog"
 	"os"
 )
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-func getHttpsDebugCertificates(config configuration.AppConfig) (*x509.Certificate, *ecdsa.PrivateKey, error) {
-	if config.CertManager.CaCertFile == "" || config.CertManager.CaKeyFile == "" {
-		log.Fatal("CA certificate and key files must be specified in config.yaml")
-		return nil, nil, errors.New("CA certificate and key files must be specified in config.yaml")
-	}
-
-	if !fileExists(config.CertManager.CaCertFile) || !fileExists(config.CertManager.CaKeyFile) {
-		err := certManager.GenerateCA(config.CertManager.CaCertFile, config.CertManager.CaKeyFile)
-		if err != nil {
-			log.Printf("Failed to generate CA: %v\n", err)
-			return nil, nil, err
-		}
-	} else {
-		log.Printf("🔒 CA certificate and key files already exist, skipping generation")
-	}
-
-	caCert, caKey, err := certManager.LoadCA(config.CertManager.CaCertFile, config.CertManager.CaKeyFile)
-	if err != nil {
-		log.Printf("Failed to load CA: %v\n", err)
-		return nil, nil, err
-	}
-	//_, _, err = certManager.SignServerCert(caCert, caKey, []string{"example.com", "www.example.com"})
-	//if err != nil {
-	//	log.Printf("Failed to sign server certificate: %v\n", err)
-	//	return
-	//}
-
-	return caCert, caKey, nil
-}
 
 func main() {
 	config := configuration.ReadConfiguration()
@@ -82,6 +44,13 @@ func main() {
 	stopChan := make(chan bool)
 
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config)
+
+	certificates, key, err := certManager.GetHttpsDebugCertificates(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Certificates: ", certificates, " Key: ", key, "")
 
 	logger := logging.CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger, config.Proxy)
