@@ -45,12 +45,18 @@ func main() {
 
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config)
 
-	certificates, key, err := certManager.GetHttpsDebugCertificates(config)
+	caCert, caKey, err := certManager.GetHttpsDebugCertificates(config)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Certificates: ", certificates, " Key: ", key, "")
+	fmt.Println("Certificates: ", caCert, " Key: ", caKey, "")
+
+	cert, key, err := certManager.CreateDomainCert(caCert, caKey, "romcyber.com", config.CertManager.DomainCertsFolder)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Signed certificate: ", cert, " Key: ", key, "")
 
 	logger := logging.CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger, config.Proxy)

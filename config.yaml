@@ -12,5 +12,6 @@ logging:
   file: logs/httpStackLens.log # empty to disable the file sink
 
 cert_manager:
-  ca_cert_file: "debug-https-ca.crt"
-  ca_key_file: "debug-https-ca.key"
+  ca_cert_file: "certificates/debug-https-ca.crt"
+  ca_key_file: "certificates/debug-https-ca.key"
+  domain_certs_folder: "certificates/domains"

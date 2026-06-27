@@ -16,8 +16,9 @@ type AppConfig struct {
 }
 
 type CertManagerConfig struct {
-	CaCertFile string `yaml:"ca_cert_file"`
-	CaKeyFile  string `yaml:"ca_key_file"`
+	CaCertFile        string `yaml:"ca_cert_file"`
+	CaKeyFile         string `yaml:"ca_key_file"`
+	DomainCertsFolder string `yaml:"domain_certs_folder"`
 }
 
 type LoggingConfig struct {
@@ -43,7 +44,7 @@ func DefaultAppConfig() AppConfig {
 	return AppConfig{
 		Proxy:       ProxyConfig{Port: 3128, EnableRemoteConnection: false},
 		WebUi:       WebUiConfig{Port: 9000, EnableRemoteConnection: false},
-		CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key"},
+		CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
 		Logging: LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
 	}
 }
@@ -75,8 +76,9 @@ func (c *AppConfig) ToDto() shared.AppConfigDto {
 			EnableRemoteConnection: c.WebUi.EnableRemoteConnection,
 		},
 		CertManager: shared.CertManagerConfigDto{
-			CaCertFile: c.CertManager.CaCertFile,
-			CaKeyFile:  c.CertManager.CaKeyFile,
+			CaCertFile:        c.CertManager.CaCertFile,
+			CaKeyFile:         c.CertManager.CaKeyFile,
+			DomainCertsFolder: c.CertManager.DomainCertsFolder,
 		},
 	}
 }

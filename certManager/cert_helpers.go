@@ -12,12 +12,25 @@ import (
 	"log"
 	"math/big"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// ensureParentDir creates the directory tree containing path if it does not
+// exist yet, so that relative paths like "certificates/debug-https-ca.crt"
+// can be written without pre-creating the folders by hand.
+func ensureParentDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "" || dir == "." {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
 }
 
 func GetHttpsDebugCertificates(config configuration.AppConfig) (*x509.Certificate, *ecdsa.PrivateKey, error) {
@@ -87,6 +100,9 @@ func GenerateCA(certFile string, keyFile string) error {
 	}
 
 	// 4. Write PEM file
+	if err := ensureParentDir(certFile); err != nil {
+		return err
+	}
 	certOut, err := os.Create(certFile)
 	if err != nil {
 		return err
@@ -98,6 +114,9 @@ func GenerateCA(certFile string, keyFile string) error {
 	}
 
 	// 5. Write the private key in PEM
+	if err := ensureParentDir(keyFile); err != nil {
+		return err
+	}
 	keyOut, err := os.Create(keyFile)
 	if err != nil {
 		return err
@@ -149,7 +168,7 @@ func LoadCA(certFile, keyFile string) (*x509.Certificate, *ecdsa.PrivateKey, err
 	return caCert, caKey, nil
 }
 
-func SignServerCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, domains []string) ([]byte, *ecdsa.PrivateKey, error) {
+func signServerCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, domains []string) ([]byte, *ecdsa.PrivateKey, error) {
 	serverKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 
 	template := &x509.Certificate{
@@ -165,4 +184,67 @@ func SignServerCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, domains []str
 	// Here parent = CA -> signed by CA
 	certDER, err := x509.CreateCertificate(rand.Reader, template, ca, &serverKey.PublicKey, caKey)
 	return certDER, serverKey, err
+}
+
+func CreateDomainCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, domain string, certsFolder string) ([]byte, *ecdsa.PrivateKey, error) {
+	cert, privateKey, err := signServerCert(ca, caKey, []string{domain})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := saveDomainCert(certsFolder, domain, cert, privateKey); err != nil {
+		log.Printf("Failed to save domain certificate for %s: %v\n", domain, err)
+		return nil, nil, err
+	}
+
+	return cert, privateKey, nil
+}
+
+// sanitizeDomain turns a domain into a filesystem-safe base name, e.g.
+// "*.example.com" -> "_wildcard_.example.com".
+func sanitizeDomain(domain string) string {
+	replacer := strings.NewReplacer(
+		"*", "_wildcard_",
+		"/", "_",
+		"\\", "_",
+		":", "_",
+	)
+	return replacer.Replace(domain)
+}
+
+// saveDomainCert writes the signed certificate and its private key as PEM files
+// into certsFolder, creating the folder tree if needed.
+func saveDomainCert(certsFolder string, domain string, certDER []byte, key *ecdsa.PrivateKey) error {
+	base := filepath.Join(certsFolder, sanitizeDomain(domain))
+	certPath := base + ".crt"
+	keyPath := base + ".key"
+
+	if err := ensureParentDir(certPath); err != nil {
+		return err
+	}
+
+	certOut, err := os.Create(certPath)
+	if err != nil {
+		return err
+	}
+	defer certOut.Close()
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		return err
+	}
+
+	keyOut, err := os.Create(keyPath)
+	if err != nil {
+		return err
+	}
+	defer keyOut.Close()
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return err
+	}
+	if err := pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}); err != nil {
+		return err
+	}
+
+	log.Printf("🔏 Domain certificate stored: %s\n", certPath)
+	return nil
 }

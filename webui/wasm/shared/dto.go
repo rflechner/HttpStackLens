@@ -32,6 +32,7 @@ type WebUiConfigDto struct {
 }
 
 type CertManagerConfigDto struct {
-	CaCertFile string `yaml:"ca_cert_file"`
-	CaKeyFile  string `yaml:"ca_key_file"`
+	CaCertFile        string `yaml:"ca_cert_file"`
+	CaKeyFile         string `yaml:"ca_key_file"`
+	DomainCertsFolder string `yaml:"domain_certs_folder"`
 }
