@@ -16,6 +16,12 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 	}
 	port = *flag.Int("port", port, "listening port")
 
+	webUiPort := 9000
+	if config.WebUi.Port != 0 {
+		webUiPort = config.WebUi.Port
+	}
+	webUiPort = *flag.Int("web-ui-port", webUiPort, "listening WEB UI port")
+
 	outputProxyUri := ""
 	if config.Proxy.OutputProxyUri != "" {
 		outputProxyUri = config.Proxy.OutputProxyUri
@@ -30,6 +36,11 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 	addWindowsAuthenticationToOutputProxy := *flag.Bool("output-proxy-add-windows-auth", config.Proxy.AddWindowsAuthenticationToOutputProxy, "specifies that this proxy adds windows authentication to the remote proxy (Windows supported only)") //-output-proxy-add-windows-auth=true
 	if addWindowsAuthenticationToOutputProxy {
 		fmt.Println("🙎 Adding Windows authentication to output proxy")
+	}
+
+	treat401AsProxyAuthentication := *flag.Bool("output-proxy-treat-401-as-auth-challenge", config.Proxy.Treat401AsProxyAuthentication, "treat upstream 401 WWW-Authenticate responses as proxy authentication challenges (compatibility mode)")
+	if treat401AsProxyAuthentication {
+		fmt.Println("⚠️ Treating upstream 401 responses as proxy authentication challenges")
 	}
 
 	flag.Parse()
@@ -49,14 +60,15 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		outputProxy = &(url.URL{})
 	}
 
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy)
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy, treat401AsProxyAuthentication)
 	if err != nil {
 		return AppContext{}, err
 	}
 
 	return AppContext{
-		pipeline: pipeline,
-		port:     port,
+		pipeline:  pipeline,
+		port:      port,
+		webUiPort: webUiPort,
 	}, nil
 
 }

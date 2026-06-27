@@ -2,7 +2,6 @@ package http
 
 import (
 	"httpStackLens/http/models"
-	"strings"
 	"testing"
 )
 
@@ -13,8 +12,10 @@ func TestReadProxyRequest(t *testing.T) {
 			"User-Agent: curl/7.68.0\n" +
 			"Proxy-Connection: Keep-Alive\n"
 
-		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		request, err := ReadProxyRequest(stream)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -51,8 +52,10 @@ func TestReadProxyRequest(t *testing.T) {
 
 	t.Run("Success: Only CONNECT", func(t *testing.T) {
 		input := "CONNECT example.com:80 HTTP/1.1\n"
-		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		request, err := ReadProxyRequest(stream)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -69,8 +72,10 @@ func TestReadProxyRequest(t *testing.T) {
 
 	t.Run("Success: GET request line", func(t *testing.T) {
 		input := "GET example.com:443 HTTP/1.1\n"
-		reader := strings.NewReader(input)
-		result, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		result, err := ReadProxyRequest(stream)
 
 		if err != nil {
 			t.Fatal("Expected error for invalid CONNECT line, but got none")
@@ -86,8 +91,10 @@ func TestReadProxyRequest(t *testing.T) {
 
 	t.Run("Failure: Empty reader", func(t *testing.T) {
 		input := ""
-		reader := strings.NewReader(input)
-		_, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		_, err := ReadProxyRequest(stream)
 
 		if err == nil {
 			t.Fatal("Expected error for empty reader, but got none")
@@ -101,8 +108,10 @@ func TestReadProxyRequest(t *testing.T) {
 			"InvalidHeader\n" +
 			"Another: header\n"
 
-		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		request, err := ReadProxyRequest(stream)
 
 		if err != nil {
 			t.Fatalf("Expected no error (it breaks from loop), got %v", err)
@@ -121,8 +130,10 @@ func TestReadProxyRequest(t *testing.T) {
 			"Empty:\n" +
 			"Another: value\n"
 
-		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		request, err := ReadProxyRequest(stream)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -141,8 +152,10 @@ func TestReadProxyRequest(t *testing.T) {
 		input := "CONNECT example.com HTTP/1.1\n" +
 			"Cookie: user=toto\n"
 
-		reader := strings.NewReader(input)
-		request, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		request, err := ReadProxyRequest(stream)
 
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
@@ -173,8 +186,10 @@ func TestReadProxyRequest(t *testing.T) {
 			"Proxy-Authorization: Basic dXNlcjpwYXNz\n" +
 			"Connection: keep-alive\n" +
 			"\n"
-		reader := strings.NewReader(input)
-		result, err := ReadProxyRequest(reader)
+		conn := createMockConn(input)
+		defer conn.Close()
+		stream := NewNetworkStream(conn)
+		result, err := ReadProxyRequest(stream)
 
 		if err != nil {
 			t.Fatalf("Expected no error, but got: %v", err)
