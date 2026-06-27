@@ -391,6 +391,8 @@ var     4         uint32    crc32c           CRC32-C of all preceding record byt
 
 ### Full-file datagram
 
+All multi-byte integers are **little-endian** (see [Conventions](#conventions)).
+
 ```
  HEADER
 ┌────────┬─────────┬───────────────────┬─────────────────┐
