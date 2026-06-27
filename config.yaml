@@ -4,10 +4,11 @@ proxy:
   output_proxy_uri: # "http://localhost:3130" #http://localhost:3129
   add_windows_authentication_to_output_proxy: false #true # only for windows
   require_windows_authentication: true # only for windows
-  decrypt_https: true # intercept & decrypt HTTPS (generates + installs a per-domain cert)
+
 webui:
   port: 9000
   enable_remote_connection: false
+
 logging:
   level: info # debug | info | warn | error (overridden by --verbose)
   file: logs/httpStackLens.log # empty to disable the file sink
@@ -20,3 +21,13 @@ cert_manager:
 storage:
   enable: true
   folder: "captures"
+
+capture:
+  decrypt_https: true # intercept & decrypt HTTPS (generates + installs a per-domain cert)
+  mime_types:
+    - name: "image/*"
+      max_size_mb: 2.5
+    - name: "text/*"
+      max_size_kb: 10000
+    - name: "application/json"
+

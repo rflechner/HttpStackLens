@@ -4,6 +4,7 @@ import (
 	"httpStackLens/webui/wasm/shared"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 )
@@ -14,11 +15,83 @@ type AppConfig struct {
 	CertManager CertManagerConfig `json:"cert_manager"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	Storage     StorageConfig     `yaml:"storage"`
+	Capture     CaptureConfig     `yaml:"capture"`
 }
 
 type StorageConfig struct {
 	Enable bool   `yaml:"enable"` // persist captured traffic to .capture files
 	Folder string `yaml:"folder"` // destination folder (relative to cwd, or absolute)
+}
+
+// DefaultCaptureSizeBytes is the per-MIME-type body size limit used when a rule
+// specifies no explicit size.
+const DefaultCaptureSizeBytes int64 = 500 * 1024 // 500 KiB
+
+type CaptureConfig struct {
+	DecryptHttps bool           `yaml:"decrypt_https"` // intercept & decrypt HTTPS (MITM)
+	MimeTypes    []MimeTypeRule `yaml:"mime_types"`    // per-content-type capture limits
+}
+
+// MimeTypeRule caps how much of a response body is captured for a given content
+// type. At most one of the size fields is expected; the size unit is binary
+// (KiB/MiB). Pointers distinguish "unset" from an explicit zero.
+type MimeTypeRule struct {
+	Name         string   `yaml:"name"`           // e.g. "image/*", "text/*", "application/json"
+	MaxSizeBytes *int64   `yaml:"max_size_bytes"` //
+	MaxSizeKb    *float64 `yaml:"max_size_kb"`    //
+	MaxSizeMb    *float64 `yaml:"max_size_mb"`    //
+}
+
+// LimitBytes returns the body size limit in bytes, honoring whichever unit was
+// set in the YAML and falling back to DefaultCaptureSizeBytes (500 KiB).
+func (r MimeTypeRule) LimitBytes() int64 {
+	switch {
+	case r.MaxSizeBytes != nil:
+		return *r.MaxSizeBytes
+	case r.MaxSizeKb != nil:
+		return int64(*r.MaxSizeKb * 1024)
+	case r.MaxSizeMb != nil:
+		return int64(*r.MaxSizeMb * 1024 * 1024)
+	default:
+		return DefaultCaptureSizeBytes
+	}
+}
+
+// LimitForContentType returns the size limit for a content type (e.g.
+// "text/html; charset=utf-8"), matching rules in order with "type/*" wildcard
+// support. matched reports whether any rule applied; when false the returned
+// limit is the default.
+func (c CaptureConfig) LimitForContentType(contentType string) (limit int64, matched bool) {
+	ct := normalizeContentType(contentType)
+	for _, rule := range c.MimeTypes {
+		if contentTypeMatches(rule.Name, ct) {
+			return rule.LimitBytes(), true
+		}
+	}
+	return DefaultCaptureSizeBytes, false
+}
+
+// normalizeContentType lowercases and strips any parameters ("; charset=...").
+func normalizeContentType(contentType string) string {
+	if i := strings.IndexByte(contentType, ';'); i >= 0 {
+		contentType = contentType[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(contentType))
+}
+
+// contentTypeMatches reports whether a normalized content type matches a rule
+// name, supporting a "type/*" subtype wildcard.
+func contentTypeMatches(ruleName, contentType string) bool {
+	ruleName = strings.ToLower(strings.TrimSpace(ruleName))
+	if ruleName == contentType || ruleName == "*/*" {
+		return true
+	}
+	if rt, _, ok := strings.Cut(ruleName, "/"); ok {
+		if st, _, ok2 := strings.Cut(contentType, "/"); ok2 {
+			return strings.HasSuffix(ruleName, "/*") && rt == st
+		}
+	}
+	return false
 }
 
 type CertManagerConfig struct {
@@ -39,7 +112,6 @@ type ProxyConfig struct {
 	AddWindowsAuthenticationToOutputProxy bool   `yaml:"add_windows_authentication_to_output_proxy"`
 	Treat401AsProxyAuthentication         bool   `yaml:"treat_401_as_proxy_authentication"`
 	RequireWindowsAuthentication          bool   `yaml:"require_windows_authentication"`
-	DecryptHttps                          bool   `yaml:"decrypt_https"`
 }
 
 type WebUiConfig struct {
@@ -54,6 +126,7 @@ func DefaultAppConfig() AppConfig {
 		CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
 		Logging:     LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
 		Storage:     StorageConfig{Enable: false, Folder: "captures"},
+		Capture:     CaptureConfig{DecryptHttps: false},
 	}
 }
 

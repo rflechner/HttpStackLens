@@ -34,7 +34,7 @@ type ProxyEventLogger interface {
 	LogRequest(id int, request models.ProxyRequest)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, certStore *certManager.CertStore, capture storage.CaptureSessionWriter) ProxyServer {
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter) ProxyServer {
 	log.Printf("Socket server started on port %v\n", appContext.port)
 	var addr string
 	if config.EnableRemoteConnection {
@@ -57,7 +57,7 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 		EventLogger:  eventLogger,
 		certStore:    certStore,
 		capture:      capture,
-		decryptHttps: config.DecryptHttps,
+		decryptHttps: decryptHttps,
 	}
 }
 

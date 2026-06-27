@@ -69,7 +69,7 @@ func main() {
 	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
 	// certificates we sign on the fly are accepted. A failure here is not fatal:
 	// the user can still install the CA manually.
-	if config.Proxy.DecryptHttps {
+	if config.Capture.DecryptHttps {
 		installer := certManager.NewCertInstaller()
 		if !installer.IsSupported() {
 			slog.Warn("Automatic certificate installation is not supported on this OS; install the CA manually",
@@ -90,7 +90,7 @@ func main() {
 	}
 
 	logger := logging.CreateWebUiEventLogger(hub)
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, certStore, captureWriter)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.Capture.DecryptHttps, certStore, captureWriter)
 
 	go proxyServer.Run()
 
@@ -133,12 +133,12 @@ func openCaptureWriter(config configuration.AppConfig) storage.CaptureSessionWri
 	name := fmt.Sprintf("capture-%s.capture", time.Now().Format("20060102-150405"))
 	path := filepath.Join(folder, name)
 
-	w, err := storage.NewFileCaptureSessionWriter(path, config.Proxy.DecryptHttps)
+	w, err := storage.NewFileCaptureSessionWriter(path, config.Capture.DecryptHttps)
 	if err != nil {
 		slog.Warn("Could not open capture file; captures disabled", "path", path, "error", err)
 		return nil
 	}
 
-	slog.Info("Capture recording enabled", "file", path, "decrypted", config.Proxy.DecryptHttps)
+	slog.Info("Capture recording enabled", "file", path, "decrypted", config.Capture.DecryptHttps)
 	return w
 }
