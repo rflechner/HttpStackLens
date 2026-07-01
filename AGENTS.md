@@ -148,6 +148,12 @@ go test ./...
 On Windows, authentication-related changes may require manual validation because
 they depend on SSPI and corporate proxy behavior.
 
+## Version Control
+
+The maintainer handles all commits personally. Do not run `git commit`, `git push`,
+or create branches/tags unless explicitly asked. Leave changes staged or unstaged
+in the working tree and let the maintainer review and commit them.
+
 ## Security Notes
 
 This tool may handle sensitive traffic.

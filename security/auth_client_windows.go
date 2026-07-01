@@ -106,6 +106,8 @@ func (a *ClientAuth) Update(token []byte) (authDone bool, outputToken []byte, er
 			authDone, outputToken, err = ctx.Update(token)
 			return authDone, outputToken, err
 		}
+	default:
+		panic("unhandled default case")
 	}
 
 	return false, nil, fmt.Errorf("unsupported auth package")
