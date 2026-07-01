@@ -59,31 +59,7 @@ func (macOsCertInstaller) InstallCACert(caCertFile string) error {
 // login keychain. The CA trust is what makes interception work, but keeping the
 // leaf certificate visible mirrors the Windows personal-store behavior.
 func (macOsCertInstaller) InstallDomainCert(domainCertFile string) error {
-	der, err := readCertDER(domainCertFile)
-	if err != nil {
-		return err
-	}
-	if len(der) == 0 {
-		return fmt.Errorf("no certificate found in %q", domainCertFile)
-	}
-
-	keychain, err := loginKeychainPath()
-	if err != nil {
-		return err
-	}
-
-	exists, err := certInMacOSKeychain(keychain, der)
-	if err != nil {
-		log.Printf("⚠️  Could not check the login keychain for the domain certificate: %v\n", err)
-	} else if exists {
-		log.Printf("🔏 Domain certificate already present in the current user's login keychain, skipping: %s\n", domainCertFile)
-		return nil
-	}
-
-	if err := runSecurity("add-certificates", "-k", keychain, domainCertFile); err != nil {
-		return err
-	}
-	log.Printf("🔏 Domain certificate installed in the current user's login keychain: %s\n", domainCertFile)
+	// Skip installation of domain certificate under macOS
 	return nil
 }
 
