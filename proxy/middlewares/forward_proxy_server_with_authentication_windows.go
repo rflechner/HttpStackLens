@@ -123,7 +123,7 @@ func (m *ForwardProxyServerWithWindowsAuthentication) HandleProxyRequest(browser
 			}
 
 			// Prefer Negotiate over NTLM if multiple offered
-			if selectedPackage == security.AuthNone || pkg == security.AuthNegotiate {
+			if selectedPackage == security.AuthNone || pkg == security.AuthNTLM {
 				selectedPackage = pkg
 				if len(parts) == 2 {
 					serverToken, _ = base64.StdEncoding.DecodeString(parts[1])
