@@ -70,9 +70,17 @@ func (m *HttpsInterceptor) intercept(browser net.Conn, request models.ProxyReque
 
 	// One transport per tunnel, reused across keep-alive requests. It dials the
 	// real server over TLS and verifies its certificate normally.
+	//
+	// DisableCompression keeps the transport from silently adding
+	// "Accept-Encoding: gzip" (which it does whenever the request carries none)
+	// and transparently decompressing the reply. That transparent path drops the
+	// response's Content-Length, which would force close-delimited framing and
+	// stall keep-alive. Combined with forward() deleting Accept-Encoding, the
+	// origin returns an identity body we can stream, frame and store as-is.
 	transport := &http.Transport{
-		TLSClientConfig:   &tls.Config{NextProtos: []string{"http/1.1"}},
-		ForceAttemptHTTP2: false,
+		TLSClientConfig:    &tls.Config{NextProtos: []string{"http/1.1"}},
+		ForceAttemptHTTP2:  false,
+		DisableCompression: true,
 	}
 	defer transport.CloseIdleConnections()
 
@@ -129,29 +137,75 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	contentType := resp.Header.Get("Content-Type")
 	limit, _ := m.Limits.LimitForContentType(contentType)
 
-	// capBody always yields a reader replaying the full body, whether or not it
-	// fit the limit, so the browser is never short-changed.
-	store, forward, skipped, err := capBody(originalBody, limit)
-	if err != nil {
-		return err
+	// Stream the response to the browser as it arrives, capturing at most `limit`
+	// bytes in parallel through a tee. The response keeps its original framing
+	// (Content-Length / chunked), so the browser always sees a correctly
+	// delimited message.
+	//
+	// This must not buffer the whole body before forwarding: doing so used to
+	// stall progressive and long-lived responses — video segments, SSE,
+	// long-poll — until they closed, leaving the browser stuck in "loading".
+	var capture *captureLimitWriter
+	if m.Capture != nil || isHtmlOrJs(contentType) {
+		capture = &captureLimitWriter{limit: limit}
+		resp.Body = io.NopCloser(io.TeeReader(originalBody, capture))
 	}
 
-	if skipped {
-		// Too large: do not store the body, but stream it untouched so the
-		// original framing is preserved.
-		m.recordResponse(recordID, resp, nil, true)
-		resp.Body = io.NopCloser(forward)
-		return resp.Write(clientTLS)
+	// A body of unknown length with no chunked framing would be delimited by
+	// connection close, but the tunnel is kept alive for the next request, so the
+	// browser would wait forever. Force chunked framing so every response carries
+	// an explicit terminator. (0-or-positive lengths and HEAD/204/304 replies,
+	// which have no body, are left untouched.)
+	if resp.ContentLength < 0 && len(resp.TransferEncoding) == 0 {
+		resp.TransferEncoding = []string{"chunked"}
 	}
 
-	// Small enough to inspect and store; re-frame with a Content-Length.
-	printIfTextual(host, req.URL.RequestURI(), contentType, store)
-	m.recordResponse(recordID, resp, store, false)
-	resp.Body = io.NopCloser(forward)
-	resp.ContentLength = int64(len(store))
-	resp.TransferEncoding = nil
+	writeErr := resp.Write(clientTLS)
 
-	return resp.Write(clientTLS)
+	if capture != nil {
+		body, skipped := capture.captured()
+		if !skipped {
+			printIfTextual(host, req.URL.RequestURI(), contentType, body)
+		}
+		m.recordResponse(recordID, resp, body, skipped)
+	}
+
+	return writeErr
+}
+
+// captureLimitWriter accumulates the bytes written to it up to limit, so a
+// response body can be captured for storage while it is being streamed to the
+// browser via io.TeeReader. Writes always report the full length, so they never
+// throttle the stream. Once the total exceeds limit the buffered bytes are
+// dropped and skipped is latched: the body is still forwarded in full, but not
+// stored (mirroring the previous BodySkipped semantics).
+type captureLimitWriter struct {
+	limit   int64
+	written int64
+	buf     bytes.Buffer
+	skipped bool
+}
+
+func (w *captureLimitWriter) Write(p []byte) (int, error) {
+	w.written += int64(len(p))
+	if !w.skipped {
+		if w.written > w.limit {
+			w.skipped = true
+			w.buf.Reset()
+		} else {
+			w.buf.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+// captured returns the buffered body and whether it was skipped for exceeding
+// the limit. When skipped, the body is nil (nothing is stored).
+func (w *captureLimitWriter) captured() (body []byte, skipped bool) {
+	if w.skipped {
+		return nil, true
+	}
+	return w.buf.Bytes(), false
 }
 
 // capBody reads up to limit+1 bytes from body to decide whether it fits.
