@@ -3,10 +3,8 @@
 package certManager
 
 import (
-	"encoding/pem"
 	"fmt"
 	"log"
-	"os"
 	"syscall"
 	"unsafe"
 )
@@ -172,17 +170,4 @@ func certInStore(storeName string, der []byte) (bool, error) {
 		return true, nil
 	}
 	return false, nil
-}
-
-// readCertDER returns the DER bytes of the certificate in certFile, accepting
-// either a PEM-encoded file (our case) or an already DER-encoded one.
-func readCertDER(certFile string) ([]byte, error) {
-	data, err := os.ReadFile(certFile)
-	if err != nil {
-		return nil, err
-	}
-	if block, _ := pem.Decode(data); block != nil {
-		return block.Bytes, nil
-	}
-	return data, nil
 }
