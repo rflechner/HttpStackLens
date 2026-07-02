@@ -136,12 +136,18 @@ server and WASM.
       single UUID generated per request in `proxy_server.go` — now shared by the
       capture record and the `request_occurred` event. `LogRequest` signature +
       both loggers updated.
-- [ ] B1.2 Extend `RequestEventDto` + create `ResponseEventDto` in `shared/dto.go`.
-- [ ] B1.3 Measure duration (chrono around `transport.RoundTrip` in
-      [`https_interceptor.go`](proxy/middlewares/https_interceptor.go)) and for plain HTTP.
-- [ ] B1.4 Publish `response_occurred` from the interceptor + the plain-HTTP path
-      (via `WebUiEventLogger`).
-- [ ] B1.5 Flag `scheme`/`tls`/`decrypted`/`stream` (SSE, WebSocket upgrade).
+- [x] B1.2 Extend `RequestEventDto` (`scheme`/`tls`/`decrypted`) + create
+      `ResponseEventDto` in `shared/dto.go`.
+- [x] B1.3 Measure duration (chrono around `transport.RoundTrip` + response write
+      in [`https_interceptor.go`](proxy/middlewares/https_interceptor.go)).
+      *Plain-HTTP timing not done — see B1.4 note.*
+- [~] B1.4 Publish `request_occurred` + `response_occurred` from the interceptor
+      via a new `EventSink` (satisfied by `WebUiEventLogger`); CONNECT is hidden in
+      decrypt mode. **Plain-HTTP responses are NOT emitted**: `TunnelServer`/
+      `ForwardProxyServer` just `io.Copy` the bytes without parsing the response —
+      surfacing them needs response parsing on that path (deferred, own task).
+- [x] B1.5 Flag `scheme`/`tls`/`decrypted` on requests and `stream` on responses
+      (`text/event-stream`, HTTP 101 WebSocket upgrade).
 
 ### EPIC B2 — Detail on demand (headers + body)
 - [ ] B2.1 Keep a bounded in-memory buffer of the last N requests (records already

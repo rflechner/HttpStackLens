@@ -110,7 +110,12 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 			log.Printf("capture: failed to generate correlation id: %v\n", err)
 		}
 
-		s.EventLogger.LogRequest(requestId, correlationID.String(), request)
+		// In decryption mode the CONNECT tunnel itself is not surfaced to the UI:
+		// the HTTPS interceptor emits the decrypted requests/responses instead, so
+		// showing the opaque CONNECT would only add a permanently-pending row.
+		if !(s.decryptHttps && request.HttpRequestLine.IsConnect()) {
+			s.EventLogger.LogRequest(requestId, correlationID.String(), request)
+		}
 		s.recordTopLevelRequest(correlationID, request)
 
 		// Pass the buffered stream (not the raw connection) down the pipeline so

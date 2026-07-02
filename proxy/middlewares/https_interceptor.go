@@ -9,13 +9,25 @@ import (
 	"httpStackLens/configuration"
 	"httpStackLens/http/models"
 	"httpStackLens/storage"
+	"httpStackLens/webui/wasm/shared"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 )
+
+// EventSink receives real-time request/response events for the Web UI. It is
+// satisfied by logging.WebUiEventLogger and injected into the interceptor so the
+// decrypted HTTPS requests/responses — which are otherwise only written to the
+// capture file — show up live in the UI, correlated by CorrelationID.
+type EventSink interface {
+	PublishRequestEvent(shared.RequestEventDto)
+	PublishResponseEvent(shared.ResponseEventDto)
+}
 
 // HttpsInterceptor performs a man-in-the-middle on CONNECT tunnels so that the
 // HTTPS traffic can be inspected in clear text: it terminates the browser's TLS
@@ -33,6 +45,12 @@ type HttpsInterceptor struct {
 	// Limits drives the per-content-type body size caps. Bodies larger than the
 	// limit are forwarded to the browser but not stored (BodySkipped is set).
 	Limits configuration.CaptureConfig
+	// Events, when non-nil, receives a request/response event per decrypted
+	// request so live HTTPS traffic appears in the Web UI.
+	Events EventSink
+	// seq numbers decrypted requests for the UI's display column. It is shared
+	// across all tunnels since one interceptor instance handles every CONNECT.
+	seq atomic.Int64
 }
 
 func (m *HttpsInterceptor) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
@@ -116,17 +134,24 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	req.RequestURI = ""
 	req.Header.Del("Accept-Encoding")
 
-	// One id correlates the request record with its response record. The request
-	// body is captured within its size limit while still being forwarded in full.
+	// One id correlates the request record with its response record — and, via
+	// the same string, the request/response events streamed to the UI. The
+	// request body is captured within its size limit while still being forwarded
+	// in full.
 	recordID, _ := storage.NewUUID()
+	correlationID := recordID.String()
 	reqBody, reqSkipped, err := m.capRequestBody(req)
 	if err != nil {
 		return err
 	}
 	m.recordRequest(recordID, req, reqBody, reqSkipped)
+	m.publishRequestEvent(correlationID, req, host, authority)
 
 	log.Printf("🔓 %s https://%s%s\n", req.Method, host, req.URL.RequestURI())
 
+	// Time the exchange from issuing the upstream request to finishing writing
+	// the response back to the client.
+	start := time.Now()
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		return err
@@ -146,7 +171,7 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	// stall progressive and long-lived responses — video segments, SSE,
 	// long-poll — until they closed, leaving the browser stuck in "loading".
 	var capture *captureLimitWriter
-	if m.Capture != nil || isHtmlOrJs(contentType) {
+	if m.Capture != nil || m.Events != nil || isHtmlOrJs(contentType) {
 		capture = &captureLimitWriter{limit: limit}
 		resp.Body = io.NopCloser(io.TeeReader(originalBody, capture))
 	}
@@ -168,9 +193,64 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 			printIfTextual(host, req.URL.RequestURI(), contentType, body)
 		}
 		m.recordResponse(recordID, resp, body, skipped)
+		m.publishResponseEvent(correlationID, resp, contentType, capture.total(), skipped, len(body), time.Since(start))
 	}
 
 	return writeErr
+}
+
+// publishRequestEvent streams a decrypted request to the UI. It is a no-op when
+// no sink is wired.
+func (m *HttpsInterceptor) publishRequestEvent(correlationID string, req *http.Request, host, authority string) {
+	if m.Events == nil {
+		return
+	}
+	port := 443
+	if _, p, err := net.SplitHostPort(authority); err == nil {
+		if n, convErr := strconv.Atoi(p); convErr == nil {
+			port = n
+		}
+	}
+	m.Events.PublishRequestEvent(shared.RequestEventDto{
+		ID:            int(m.seq.Add(1)),
+		CorrelationID: correlationID,
+		Method:        req.Method,
+		Host:          host,
+		Port:          port,
+		Path:          req.URL.RequestURI(),
+		Version:       fmt.Sprintf("HTTP/%d.%d", req.ProtoMajor, req.ProtoMinor),
+		Scheme:        "https",
+		Tls:           true,
+		Decrypted:     true,
+	})
+}
+
+// publishResponseEvent streams the matching response to the UI. size is the
+// total bytes transferred; bodyLen is the number of bytes actually captured.
+func (m *HttpsInterceptor) publishResponseEvent(correlationID string, resp *http.Response, contentType string, size int64, skipped bool, bodyLen int, elapsed time.Duration) {
+	if m.Events == nil {
+		return
+	}
+	m.Events.PublishResponseEvent(shared.ResponseEventDto{
+		CorrelationID: correlationID,
+		Status:        resp.StatusCode,
+		StatusText:    statusMessage(resp),
+		ContentType:   contentType,
+		Size:          size,
+		DurationMs:    elapsed.Milliseconds(),
+		BodyAvailable: !skipped && bodyLen > 0,
+		BodySkipped:   skipped,
+		Stream:        isStreaming(contentType, resp),
+	})
+}
+
+// isStreaming reports whether a response is a long-lived stream whose body is
+// never captured — Server-Sent Events or a WebSocket upgrade.
+func isStreaming(contentType string, resp *http.Response) bool {
+	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
+		return true
+	}
+	return resp.StatusCode == http.StatusSwitchingProtocols
 }
 
 // captureLimitWriter accumulates the bytes written to it up to limit, so a
@@ -198,6 +278,11 @@ func (w *captureLimitWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// total returns the number of bytes seen so far, regardless of whether they
+// were buffered or dropped for exceeding the limit — i.e. the real transferred
+// body size.
+func (w *captureLimitWriter) total() int64 { return w.written }
 
 // captured returns the buffered body and whether it was skipped for exceeding
 // the limit. When skipped, the body is nil (nothing is stored).

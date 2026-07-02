@@ -13,6 +13,39 @@ type RequestEventDto struct {
 	Port          int    `json:"port"`
 	Path          string `json:"path"`
 	Version       string `json:"version"`
+	// Scheme is "http" or "https".
+	Scheme string `json:"scheme"`
+	// Tls is true when the request travelled over TLS (an HTTPS CONNECT tunnel or
+	// a decrypted HTTPS request).
+	Tls bool `json:"tls"`
+	// Decrypted is true when the body/headers were MITM-decrypted and are
+	// therefore inspectable (as opposed to an opaque, tunnelled CONNECT).
+	Decrypted bool `json:"decrypted"`
+}
+
+// ResponseEventDto is streamed (SSE "response_occurred") when a response is
+// received, carrying the same CorrelationID as its RequestEventDto so the UI can
+// pair them. It is currently emitted only for decrypted HTTPS traffic; plain
+// HTTP responses are piped without parsing and are not surfaced yet.
+type ResponseEventDto struct {
+	CorrelationID string `json:"correlation_id"`
+	Status        int    `json:"status"`
+	StatusText    string `json:"status_text"`
+	ContentType   string `json:"content_type"`
+	// Size is the number of body bytes transferred (best-effort: the actual bytes
+	// streamed to the client, even when the body was not stored).
+	Size int64 `json:"size"`
+	// DurationMs is the elapsed time from issuing the upstream request to finishing
+	// writing the response back to the client.
+	DurationMs int64 `json:"duration_ms"`
+	// BodyAvailable is true when the body was captured and can be fetched for the
+	// detail view; BodySkipped is true when it was dropped for exceeding its
+	// per-content-type size limit.
+	BodyAvailable bool `json:"body_available"`
+	BodySkipped   bool `json:"body_skipped"`
+	// Stream is true for streaming responses (SSE, WebSocket upgrade) whose body is
+	// never captured — only frame metadata.
+	Stream bool `json:"stream"`
 }
 
 type CertificatesInfosDto struct {

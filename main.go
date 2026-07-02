@@ -66,6 +66,11 @@ func main() {
 		defer func() { _ = captureWriter.Close() }()
 	}
 
+	// Streams request/response events to the Web UI over SSE. Created before the
+	// pipeline so the HTTPS interceptor can surface the decrypted requests and
+	// responses it sees (they are otherwise only written to the capture file).
+	logger := logging.CreateWebUiEventLogger(hub)
+
 	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
 	// certificates we sign on the fly are accepted. A failure here is not fatal:
 	// the user can still install the CA manually.
@@ -86,11 +91,11 @@ func main() {
 			Next:      appContext.pipeline,
 			Capture:   captureWriter,
 			Limits:    config.Capture,
+			Events:    logger,
 		}
 		slog.Info("HTTPS decryption enabled")
 	}
 
-	logger := logging.CreateWebUiEventLogger(hub)
 	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.Capture.DecryptHttps, certStore, captureWriter)
 
 	go proxyServer.Run()
