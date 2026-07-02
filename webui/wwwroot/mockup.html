@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HttpStackLens — vanilla (HTML · Tailwind · JS)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          bg0: '#0e0f12', bg1: '#15171c', bg2: '#1c1f26', bg3: '#23272f',
+          line: '#262a33', lineSoft: '#1f232a',
+          ink: '#d8dce4', dim: '#8a93a3', faint: '#5a6173',
+          mint: '#7fd4b4', warn: '#f1b45a', danger: '#e86a6a', info: '#7aa7ff', pink: '#d48ad6',
+        },
+        fontFamily: {
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          ui: ['Inter', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #0e0f12; overflow: hidden; }
+  body { font-family: Inter, system-ui, sans-serif; color: #d8dce4; }
+  * { box-sizing: border-box; }
+
+  /* recording dot */
+  .rec-dot { width: 8px; height: 8px; border-radius: 4px; flex-shrink: 0; background: #5a6173; display: inline-block; }
+  .rec-dot.on { background: #e86a6a; animation: hsl-pulse 1.6s ease-out infinite; }
+  @keyframes hsl-pulse { 0% { box-shadow: 0 0 0 0 #e86a6a90; } 100% { box-shadow: 0 0 0 9px #e86a6a00; } }
+
+  @keyframes hsl-row-in { from { opacity: 0; transform: translateY(-2px); background: #7fd4b418; } to { opacity: 1; transform: translateY(0); background: transparent; } }
+  .row-new { animation: hsl-row-in .4s ease-out; }
+
+  .spin { animation: hsl-spin 1s linear infinite; }
+  @keyframes hsl-spin { to { transform: rotate(360deg); } }
+
+  /* scrollbars */
+  .hsl-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .hsl-scroll::-webkit-scrollbar-track { background: transparent; }
+  .hsl-scroll::-webkit-scrollbar-thumb { background: #23272f; border-radius: 5px; border: 2px solid #0e0f12; }
+  .hsl-scroll::-webkit-scrollbar-thumb:hover { background: #262a33; }
+
+  /* shared toolbar/detail button */
+  .hsl-tb { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 4px;
+    font-size: 11.5px; font-family: Inter; font-weight: 500; color: #8a93a3; background: transparent;
+    border: 1px solid transparent; cursor: pointer; white-space: nowrap; user-select: none; }
+  .hsl-tb:hover { background: #1c1f26; }
+  .hsl-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 4px;
+    font-size: 12px; font-family: Inter; font-weight: 500; color: #8a93a3; background: transparent;
+    border: 1px solid #262a33; cursor: pointer; white-space: nowrap; }
+  .hsl-btn:hover { color: #d8dce4; }
+  input::placeholder { color: #5a6173; }
+</style>
+</head>
+<body>
+<div class="flex flex-col h-screen w-screen overflow-hidden bg-bg0">
+
+  <!-- title bar -->
+  <div class="flex items-center gap-[10px] flex-shrink-0" style="height:34px;padding:0 10px 0 12px;background:linear-gradient(180deg,#1a1d23,#14161b);border-bottom:1px solid #262a33">
+    <div class="flex gap-[6px]">
+      <span style="width:10px;height:10px;border-radius:5px;background:#ec6a5e"></span>
+      <span style="width:10px;height:10px;border-radius:5px;background:#f5bd4f"></span>
+      <span style="width:10px;height:10px;border-radius:5px;background:#61c554"></span>
+    </div>
+    <div style="width:1px;height:16px;background:#262a33;margin:0 4px"></div>
+    <div class="flex items-center gap-2 text-ink" style="font-size:12.5px">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="5.5" stroke="#7fd4b4" stroke-width="1.2"></circle>
+        <circle cx="7" cy="7" r="1.8" fill="#7fd4b4"></circle>
+        <path d="M7 1.5v11M1.5 7h11" stroke="#7fd4b4" stroke-width="0.8" opacity="0.5"></path>
+      </svg>
+      <span class="font-semibold" style="letter-spacing:.2px">HttpStackLens</span>
+      <span class="text-faint" style="font-size:11.5px">· session.local · vanilla build</span>
+    </div>
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-1" style="margin-right:6px">
+      <span class="text-faint" style="font-size:10.5px;font-family:'JetBrains Mono'">density</span>
+      <button data-density="compact" class="hsl-density" style="height:20px;padding:0 7px;border-radius:3px;font-size:10.5px;font-family:Inter;cursor:pointer;background:#1c1f26;color:#8a93a3;border:1px solid #262a33">compact</button>
+      <button data-density="normal" class="hsl-density" style="height:20px;padding:0 7px;border-radius:3px;font-size:10.5px;font-family:Inter;cursor:pointer;background:#7fd4b422;color:#7fd4b4;border:1px solid #7fd4b466">normal</button>
+      <button data-density="comfy" class="hsl-density" style="height:20px;padding:0 7px;border-radius:3px;font-size:10.5px;font-family:Inter;cursor:pointer;background:#1c1f26;color:#8a93a3;border:1px solid #262a33">comfy</button>
+    </div>
+    <button class="hsl-tb" data-action="open-settings">⚙ Settings</button>
+  </div>
+
+  <!-- toolbar -->
+  <div class="flex items-center gap-2 flex-shrink-0" style="height:42px;padding:0 12px;background:#15171c;border-bottom:1px solid #262a33">
+    <button id="btn-capture" class="hsl-tb" data-action="toggle-capture"></button>
+    <button class="hsl-tb" data-action="clear">✕ Clear</button>
+    <div style="width:1px;height:18px;background:#262a33;margin:0 2px"></div>
+    <button id="btn-decrypt" class="hsl-tb" data-action="toggle-decrypt"></button>
+    <button id="btn-upstream" class="hsl-tb" data-action="open-upstream"></button>
+    <button id="btn-access" class="hsl-tb" data-action="open-access"></button>
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-[6px]" style="background:#1c1f26;border:1px solid #262a33;border-radius:3px;padding:0 8px;height:24px;width:320px">
+      <span class="text-faint" style="font-size:12px">⌕</span>
+      <input id="filter" placeholder="host, path, method, status…" class="flex-1 bg-transparent border-0 outline-none text-ink" style="font-size:12px;font-family:Inter" />
+      <button id="filter-clear" class="text-faint" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0">×</button>
+      <span class="text-faint" style="font-family:'JetBrains Mono';font-size:10.5px">⌘K</span>
+    </div>
+  </div>
+
+  <!-- body -->
+  <div class="flex flex-1 min-h-0">
+
+    <!-- sidebar -->
+    <div class="flex flex-col flex-shrink-0" style="width:216px;background:#15171c;border-right:1px solid #262a33">
+      <div style="padding:12px 8px 4px">
+        <div class="text-faint" style="font-size:10px;text-transform:uppercase;letter-spacing:.7px;font-weight:600;padding:0 8px 6px">Session</div>
+        <div class="grid gap-[1px]">
+          <button data-side="all" class="flex items-center gap-2 w-full text-left rounded-[3px]" style="padding:5px 8px;border:none;cursor:pointer;font-family:Inter;font-size:12px"><span style="width:6px;height:6px;border-radius:3px;background:#8a93a3"></span><span class="flex-1">All traffic</span><span class="side-count text-faint" style="font-family:'JetBrains Mono';font-size:10.5px">0</span></button>
+          <button data-side="2xx" class="flex items-center gap-2 w-full text-left rounded-[3px]" style="padding:5px 8px;border:none;cursor:pointer;font-family:Inter;font-size:12px;color:#8a93a3"><span style="width:6px;height:6px;border-radius:3px;background:#7fd4b4"></span><span class="flex-1">Success</span><span class="side-count text-faint" style="font-family:'JetBrains Mono';font-size:10.5px">0</span></button>
+          <button data-side="4xx" class="flex items-center gap-2 w-full text-left rounded-[3px]" style="padding:5px 8px;border:none;cursor:pointer;font-family:Inter;font-size:12px;color:#8a93a3"><span style="width:6px;height:6px;border-radius:3px;background:#f1b45a"></span><span class="flex-1">Client errors</span><span class="side-count text-faint" style="font-family:'JetBrains Mono';font-size:10.5px">0</span></button>
+          <button data-side="5xx" class="flex items-center gap-2 w-full text-left rounded-[3px]" style="padding:5px 8px;border:none;cursor:pointer;font-family:Inter;font-size:12px;color:#8a93a3"><span style="width:6px;height:6px;border-radius:3px;background:#e86a6a"></span><span class="flex-1">Server errors</span><span class="side-count text-faint" style="font-family:'JetBrains Mono';font-size:10.5px">0</span></button>
+          <button data-side="tls" class="flex items-center gap-2 w-full text-left rounded-[3px]" style="padding:5px 8px;border:none;cursor:pointer;font-family:Inter;font-size:12px;color:#8a93a3"><span style="width:6px;height:6px;border-radius:3px;background:#7fd4b4"></span><span class="flex-1">TLS</span><span class="side-count text-faint" style="font-family:'JetBrains Mono';font-size:10.5px">0</span></button>
+        </div>
+      </div>
+      <div style="padding:12px 8px 4px">
+        <div class="text-faint" style="font-size:10px;text-transform:uppercase;letter-spacing:.7px;font-weight:600;padding:0 8px 6px">Hosts</div>
+        <div id="hosts" class="grid gap-[1px]"></div>
+      </div>
+      <div class="flex-1"></div>
+      <div style="padding:12px;border-top:1px solid #262a33;background:#1c1f26">
+        <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Listening</div>
+        <div style="font-family:'JetBrains Mono';font-size:11.5px"><span style="color:#7fd4b4">127.0.0.1</span>:<span style="color:#f1b45a">8823</span></div>
+        <div class="flex gap-3" style="margin-top:10px;font-size:10.5px;color:#8a93a3;font-family:'JetBrains Mono'">
+          <span>↓ 1.42<span class="text-faint"> MB/s</span></span>
+          <span>↑ 284<span class="text-faint"> KB/s</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- content -->
+    <div class="flex flex-col flex-1 min-w-0">
+      <!-- waterfall -->
+      <div id="waterfall" class="flex items-end gap-[1px] flex-shrink-0 overflow-hidden" style="height:44px;background:#15171c;border-bottom:1px solid #262a33;padding:6px 12px"></div>
+
+      <!-- list region -->
+      <div id="list-region" class="flex flex-col min-h-0" style="flex:1">
+        <!-- column header -->
+        <div class="grid items-center flex-shrink-0" style="grid-template-columns:48px 54px 20px 56px 178px 1fr 132px 70px 76px 54px;gap:10px;padding:0 12px;height:24px;background:#15171c;border-bottom:1px solid #262a33;border-left:2px solid transparent">
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;text-align:right">#</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase">Method</span>
+          <span></span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase">Status</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase">Host</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase">Path</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase">Content-Type</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;text-align:right">Size</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;text-align:right">Time</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;text-align:right">Dur</span>
+        </div>
+        <!-- list -->
+        <div id="list" class="flex-1 min-h-0 overflow-auto hsl-scroll bg-bg0"></div>
+      </div>
+
+      <!-- detail -->
+      <div id="detail-wrap" class="flex flex-col min-h-0" style="flex:0.45;border-top:1px solid #262a33;background:#15171c;display:none"></div>
+    </div>
+  </div>
+
+  <!-- status bar -->
+  <div id="statusbar" class="flex items-center flex-shrink-0" style="height:22px;background:#15171c;border-top:1px solid #262a33;font-family:'JetBrains Mono';font-size:10.5px;color:#8a93a3"></div>
+</div>
+
+<!-- modal layer -->
+<div id="modal-root" style="position:fixed;inset:0;pointer-events:none;z-index:50"></div>
+
+<script src="mockup.js"></script>
+</body>
+</html>
