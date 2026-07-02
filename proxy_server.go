@@ -31,7 +31,7 @@ type ProxyServer struct {
 
 type ProxyEventLogger interface {
 	LogEvent(event string)
-	LogRequest(id int, request models.ProxyRequest)
+	LogRequest(id int, correlationID string, request models.ProxyRequest)
 }
 
 func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter) ProxyServer {
@@ -101,13 +101,22 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 			_ = stream.Close()
 		}()
 
-		s.EventLogger.LogRequest(requestId, request)
-		s.recordTopLevelRequest(request)
+		// One correlation id per request, shared between the real-time event
+		// stream (SSE) and the persisted capture record, so the UI can link this
+		// request to its response. A generation failure is non-fatal: the zero
+		// UUID still yields a valid (all-zero) string.
+		correlationID, err := storage.NewUUID()
+		if err != nil {
+			log.Printf("capture: failed to generate correlation id: %v\n", err)
+		}
+
+		s.EventLogger.LogRequest(requestId, correlationID.String(), request)
+		s.recordTopLevelRequest(correlationID, request)
 
 		// Pass the buffered stream (not the raw connection) down the pipeline so
 		// any request body bytes already pulled into the read buffer alongside
 		// the headers are not lost when the pipeline forwards the connection.
-		err := pipeline.HandleProxyRequest(stream, request)
+		err = pipeline.HandleProxyRequest(stream, request)
 		if err != nil {
 			fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
 		}
@@ -117,23 +126,24 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 // recordTopLevelRequest persists the proxied request line + headers to the
 // capture file. In decryption mode the CONNECT tunnel is skipped here because
 // the HTTPS interceptor records the decrypted requests/responses instead.
-func (s *ProxyServer) recordTopLevelRequest(request models.ProxyRequest) {
+func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest) {
 	if s.capture == nil {
 		return
 	}
 	if s.decryptHttps && request.HttpRequestLine.IsConnect() {
 		return
 	}
-	if err := s.capture.WriteRequest(proxyRequestToRecord(request)); err != nil {
+	if err := s.capture.WriteRequest(proxyRequestToRecord(correlationID, request)); err != nil {
 		log.Printf("capture: failed to record request: %v\n", err)
 	}
 }
 
-// proxyRequestToRecord converts a parsed proxy request into a capture record.
-// The body is not captured at this level (it is streamed by the pipeline);
-// decrypted bodies are recorded by the HTTPS interceptor.
-func proxyRequestToRecord(request models.ProxyRequest) storage.RequestRecord {
-	id, _ := storage.NewUUID()
+// proxyRequestToRecord converts a parsed proxy request into a capture record,
+// tagged with the shared correlation id so it lines up with the request event
+// streamed to the UI. The body is not captured at this level (it is streamed by
+// the pipeline); decrypted bodies are recorded by the HTTPS interceptor.
+func proxyRequestToRecord(correlationID storage.UUID, request models.ProxyRequest) storage.RequestRecord {
+	id := correlationID
 	line := request.HttpRequestLine
 
 	var url string

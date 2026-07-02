@@ -17,14 +17,15 @@ func (c *WebUiEventLogger) LogEvent(event string) {
 	c.Hub.Publish("event_occurred", event)
 }
 
-func (c *WebUiEventLogger) LogRequest(id int, request models.ProxyRequest) {
+func (c *WebUiEventLogger) LogRequest(id int, correlationID string, request models.ProxyRequest) {
 	event := shared.RequestEventDto{
-		ID:      id,
-		Method:  string(request.HttpRequestLine.HttpMethod),
-		Host:    request.HttpRequestLine.Endpoint.Host,
-		Port:    request.HttpRequestLine.Endpoint.Port,
-		Path:    request.HttpRequestLine.Endpoint.PathAndQuery,
-		Version: fmt.Sprintf("HTTP/%d.%d", request.HttpRequestLine.Version.Major, request.HttpRequestLine.Version.Minor),
+		ID:            id,
+		CorrelationID: correlationID,
+		Method:        string(request.HttpRequestLine.HttpMethod),
+		Host:          request.HttpRequestLine.Endpoint.Host,
+		Port:          request.HttpRequestLine.Endpoint.Port,
+		Path:          request.HttpRequestLine.Endpoint.PathAndQuery,
+		Version:       fmt.Sprintf("HTTP/%d.%d", request.HttpRequestLine.Version.Major, request.HttpRequestLine.Version.Minor),
 	}
 	jsonData, err := json.Marshal(event)
 	if err != nil {

@@ -131,7 +131,11 @@ server and WASM.
 ## 4. BACKEND workstreams (Go)
 
 ### EPIC B1 — Response streaming (core, unblocks the whole right column)
-- [ ] B1.1 Unify the request/response correlation ID (int → UUID exposed to the UI).
+- [x] B1.1 Unify the request/response correlation ID (int → UUID exposed to the UI).
+      Added `UUID.String()` (canonical form), `RequestEventDto.CorrelationID`, and a
+      single UUID generated per request in `proxy_server.go` — now shared by the
+      capture record and the `request_occurred` event. `LogRequest` signature +
+      both loggers updated.
 - [ ] B1.2 Extend `RequestEventDto` + create `ResponseEventDto` in `shared/dto.go`.
 - [ ] B1.3 Measure duration (chrono around `transport.RoundTrip` in
       [`https_interceptor.go`](proxy/middlewares/https_interceptor.go)) and for plain HTTP.

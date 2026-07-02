@@ -1,12 +1,18 @@
 package shared
 
 type RequestEventDto struct {
-	ID      int    `json:"id"`
-	Method  string `json:"method"`
-	Host    string `json:"host"`
-	Port    int    `json:"port"`
-	Path    string `json:"path"`
-	Version string `json:"version"`
+	// ID is the incrementing per-connection sequence number, kept for display
+	// (the "#001" column) and ordering in the UI.
+	ID int `json:"id"`
+	// CorrelationID is the stable UUID shared with the matching response event,
+	// so request↔response can be linked in the UI. It is also the RequestID of
+	// the capture record persisted for this request.
+	CorrelationID string `json:"correlation_id"`
+	Method        string `json:"method"`
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	Path          string `json:"path"`
+	Version       string `json:"version"`
 }
 
 type CertificatesInfosDto struct {
