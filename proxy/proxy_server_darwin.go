@@ -5,6 +5,7 @@ import (
 	"net/url"
 )
 
-func ConfigureOsSpecificProxyPipeline(outputProxy url.URL, useOutputProxy bool) (middlewares.Middleware, error) {
-	return ConfigureProxyPipelineBase(outputProxy, useOutputProxy), nil
+func ConfigureOsSpecificProxyPipeline(outputProxy url.URL, useOutputProxy bool, noProxy []string) (middlewares.Middleware, error) {
+	base := ConfigureProxyPipelineBase(outputProxy, useOutputProxy)
+	return WrapNoProxy(base, useOutputProxy, noProxy), nil
 }

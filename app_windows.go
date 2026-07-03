@@ -60,7 +60,7 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		outputProxy = &(url.URL{})
 	}
 
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy, treat401AsProxyAuthentication)
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, config.Proxy.NoProxy, requireWindowsAuthentication, addWindowsAuthenticationToOutputProxy, treat401AsProxyAuthentication)
 	if err != nil {
 		return AppContext{}, err
 	}

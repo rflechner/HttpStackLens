@@ -5,6 +5,13 @@ proxy:
   add_windows_authentication_to_output_proxy: false #true # only for windows
   require_windows_authentication: true # only for windows
 
+  no_proxy:
+    - "localhost"
+    - "127.0.0.1"
+    - ".local"
+    - "host.docker.internal"
+    - ".githubusercontent.com"
+
 webui:
   port: 9000
   enable_remote_connection: false
@@ -23,7 +30,7 @@ storage:
   folder: "captures"
 
 capture:
-  decrypt_https: true # intercept & decrypt HTTPS (generates + installs a per-domain cert)
+  decrypt_https: false # intercept & decrypt HTTPS (generates + installs a per-domain cert)
   mime_types:
     - name: "image/*"
       max_size_mb: 2.5

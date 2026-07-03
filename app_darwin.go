@@ -45,7 +45,7 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		outputProxy = &(url.URL{})
 	}
 
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy)
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, config.Proxy.NoProxy)
 	if err != nil {
 		return AppContext{}, err
 	}
