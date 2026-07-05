@@ -189,7 +189,7 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 
 	hub := newHub()
 	mux.HandleFunc("/events", sseHandler(hub))
-	mux.HandleFunc("/api/requests/", requestDetailHandler(requestStore))
+	mux.HandleFunc("/api/requests/", requestsAPIHandler(requestStore))
 
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -262,6 +262,18 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 	return hub
 }
 
+func requestsAPIHandler(store *storage.RequestStore) http.HandlerFunc {
+	detail := requestDetailHandler(store)
+	body := requestBodyHandler(store)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/body") {
+			body(w, r)
+			return
+		}
+		detail(w, r)
+	}
+}
+
 func requestDetailHandler(store *storage.RequestStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -293,6 +305,52 @@ func requestDetailHandler(store *storage.RequestStore) http.HandlerFunc {
 	}
 }
 
+func requestBodyHandler(store *storage.RequestStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if store == nil {
+			http.Error(w, "request store unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/requests/"), "/body")
+		if id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		side := r.URL.Query().Get("side")
+		if side != "request" && side != "response" {
+			http.Error(w, "side must be request or response", http.StatusBadRequest)
+			return
+		}
+
+		exchange, ok := store.Get(id)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		body, contentType, skipped, ok := bodyForSide(exchange, side)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if skipped {
+			w.Header().Set("X-Body-Skipped", "true")
+			http.Error(w, "body was not captured", http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write(body)
+	}
+}
+
 func requestDetailDto(exchange storage.CapturedExchange) shared.RequestDetailDto {
 	dto := shared.RequestDetailDto{
 		CorrelationID: exchange.CorrelationID,
@@ -321,6 +379,44 @@ func requestDetailDto(exchange storage.CapturedExchange) shared.RequestDetailDto
 		}
 	}
 	return dto
+}
+
+func bodyForSide(exchange storage.CapturedExchange, side string) (body []byte, contentType string, skipped bool, ok bool) {
+	switch side {
+	case "request":
+		if exchange.Request == nil {
+			return nil, "", false, false
+		}
+		if exchange.Request.BodySkipped {
+			return nil, "", true, true
+		}
+		if exchange.Request.Body == nil {
+			return nil, "", false, false
+		}
+		return exchange.Request.Body, contentTypeFromHeaders(exchange.Request.Headers), false, true
+	case "response":
+		if exchange.Response == nil {
+			return nil, "", false, false
+		}
+		if exchange.Response.BodySkipped {
+			return nil, "", true, true
+		}
+		if exchange.Response.Body == nil {
+			return nil, "", false, false
+		}
+		return exchange.Response.Body, contentTypeFromHeaders(exchange.Response.Headers), false, true
+	default:
+		return nil, "", false, false
+	}
+}
+
+func contentTypeFromHeaders(headers []storage.Header) string {
+	for _, h := range headers {
+		if strings.EqualFold(h.Name, "Content-Type") && h.Value != "" {
+			return h.Value
+		}
+	}
+	return "application/octet-stream"
 }
 
 func headerDtos(headers []storage.Header) []shared.HeaderDto {

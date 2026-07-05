@@ -138,3 +138,90 @@ func TestRequestDetailHandlerRejectsNonGet(t *testing.T) {
 		t.Fatalf("Allow = %q, want GET", got)
 	}
 }
+
+func TestRequestBodyHandlerReturnsRequestBodyWithCapturedContentType(t *testing.T) {
+	store := storage.NewRequestStore(10)
+	store.PutRequest("req-1", storage.RequestRecord{
+		Headers: []storage.Header{
+			{Name: "Content-Type", Value: "application/json"},
+		},
+		Body: []byte(`{"ok":true}`),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-1/body?side=request", nil)
+	rr := httptest.NewRecorder()
+	requestBodyHandler(store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if got := rr.Body.String(); got != `{"ok":true}` {
+		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestRequestBodyHandlerReturnsResponseBodyWithCapturedContentType(t *testing.T) {
+	store := storage.NewRequestStore(10)
+	store.PutResponse("req-1", storage.ResponseRecord{
+		Headers: []storage.Header{
+			{Name: "Content-Type", Value: "text/html; charset=utf-8"},
+		},
+		Body: []byte("<h1>ok</h1>"),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-1/body?side=response", nil)
+	rr := httptest.NewRecorder()
+	requestBodyHandler(store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+	if got := rr.Body.String(); got != "<h1>ok</h1>" {
+		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestRequestBodyHandlerRejectsInvalidSide(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-1/body?side=other", nil)
+	rr := httptest.NewRecorder()
+	requestBodyHandler(storage.NewRequestStore(10)).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+}
+
+func TestRequestBodyHandlerReturnsNotFoundWhenBodyAbsent(t *testing.T) {
+	store := storage.NewRequestStore(10)
+	store.PutRequest("req-1", storage.RequestRecord{Body: nil})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-1/body?side=request", nil)
+	rr := httptest.NewRecorder()
+	requestBodyHandler(store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestRequestBodyHandlerHonorsBodySkipped(t *testing.T) {
+	store := storage.NewRequestStore(10)
+	store.PutResponse("req-1", storage.ResponseRecord{BodySkipped: true})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-1/body?side=response", nil)
+	rr := httptest.NewRecorder()
+	requestBodyHandler(store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusRequestEntityTooLarge)
+	}
+	if got := rr.Header().Get("X-Body-Skipped"); got != "true" {
+		t.Fatalf("X-Body-Skipped = %q, want true", got)
+	}
+}

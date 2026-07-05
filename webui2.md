@@ -161,8 +161,11 @@ server and WASM.
       Added a Web UI API handler backed by `storage.RequestStore`, plus shared
       detail DTOs containing request/response metadata, headers, and body
       availability flags. Bodies remain separate for B2.3.
-- [ ] B2.3 `/api/requests/{id}/body` endpoint (honor `BodySkipped`, return the real
+- [x] B2.3 `/api/requests/{id}/body` endpoint (honor `BodySkipped`, return the real
       `Content-Type` for Pretty/Hex rendering).
+      Added `side=request|response`, raw body responses, captured content-type
+      propagation, `404` for absent bodies, and `413` + `X-Body-Skipped` for
+      intentionally skipped bodies.
 - [ ] B2.4 Reuse [`storage/capture_session_reader.go`](storage/capture_session_reader.go)
       to optionally reopen a `.capture` file and replay it in the UI.
 
