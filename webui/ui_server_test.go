@@ -3,6 +3,7 @@ package webui
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
 	"net/http"
@@ -226,6 +227,130 @@ func TestRequestBodyHandlerHonorsBodySkipped(t *testing.T) {
 	}
 	if got := rr.Header().Get("X-Body-Skipped"); got != "true" {
 		t.Fatalf("X-Body-Skipped = %q, want true", got)
+	}
+}
+
+func TestCaptureStateHandlerReturnsState(t *testing.T) {
+	store := storage.NewRequestStore(10)
+	store.PutRequest("req-1", storage.RequestRecord{Method: "GET"})
+	ctl := storage.NewCaptureController(true)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/capture/state", nil)
+	rr := httptest.NewRecorder()
+	captureStateHandler(ctl, store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got shared.CaptureStateDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Capturing || got.BufferSize != 1 {
+		t.Fatalf("state = %+v, want capturing true and buffer size 1", got)
+	}
+}
+
+func TestCapturePauseResumeHandlersToggleState(t *testing.T) {
+	hub := newHub()
+	defer hub.Close()
+	store := storage.NewRequestStore(10)
+	ctl := storage.NewCaptureController(true)
+	var persisted []bool
+	persist := func(enabled bool) error {
+		persisted = append(persisted, enabled)
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/capture/pause", nil)
+	rr := httptest.NewRecorder()
+	capturePauseHandler(hub, ctl, store, persist).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("pause status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if ctl.IsCapturing() {
+		t.Fatal("controller still capturing after pause")
+	}
+	if len(persisted) != 1 || persisted[0] {
+		t.Fatalf("persisted after pause = %v, want [false]", persisted)
+	}
+
+	var paused shared.CaptureStateDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &paused); err != nil {
+		t.Fatalf("decode pause response: %v", err)
+	}
+	if paused.Capturing {
+		t.Fatalf("pause state = %+v, want capturing false", paused)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/capture/resume", nil)
+	rr = httptest.NewRecorder()
+	captureResumeHandler(hub, ctl, store, persist).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("resume status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !ctl.IsCapturing() {
+		t.Fatal("controller not capturing after resume")
+	}
+	if len(persisted) != 2 || !persisted[1] {
+		t.Fatalf("persisted after resume = %v, want [false true]", persisted)
+	}
+}
+
+func TestCapturePauseHandlerDoesNotChangeStateWhenPersistenceFails(t *testing.T) {
+	ctl := storage.NewCaptureController(true)
+	persistErr := errors.New("disk full")
+	req := httptest.NewRequest(http.MethodPost, "/api/capture/pause", nil)
+	rr := httptest.NewRecorder()
+
+	capturePauseHandler(nil, ctl, storage.NewRequestStore(10), func(bool) error {
+		return persistErr
+	}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	if !ctl.IsCapturing() {
+		t.Fatal("capture state changed despite persistence failure")
+	}
+}
+
+func TestCaptureClearHandlerClearsServerBuffer(t *testing.T) {
+	hub := newHub()
+	defer hub.Close()
+	store := storage.NewRequestStore(10)
+	store.PutRequest("req-1", storage.RequestRecord{Method: "GET"})
+	ctl := storage.NewCaptureController(false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/capture/clear", nil)
+	rr := httptest.NewRecorder()
+	captureClearHandler(hub, ctl, store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if got := store.Len(); got != 0 {
+		t.Fatalf("store Len = %d, want 0", got)
+	}
+	var got shared.CaptureStateDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Capturing || got.BufferSize != 0 {
+		t.Fatalf("state = %+v, want capturing false and buffer size 0", got)
+	}
+}
+
+func TestCapturePauseHandlerRejectsNonPost(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/capture/pause", nil)
+	rr := httptest.NewRecorder()
+	capturePauseHandler(nil, storage.NewCaptureController(true), storage.NewRequestStore(10), nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rr.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("Allow = %q, want POST", got)
 	}
 }
 

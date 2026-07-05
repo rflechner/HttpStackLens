@@ -29,6 +29,7 @@ type ProxyServer struct {
 	// store, when non-nil, keeps recent top-level request records in memory for
 	// on-demand inspection by the Web UI.
 	store        *storage.RequestStore
+	captureCtl   *storage.CaptureController
 	decryptHttps bool
 }
 
@@ -37,7 +38,7 @@ type ProxyEventLogger interface {
 	LogRequest(id int, correlationID string, request models.ProxyRequest)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter, store *storage.RequestStore) ProxyServer {
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) ProxyServer {
 	log.Printf("Socket server started on port %v\n", appContext.port)
 	var addr string
 	if config.EnableRemoteConnection {
@@ -61,6 +62,7 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 		certStore:    certStore,
 		capture:      capture,
 		store:        store,
+		captureCtl:   captureCtl,
 		decryptHttps: decryptHttps,
 	}
 }
@@ -117,7 +119,7 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 		// In decryption mode the CONNECT tunnel itself is not surfaced to the UI:
 		// the HTTPS interceptor emits the decrypted requests/responses instead, so
 		// showing the opaque CONNECT would only add a permanently-pending row.
-		if !(s.decryptHttps && request.HttpRequestLine.IsConnect()) {
+		if s.isCapturing() && !(s.decryptHttps && request.HttpRequestLine.IsConnect()) {
 			s.EventLogger.LogRequest(requestId, correlationID.String(), request)
 		}
 		s.recordTopLevelRequest(correlationID, request)
@@ -136,6 +138,9 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 // capture file. In decryption mode the CONNECT tunnel is skipped here because
 // the HTTPS interceptor records the decrypted requests/responses instead.
 func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest) {
+	if !s.isCapturing() {
+		return
+	}
 	if s.capture == nil && s.store == nil {
 		return
 	}
@@ -151,6 +156,10 @@ func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request 
 	if s.store != nil {
 		s.store.PutRequest(correlationID.String(), rec)
 	}
+}
+
+func (s *ProxyServer) isCapturing() bool {
+	return s.captureCtl == nil || s.captureCtl.IsCapturing()
 }
 
 // proxyRequestToRecord converts a parsed proxy request into a capture record,

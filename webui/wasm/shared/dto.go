@@ -137,6 +137,11 @@ type CaptureResponseRecordDto struct {
 	BodyBase64    string      `json:"body_base64,omitempty"`
 }
 
+type CaptureStateDto struct {
+	Capturing  bool `json:"capturing"`
+	BufferSize int  `json:"buffer_size"`
+}
+
 type CertificatesInfosDto struct {
 	CaCertSubject string `json:"ca_cert_subject"`
 }

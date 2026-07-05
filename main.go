@@ -50,8 +50,9 @@ func main() {
 	// Keeps the most recent request/response records in memory so the Web UI can
 	// fetch their full headers and bodies on demand.
 	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
+	captureCtl := storage.NewCaptureController(config.Storage.Enable)
 
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, requestStore)
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, requestStore, captureCtl, configuration.PersistStorageEnabled)
 
 	var certStore *certManager.CertStore
 
@@ -93,17 +94,18 @@ func main() {
 		// Insert the man-in-the-middle in front of the tunnel so CONNECT requests
 		// are decrypted instead of blindly piped.
 		appContext.pipeline = &middlewares.HttpsInterceptor{
-			CertStore: certStore,
-			Next:      appContext.pipeline,
-			Capture:   captureWriter,
-			Limits:    config.DecryptHttps,
-			Events:    logger,
-			Store:     requestStore,
+			CertStore:  certStore,
+			Next:       appContext.pipeline,
+			Capture:    captureWriter,
+			Limits:     config.DecryptHttps,
+			Events:     logger,
+			Store:      requestStore,
+			CaptureCtl: captureCtl,
 		}
 		slog.Info("HTTPS decryption enabled")
 	}
 
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.DecryptHttps.Enabled, certStore, captureWriter, requestStore)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.DecryptHttps.Enabled, certStore, captureWriter, requestStore, captureCtl)
 
 	go proxyServer.Run()
 

@@ -26,6 +26,8 @@ import (
 const defaultCaptureRecordsLimit = 100
 const maxCaptureRecordsLimit = 1000
 
+type storageEnabledPersister func(bool) error
+
 type Hub struct {
 	clients  map[chan string]struct{}
 	mu       sync.Mutex
@@ -128,7 +130,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requestStore *storage.RequestStore) *Hub {
+func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister) *Hub {
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -210,6 +212,10 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 	hub := newHub()
 	mux.HandleFunc("/events", sseHandler(hub))
 	mux.HandleFunc("/api/requests/", requestsAPIHandler(requestStore))
+	mux.HandleFunc("/api/capture/state", captureStateHandler(captureCtl, requestStore))
+	mux.HandleFunc("/api/capture/pause", capturePauseHandler(hub, captureCtl, requestStore, persistStorageEnabled))
+	mux.HandleFunc("/api/capture/resume", captureResumeHandler(hub, captureCtl, requestStore, persistStorageEnabled))
+	mux.HandleFunc("/api/capture/clear", captureClearHandler(hub, captureCtl, requestStore))
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 
@@ -282,6 +288,113 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 	}()
 
 	return hub
+}
+
+func captureStateHandler(captureCtl *storage.CaptureController, store *storage.RequestStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, captureStateDto(captureCtl, store))
+	}
+}
+
+func capturePauseHandler(hub *Hub, captureCtl *storage.CaptureController, store *storage.RequestStore, persistStorageEnabled storageEnabledPersister) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := persistCaptureSetting(persistStorageEnabled, false); err != nil {
+			log.Printf("Error persisting storage.enable=false: %v", err)
+			http.Error(w, "could not persist capture state", http.StatusInternalServerError)
+			return
+		}
+		if captureCtl != nil {
+			captureCtl.Pause()
+		}
+		state := captureStateDto(captureCtl, store)
+		publishCaptureState(hub, state)
+		writeJSON(w, state)
+	}
+}
+
+func captureResumeHandler(hub *Hub, captureCtl *storage.CaptureController, store *storage.RequestStore, persistStorageEnabled storageEnabledPersister) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := persistCaptureSetting(persistStorageEnabled, true); err != nil {
+			log.Printf("Error persisting storage.enable=true: %v", err)
+			http.Error(w, "could not persist capture state", http.StatusInternalServerError)
+			return
+		}
+		if captureCtl != nil {
+			captureCtl.Resume()
+		}
+		state := captureStateDto(captureCtl, store)
+		publishCaptureState(hub, state)
+		writeJSON(w, state)
+	}
+}
+
+func persistCaptureSetting(persistStorageEnabled storageEnabledPersister, enabled bool) error {
+	if persistStorageEnabled == nil {
+		return nil
+	}
+	return persistStorageEnabled(enabled)
+}
+
+func captureClearHandler(hub *Hub, captureCtl *storage.CaptureController, store *storage.RequestStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if store != nil {
+			store.Clear()
+		}
+		state := captureStateDto(captureCtl, store)
+		publishCaptureState(hub, state)
+		writeJSON(w, state)
+	}
+}
+
+func captureStateDto(captureCtl *storage.CaptureController, store *storage.RequestStore) shared.CaptureStateDto {
+	size := 0
+	if store != nil {
+		size = store.Len()
+	}
+	capturing := true
+	if captureCtl != nil {
+		capturing = captureCtl.IsCapturing()
+	}
+	return shared.CaptureStateDto{Capturing: capturing, BufferSize: size}
+}
+
+func publishCaptureState(hub *Hub, state shared.CaptureStateDto) {
+	if hub == nil {
+		return
+	}
+	jsonData, err := json.Marshal(state)
+	if err != nil {
+		log.Printf("Error marshaling capture state: %v", err)
+		return
+	}
+	hub.Publish("capture_state", string(jsonData))
+}
+
+func writeJSON(w http.ResponseWriter, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		log.Printf("Error marshaling JSON response: %v", err)
+	}
 }
 
 func captureListHandler(folder string) http.HandlerFunc {

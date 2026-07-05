@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"httpStackLens/storage"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,8 +16,10 @@ type fakeSink struct {
 	responses []shared.ResponseEventDto
 }
 
-func (f *fakeSink) PublishRequestEvent(e shared.RequestEventDto)   { f.requests = append(f.requests, e) }
-func (f *fakeSink) PublishResponseEvent(e shared.ResponseEventDto) { f.responses = append(f.responses, e) }
+func (f *fakeSink) PublishRequestEvent(e shared.RequestEventDto) { f.requests = append(f.requests, e) }
+func (f *fakeSink) PublishResponseEvent(e shared.ResponseEventDto) {
+	f.responses = append(f.responses, e)
+}
 
 func TestPublishRequestEvent(t *testing.T) {
 	sink := &fakeSink{}
@@ -109,6 +112,21 @@ func TestPublishEventsNilSinkIsNoop(t *testing.T) {
 	// Must not panic.
 	m.publishRequestEvent("c", req, "example.com", "example.com:443")
 	m.publishResponseEvent("c", resp, "text/html", 0, false, 0, 0)
+}
+
+func TestPublishEventsPausedCaptureIsNoop(t *testing.T) {
+	sink := &fakeSink{}
+	captureCtl := storage.NewCaptureController(false)
+	m := &HttpsInterceptor{Events: sink, CaptureCtl: captureCtl}
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/", nil)
+	resp := &http.Response{StatusCode: 200, Status: "200 OK"}
+
+	m.publishRequestEvent("c", req, "example.com", "example.com:443")
+	m.publishResponseEvent("c", resp, "text/html", 0, false, 0, 0)
+
+	if len(sink.requests) != 0 || len(sink.responses) != 0 {
+		t.Fatalf("paused capture published events: requests=%d responses=%d", len(sink.requests), len(sink.responses))
+	}
 }
 
 func TestIsStreaming(t *testing.T) {

@@ -42,7 +42,7 @@ paths:
       summary: Subscribe to live proxy events
       description: |
         Server-Sent Events stream. Known event types are `request_occurred`
-        and `response_occurred`.
+        `response_occurred`, and `capture_state`.
       responses:
         "200":
           description: SSE stream
@@ -55,6 +55,10 @@ paths:
                   value: |
                     event: request_occurred
                     data: {"id":1,"correlation_id":"f47ac10b-58cc-4372-a567-0e02b2c3d479","method":"GET","host":"example.com","port":443,"path":"/","version":"HTTP/1.1","scheme":"https","tls":true,"decrypted":true}
+                capture_state:
+                  value: |
+                    event: capture_state
+                    data: {"capturing":false,"buffer_size":0}
   /api/requests/{id}:
     get:
       tags: [Requests]
@@ -114,6 +118,65 @@ paths:
                 type: string
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/capture/state:
+    get:
+      tags: [Captures]
+      summary: Read live capture state
+      responses:
+        "200":
+          description: Current live capture state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /api/capture/pause:
+    post:
+      tags: [Captures]
+      summary: Pause live capture
+      description: Proxy forwarding continues, but new UI events and records are gated. Persists `storage.enable=false` to `config.yaml`.
+      responses:
+        "200":
+          description: Updated capture state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/capture/resume:
+    post:
+      tags: [Captures]
+      summary: Resume live capture
+      description: Persists `storage.enable=true` to `config.yaml`.
+      responses:
+        "200":
+          description: Updated capture state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/capture/clear:
+    post:
+      tags: [Captures]
+      summary: Clear the in-memory request buffer
+      description: Does not delete `.capture` files from disk.
+      responses:
+        "200":
+          description: Updated capture state after clearing the server buffer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
   /api/captures:
     get:
       tags: [Captures]
@@ -361,6 +424,16 @@ components:
           type: boolean
         body_size:
           type: integer
+    CaptureState:
+      type: object
+      required: [capturing, buffer_size]
+      properties:
+        capturing:
+          type: boolean
+          description: Whether live capture is currently accepting new UI events and records.
+        buffer_size:
+          type: integer
+          description: Number of exchanges currently kept in the in-memory request buffer.
     CaptureFile:
       type: object
       required: [name, size, modified_at]

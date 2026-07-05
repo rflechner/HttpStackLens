@@ -174,9 +174,17 @@ server and WASM.
       through the existing binary reader, with bodies base64-encoded in JSON.
 
 ### EPIC B3 — Capture control
-- [ ] B3.1 Server capture state (`capturing` on/off) + gate in the pipeline.
-- [ ] B3.2 pause/resume/clear endpoints + `capture_state` event.
-- [ ] B3.3 "Clear" wipes the server buffer
+- [x] B3.1 Server capture state (`capturing` on/off) + gate in the pipeline.
+      Added a shared `storage.CaptureController`; paused capture no longer
+      publishes live request/response events or writes new records to the
+      in-memory/file capture paths, while proxy forwarding continues.
+- [x] B3.2 pause/resume/clear endpoints + `capture_state` event.
+      Added `GET /api/capture/state`, `POST /api/capture/pause`,
+      `POST /api/capture/resume`, and `POST /api/capture/clear`; mutating calls
+      publish the `capture_state` SSE event.
+- [x] B3.3 "Clear" wipes the server buffer.
+      `POST /api/capture/clear` clears `storage.RequestStore`; it does not delete
+      `.capture` files from disk.
 
 ### EPIC B4 — Detailed timings (Timing tab / real waterfall)
 - [ ] B4.1 Instrument the transport (`httptrace.ClientTrace`: DNS, connect, TLS,

@@ -124,6 +124,26 @@ func TestRequestStoreMinSize(t *testing.T) {
 	}
 }
 
+func TestRequestStoreClear(t *testing.T) {
+	s := NewRequestStore(10)
+	s.PutRequest("a", RequestRecord{Method: "GET"})
+	s.PutResponse("a", ResponseRecord{StatusCode: 200})
+	s.PutRequest("b", RequestRecord{Method: "POST"})
+
+	s.Clear()
+
+	if got := s.Len(); got != 0 {
+		t.Fatalf("Len after Clear = %d, want 0", got)
+	}
+	if _, ok := s.Get("a"); ok {
+		t.Fatal("cleared store still returned exchange a")
+	}
+	s.PutRequest("c", RequestRecord{Method: "PUT"})
+	if got := s.Len(); got != 1 {
+		t.Fatalf("Len after reinserting = %d, want 1", got)
+	}
+}
+
 func TestRequestStoreConcurrent(t *testing.T) {
 	// Exercise the lock under -race.
 	s := NewRequestStore(100)

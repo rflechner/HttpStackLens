@@ -101,3 +101,11 @@ func (s *RequestStore) Len() int {
 	defer s.mu.RUnlock()
 	return len(s.entries)
 }
+
+// Clear removes all remembered exchanges from the in-memory buffer.
+func (s *RequestStore) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.queue = nil
+	s.entries = make(map[string]*CapturedExchange)
+}

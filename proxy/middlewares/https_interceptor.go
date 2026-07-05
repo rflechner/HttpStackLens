@@ -51,6 +51,8 @@ type HttpsInterceptor struct {
 	// Store, when non-nil, keeps the decrypted request/response records in memory
 	// so the Web UI can fetch their headers and bodies on demand.
 	Store *storage.RequestStore
+	// CaptureCtl gates recording and live UI events without affecting forwarding.
+	CaptureCtl *storage.CaptureController
 	// seq numbers decrypted requests for the UI's display column. It is shared
 	// across all tunnels since one interceptor instance handles every CONNECT.
 	seq atomic.Int64
@@ -174,7 +176,7 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	// stall progressive and long-lived responses — video segments, SSE,
 	// long-poll — until they closed, leaving the browser stuck in "loading".
 	var capture *captureLimitWriter
-	if m.Capture != nil || m.Events != nil || m.Store != nil || isHtmlOrJs(contentType) {
+	if (m.isCapturing() && (m.Capture != nil || m.Events != nil || m.Store != nil)) || isHtmlOrJs(contentType) {
 		capture = &captureLimitWriter{limit: limit}
 		resp.Body = io.NopCloser(io.TeeReader(originalBody, capture))
 	}
@@ -205,7 +207,7 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 // publishRequestEvent streams a decrypted request to the UI. It is a no-op when
 // no sink is wired.
 func (m *HttpsInterceptor) publishRequestEvent(correlationID string, req *http.Request, host, authority string) {
-	if m.Events == nil {
+	if m.Events == nil || !m.isCapturing() {
 		return
 	}
 	port := 443
@@ -231,7 +233,7 @@ func (m *HttpsInterceptor) publishRequestEvent(correlationID string, req *http.R
 // publishResponseEvent streams the matching response to the UI. size is the
 // total bytes transferred; bodyLen is the number of bytes actually captured.
 func (m *HttpsInterceptor) publishResponseEvent(correlationID string, resp *http.Response, contentType string, size int64, skipped bool, bodyLen int, elapsed time.Duration) {
-	if m.Events == nil {
+	if m.Events == nil || !m.isCapturing() {
 		return
 	}
 	m.Events.PublishResponseEvent(shared.ResponseEventDto{
@@ -320,7 +322,7 @@ func capBody(body io.Reader, limit int64) (store []byte, forward io.Reader, skip
 // replay for forwarding upstream. It is a no-op when capture is off or the
 // request has no body.
 func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skipped bool, err error) {
-	if (m.Capture == nil && m.Store == nil) || req.Body == nil {
+	if !m.isCapturing() || (m.Capture == nil && m.Store == nil) || req.Body == nil {
 		return nil, false, nil
 	}
 	limit, _ := m.Limits.LimitForContentType(req.Header.Get("Content-Type"))
@@ -337,6 +339,9 @@ func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skip
 }
 
 func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, body []byte, skipped bool) {
+	if !m.isCapturing() {
+		return
+	}
 	if m.Capture == nil && m.Store == nil {
 		return
 	}
@@ -360,6 +365,9 @@ func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, bod
 }
 
 func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, body []byte, skipped bool) {
+	if !m.isCapturing() {
+		return
+	}
 	if m.Capture == nil && m.Store == nil {
 		return
 	}
@@ -380,6 +388,10 @@ func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, 
 	if m.Store != nil {
 		m.Store.PutResponse(id.String(), rec)
 	}
+}
+
+func (m *HttpsInterceptor) isCapturing() bool {
+	return m.CaptureCtl == nil || m.CaptureCtl.IsCapturing()
 }
 
 // httpHeadersToRecords flattens an http.Header map into ordered name/value
