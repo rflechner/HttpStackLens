@@ -20,21 +20,19 @@ logging:
   level: info # debug | info | warn | error (overridden by --verbose)
   file: logs/httpStackLens.log # empty to disable the file sink
 
-cert_manager:
-  ca_cert_file: "certificates/debug-https-ca.crt"
-  ca_key_file: "certificates/debug-https-ca.key"
-  domain_certs_folder: "certificates/domains"
-
 storage:
   enable: true
   folder: "captures"
 
-capture:
-  decrypt_https: false # intercept & decrypt HTTPS (generates + installs a per-domain cert)
+decrypt_https:
+  enabled: false # intercept & decrypt HTTPS (generates + installs a per-domain cert)
+  cert_manager:
+    ca_cert_file: "certificates/debug-https-ca.crt"
+    ca_key_file: "certificates/debug-https-ca.key"
+    domain_certs_folder: "certificates/domains"
   mime_types:
     - name: "image/*"
       max_size_mb: 2.5
     - name: "text/*"
       max_size_kb: 10000
     - name: "application/json"
-

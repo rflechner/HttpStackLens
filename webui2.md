@@ -54,7 +54,7 @@ API what capture already knows, plus correlate and measure it.**
 | Certificate wizard | generate/install/export CA | logic exists (`certManager`), **no HTTP API** | cert endpoints |
 | Upstream proxy modal | read/write outbound proxy + NTLM | config exists, **read-only via /config** | upstream read/write API |
 | Access control modal | loopback/lan/allowlist/open mode + CIDR | **only `enable_remote_connection` bool** | access model + API |
-| Body capture rules modal | MIME rules + sizes | config exists (`CaptureConfig`), **read-only** | rules read/write API |
+| Body capture rules modal | MIME rules + sizes | config exists (`DecryptHttpsConfig`), **read-only** | rules read/write API |
 | Replay / Edit & send | replay a request | **absent** | replay endpoint |
 | Status bar (throughput ↓/↑) | real-time rate | **not measured** | bytes/s counter |
 | Sidebar Hosts + counts | aggregates | derivable on the front | nothing (front) |
@@ -171,7 +171,7 @@ server and WASM.
   > duration only).
 
 ### EPIC B5 — Runtime settings
-- [ ] B5.1 Body-capture rules: expose/edit `CaptureConfig` (already modeled in
+- [ ] B5.1 Body-capture rules: expose/edit `DecryptHttpsConfig` (already modeled in
       [`configuration/config.go`](configuration/config.go)) via API; apply without restart.
 - [ ] B5.2 Upstream proxy: read/write API (`OutputProxyUri`, bypass, NTLM/domain).
       Hot re-injection into the pipeline to be scoped.
@@ -265,7 +265,7 @@ server and WASM.
   `main.go`. Making it reconfigurable is structural — consider an indirected
   pipeline (atomic pointer) rather than fragile hot re-assembly.
 - **Memory**: keeping headers+body for the last N requests for on-demand detail has
-  a cost; reuse the `CaptureConfig` size cap and bound N.
+  a cost; reuse the `DecryptHttpsConfig` size cap and bound N.
 - **Security**: the modals expose the CA/private key, the "Open" access mode, and
   the corporate proxy. Respect the AGENTS.md constraint ("do not silently weaken
   security"), default to loopback, explicit warnings (already present in the mockup).

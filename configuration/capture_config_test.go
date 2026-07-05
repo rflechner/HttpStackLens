@@ -8,7 +8,7 @@ import (
 
 func TestCaptureMimeTypeLimits(t *testing.T) {
 	const data = `
-decrypt_https: true
+enabled: true
 mime_types:
   - name: "image/*"
     max_size_mb: 2.5
@@ -16,13 +16,13 @@ mime_types:
     max_size_kb: 10000
   - name: "application/json"
 `
-	var c CaptureConfig
+	var c DecryptHttpsConfig
 	if err := yaml.Unmarshal([]byte(data), &c); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if !c.DecryptHttps {
-		t.Fatalf("decrypt_https = false, want true")
+	if !c.Enabled {
+		t.Fatalf("enabled = false, want true")
 	}
 
 	cases := []struct {
@@ -52,7 +52,7 @@ mime_types:
     max_size_mb: 2
   - name: "text/*"
 `
-	var c CaptureConfig
+	var c DecryptHttpsConfig
 	if err := yaml.Unmarshal([]byte(data), &c); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

@@ -200,7 +200,8 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig) *Hub
 
 	mux.HandleFunc("/certificates-infos", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		caCert, _, err := certManager.LoadCA(config.CertManager.CaCertFile, config.CertManager.CaKeyFile)
+		certConfig := config.DecryptHttps.CertManager
+		caCert, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile)
 		if err != nil {
 			log.Printf("Failed to load CA: %v\n", err)
 			return

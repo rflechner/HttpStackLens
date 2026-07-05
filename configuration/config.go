@@ -10,12 +10,11 @@ import (
 )
 
 type AppConfig struct {
-	Proxy       ProxyConfig       `json:"proxy"`
-	WebUi       WebUiConfig       `json:"webui"`
-	CertManager CertManagerConfig `json:"cert_manager"`
-	Logging     LoggingConfig     `yaml:"logging"`
-	Storage     StorageConfig     `yaml:"storage"`
-	Capture     CaptureConfig     `yaml:"capture"`
+	Proxy        ProxyConfig        `json:"proxy"`
+	WebUi        WebUiConfig        `json:"webui"`
+	Logging      LoggingConfig      `yaml:"logging"`
+	Storage      StorageConfig      `yaml:"storage"`
+	DecryptHttps DecryptHttpsConfig `yaml:"decrypt_https"`
 }
 
 type StorageConfig struct {
@@ -27,10 +26,11 @@ type StorageConfig struct {
 // specifies no explicit size.
 const DefaultCaptureSizeBytes int64 = 500 * 1024 // 500 KiB
 
-type CaptureConfig struct {
-	DecryptHttps    bool           `yaml:"decrypt_https"`     // intercept & decrypt HTTPS (MITM)
-	MimeTypes       []MimeTypeRule `yaml:"mime_types"`        // per-content-type capture limits
-	DefaultMaxBytes *int64         `yaml:"default_max_bytes"` // limit for content types not listed (and rules without an explicit size); defaults to DefaultCaptureSizeBytes
+type DecryptHttpsConfig struct {
+	Enabled         bool              `yaml:"enabled"` // intercept & decrypt HTTPS (MITM)
+	CertManager     CertManagerConfig `yaml:"cert_manager"`
+	MimeTypes       []MimeTypeRule    `yaml:"mime_types"`        // per-content-type capture limits
+	DefaultMaxBytes *int64            `yaml:"default_max_bytes"` // limit for content types not listed (and rules without an explicit size); defaults to DefaultCaptureSizeBytes
 }
 
 // MimeTypeRule caps how much of a response body is captured for a given content
@@ -70,7 +70,7 @@ func (r MimeTypeRule) LimitBytes() int64 {
 // DefaultLimitBytes returns the limit applied to content types that match no
 // rule (and to rules without an explicit size): the configured
 // default_max_bytes, or DefaultCaptureSizeBytes when unset.
-func (c CaptureConfig) DefaultLimitBytes() int64 {
+func (c DecryptHttpsConfig) DefaultLimitBytes() int64 {
 	if c.DefaultMaxBytes != nil {
 		return *c.DefaultMaxBytes
 	}
@@ -81,7 +81,7 @@ func (c CaptureConfig) DefaultLimitBytes() int64 {
 // "text/html; charset=utf-8"), matching rules in order with "type/*" wildcard
 // support. matched reports whether any rule applied; when false the returned
 // limit is DefaultLimitBytes.
-func (c CaptureConfig) LimitForContentType(contentType string) (limit int64, matched bool) {
+func (c DecryptHttpsConfig) LimitForContentType(contentType string) (limit int64, matched bool) {
 	ct := normalizeContentType(contentType)
 	for _, rule := range c.MimeTypes {
 		if contentTypeMatches(rule.Name, ct) {
@@ -145,12 +145,14 @@ type WebUiConfig struct {
 
 func DefaultAppConfig() AppConfig {
 	return AppConfig{
-		Proxy:       ProxyConfig{Port: 3128, EnableRemoteConnection: false},
-		WebUi:       WebUiConfig{Port: 9000, EnableRemoteConnection: false},
-		CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
-		Logging:     LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
-		Storage:     StorageConfig{Enable: false, Folder: "captures"},
-		Capture:     CaptureConfig{DecryptHttps: false},
+		Proxy:   ProxyConfig{Port: 3128, EnableRemoteConnection: false},
+		WebUi:   WebUiConfig{Port: 9000, EnableRemoteConnection: false},
+		Logging: LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
+		Storage: StorageConfig{Enable: false, Folder: "captures"},
+		DecryptHttps: DecryptHttpsConfig{
+			Enabled:     false,
+			CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
+		},
 	}
 }
 
@@ -180,10 +182,13 @@ func (c *AppConfig) ToDto() shared.AppConfigDto {
 			Port:                   c.WebUi.Port,
 			EnableRemoteConnection: c.WebUi.EnableRemoteConnection,
 		},
-		CertManager: shared.CertManagerConfigDto{
-			CaCertFile:        c.CertManager.CaCertFile,
-			CaKeyFile:         c.CertManager.CaKeyFile,
-			DomainCertsFolder: c.CertManager.DomainCertsFolder,
+		DecryptHttps: shared.DecryptHttpsConfigDto{
+			Enabled: c.DecryptHttps.Enabled,
+			CertManager: shared.CertManagerConfigDto{
+				CaCertFile:        c.DecryptHttps.CertManager.CaCertFile,
+				CaKeyFile:         c.DecryptHttps.CertManager.CaKeyFile,
+				DomainCertsFolder: c.DecryptHttps.CertManager.DomainCertsFolder,
+			},
 		},
 	}
 }

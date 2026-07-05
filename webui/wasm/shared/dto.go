@@ -55,9 +55,9 @@ type CertificatesInfosDto struct {
 // duplicate of AppConfig to avoid security issues
 
 type AppConfigDto struct {
-	Proxy       ProxyConfigDto       `json:"proxy"`
-	WebUi       WebUiConfigDto       `json:"web_ui"`
-	CertManager CertManagerConfigDto `json:"cert_manager"`
+	Proxy        ProxyConfigDto        `json:"proxy"`
+	WebUi        WebUiConfigDto        `json:"web_ui"`
+	DecryptHttps DecryptHttpsConfigDto `json:"decrypt_https"`
 }
 
 type ProxyConfigDto struct {
@@ -70,8 +70,13 @@ type WebUiConfigDto struct {
 	EnableRemoteConnection bool `json:"enable_remote_connection"`
 }
 
+type DecryptHttpsConfigDto struct {
+	Enabled     bool                 `json:"enabled"`
+	CertManager CertManagerConfigDto `json:"cert_manager"`
+}
+
 type CertManagerConfigDto struct {
-	CaCertFile        string `yaml:"ca_cert_file"`
-	CaKeyFile         string `yaml:"ca_key_file"`
-	DomainCertsFolder string `yaml:"domain_certs_folder"`
+	CaCertFile        string `json:"ca_cert_file"`
+	CaKeyFile         string `json:"ca_key_file"`
+	DomainCertsFolder string `json:"domain_certs_folder"`
 }

@@ -44,7 +44,7 @@ type HttpsInterceptor struct {
 	Capture storage.CaptureSessionWriter
 	// Limits drives the per-content-type body size caps. Bodies larger than the
 	// limit are forwarded to the browser but not stored (BodySkipped is set).
-	Limits configuration.CaptureConfig
+	Limits configuration.DecryptHttpsConfig
 	// Events, when non-nil, receives a request/response event per decrypted
 	// request so live HTTPS traffic appears in the Web UI.
 	Events EventSink

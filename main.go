@@ -49,15 +49,7 @@ func main() {
 
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config)
 
-	caCert, caKey, err := certManager.GetHttpsDebugRootCertificates(config)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Issues and caches the per-domain certificates used to decrypt HTTPS. When
-	// decrypt_https is enabled, each new domain cert is also added to the user's
-	// personal store (see NewCertStoreFromConfig).
-	certStore := certManager.NewCertStoreFromConfig(caCert, caKey, config)
+	var certStore *certManager.CertStore
 
 	// Optional capture file. When decrypting, the interceptor stores clear-text
 	// requests/responses; otherwise only top-level HTTP requests and CONNECTs.
@@ -74,14 +66,24 @@ func main() {
 	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
 	// certificates we sign on the fly are accepted. A failure here is not fatal:
 	// the user can still install the CA manually.
-	if config.Capture.DecryptHttps {
+	if config.DecryptHttps.Enabled {
+		caCert, caKey, err := certManager.GetHttpsDebugRootCertificates(config)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Issues and caches the per-domain certificates used to decrypt HTTPS.
+		// Each new domain cert is also added to the user's personal store (see
+		// NewCertStoreFromConfig).
+		certStore = certManager.NewCertStoreFromConfig(caCert, caKey, config)
+
 		installer := certManager.NewCertInstaller()
 		if !installer.IsSupported() {
 			slog.Warn("Automatic certificate installation is not supported on this OS; install the CA manually",
-				"caCertFile", config.CertManager.CaCertFile)
-		} else if err := installer.InstallCACert(config.CertManager.CaCertFile); err != nil {
+				"caCertFile", config.DecryptHttps.CertManager.CaCertFile)
+		} else if err := installer.InstallCACert(config.DecryptHttps.CertManager.CaCertFile); err != nil {
 			slog.Warn("Failed to install the CA certificate in the OS trust store; install it manually",
-				"caCertFile", config.CertManager.CaCertFile, "error", err)
+				"caCertFile", config.DecryptHttps.CertManager.CaCertFile, "error", err)
 		}
 
 		// Insert the man-in-the-middle in front of the tunnel so CONNECT requests
@@ -90,13 +92,13 @@ func main() {
 			CertStore: certStore,
 			Next:      appContext.pipeline,
 			Capture:   captureWriter,
-			Limits:    config.Capture,
+			Limits:    config.DecryptHttps,
 			Events:    logger,
 		}
 		slog.Info("HTTPS decryption enabled")
 	}
 
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.Capture.DecryptHttps, certStore, captureWriter)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.DecryptHttps.Enabled, certStore, captureWriter)
 
 	go proxyServer.Run()
 
@@ -139,12 +141,12 @@ func openCaptureWriter(config configuration.AppConfig) storage.CaptureSessionWri
 	name := fmt.Sprintf("capture-%s.capture", time.Now().Format("20060102-150405"))
 	path := filepath.Join(folder, name)
 
-	w, err := storage.NewFileCaptureSessionWriter(path, config.Capture.DecryptHttps)
+	w, err := storage.NewFileCaptureSessionWriter(path, config.DecryptHttps.Enabled)
 	if err != nil {
 		slog.Warn("Could not open capture file; captures disabled", "path", path, "error", err)
 		return nil
 	}
 
-	slog.Info("Capture recording enabled", "file", path, "decrypted", config.Capture.DecryptHttps)
+	slog.Info("Capture recording enabled", "file", path, "decrypted", config.DecryptHttps.Enabled)
 	return w
 }

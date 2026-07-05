@@ -21,7 +21,7 @@ type ProxyServer struct {
 	closed      bool
 	EventLogger ProxyEventLogger
 	// certStore issues per-domain certificates for HTTPS interception. It is
-	// used by the decryption path (when proxy.decrypt_https is enabled).
+	// used by the decryption path (when decrypt_https.enabled is true).
 	certStore *certManager.CertStore
 	// capture, when non-nil, persists top-level requests (HTTP and CONNECT) to
 	// the capture file. Decrypted bodies are recorded by the HTTPS interceptor.

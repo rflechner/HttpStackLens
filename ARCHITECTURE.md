@@ -57,7 +57,7 @@ interface; the Web UI implementation of that interface publishes to a `Hub`.
 4. The Web UI starts (`webui.ServeWebUi`), returning the `Hub`.
 5. The CA is loaded/generated (`certManager.GetHttpsDebugRootCertificates`) and a
    `CertStore` is created.
-6. If `proxy.decrypt_https` is enabled, the CA is installed into the OS trust
+6. If `decrypt_https.enabled` is true, the CA is installed into the OS trust
    store and an `HttpsInterceptor` is wrapped around the pipeline.
 7. The proxy server is created with the pipeline + `CertStore` and `Run()` in a
    goroutine.
@@ -115,7 +115,7 @@ acceptable for the common local-debug case.
 
 ### HTTPS interception (MITM)
 
-When `proxy.decrypt_https` is true, `HttpsInterceptor.intercept` does:
+When `decrypt_https.enabled` is true, `HttpsInterceptor.intercept` does:
 
 1. Reply `200 Connection Established` to the browser.
 2. `tls.Server` over the browser connection, selecting a certificate per SNI via
@@ -161,13 +161,13 @@ certificates.
 
 ## Configuration (`configuration/`)
 
-`config.go` defines `AppConfig` (proxy, webui, cert_manager, logging) and loads
+`config.go` defines `AppConfig` (proxy, webui, decrypt_https, logging) and loads
 it from `config.yaml` with `goccy/go-yaml`. Key flags:
 
-- `proxy.decrypt_https` — enable HTTPS MITM.
+- `decrypt_https.enabled` — enable HTTPS MITM.
 - `proxy.output_proxy_uri` — upstream proxy.
 - `proxy.require_windows_authentication` / `add_windows_authentication_to_output_proxy`.
-- `cert_manager.ca_cert_file` / `ca_key_file` / `domain_certs_folder`.
+- `decrypt_https.cert_manager.ca_cert_file` / `ca_key_file` / `domain_certs_folder`.
 
 `AppConfig.ToDto()` converts to a sanitized DTO (`webui/wasm/shared`) that is
 safe to expose to the browser over `/config` — a deliberate duplicate type so

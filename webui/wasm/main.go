@@ -124,8 +124,8 @@ func DisplayConfig(this js.Value, args []js.Value) any {
 		doc.Call("getElementById", "config-webui-remote").Set("textContent",
 			fmt.Sprintf("%t", config.WebUi.EnableRemoteConnection))
 
-		doc.Call("getElementById", "config-cert-ca-file").Set("textContent", config.CertManager.CaCertFile)
-		doc.Call("getElementById", "config-cert-ca-key-file").Set("textContent", config.CertManager.CaKeyFile)
+		doc.Call("getElementById", "config-cert-ca-file").Set("textContent", config.DecryptHttps.CertManager.CaCertFile)
+		doc.Call("getElementById", "config-cert-ca-key-file").Set("textContent", config.DecryptHttps.CertManager.CaKeyFile)
 
 		return nil
 	}))
