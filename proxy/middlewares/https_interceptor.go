@@ -30,6 +30,10 @@ type EventSink interface {
 	PublishResponseEvent(shared.ResponseEventDto)
 }
 
+type CaptureLimitSource interface {
+	Get() configuration.DecryptHttpsConfig
+}
+
 // HttpsInterceptor performs a man-in-the-middle on CONNECT tunnels so that the
 // HTTPS traffic can be inspected in clear text: it terminates the browser's TLS
 // session with a certificate minted for the target host, opens its own TLS
@@ -45,7 +49,7 @@ type HttpsInterceptor struct {
 	Capture storage.CaptureSessionWriter
 	// Limits drives the per-content-type body size caps. Bodies larger than the
 	// limit are forwarded to the browser but not stored (BodySkipped is set).
-	Limits configuration.DecryptHttpsConfig
+	Limits CaptureLimitSource
 	// Events, when non-nil, receives a request/response event per decrypted
 	// request so live HTTPS traffic appears in the Web UI.
 	Events EventSink
@@ -168,7 +172,7 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	defer originalBody.Close()
 
 	contentType := resp.Header.Get("Content-Type")
-	limit, _ := m.Limits.LimitForContentType(contentType)
+	limit, _ := m.captureLimits().LimitForContentType(contentType)
 
 	// Stream the response to the browser as it arrives, capturing at most `limit`
 	// bytes in parallel through a tee. The response keeps its original framing
@@ -330,7 +334,7 @@ func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skip
 	if !m.isCapturing() || (m.Capture == nil && m.Store == nil) || req.Body == nil {
 		return nil, false, nil
 	}
-	limit, _ := m.Limits.LimitForContentType(req.Header.Get("Content-Type"))
+	limit, _ := m.captureLimits().LimitForContentType(req.Header.Get("Content-Type"))
 
 	store, forward, skipped, err := capBody(req.Body, limit)
 	if err != nil {
@@ -466,6 +470,13 @@ func span(a, b time.Time) time.Duration {
 
 func (m *HttpsInterceptor) isCapturing() bool {
 	return m.CaptureCtl == nil || m.CaptureCtl.IsCapturing()
+}
+
+func (m *HttpsInterceptor) captureLimits() configuration.DecryptHttpsConfig {
+	if m.Limits == nil {
+		return configuration.DecryptHttpsConfig{}
+	}
+	return m.Limits.Get()
 }
 
 // httpHeadersToRecords flattens an http.Header map into ordered name/value

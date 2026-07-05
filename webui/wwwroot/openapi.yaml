@@ -36,6 +36,45 @@ paths:
                 $ref: "#/components/schemas/CertificatesInfos"
         "500":
           $ref: "#/components/responses/InternalServerError"
+  /api/settings/body-capture:
+    get:
+      tags: [Runtime]
+      summary: Read HTTPS body capture rules
+      description: Reads the runtime body capture limits used by decrypted HTTPS inspection.
+      responses:
+        "200":
+          description: Current body capture rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BodyCaptureSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [Runtime]
+      summary: Replace HTTPS body capture rules
+      description: Updates the runtime body capture limits and persists them to `config.yaml`. This does not enable or disable HTTPS decryption.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BodyCaptureSettings"
+      responses:
+        "200":
+          description: Updated body capture rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BodyCaptureSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /events:
     get:
       tags: [Events]
@@ -611,12 +650,54 @@ components:
           type: boolean
     DecryptHttpsConfig:
       type: object
-      required: [enabled, cert_manager]
+      required: [enabled, mime_types, cert_manager]
       properties:
         enabled:
           type: boolean
+        default_max_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Default body capture limit for content types without an explicit rule.
+        mime_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/MimeTypeRule"
         cert_manager:
           $ref: "#/components/schemas/CertManagerConfig"
+    BodyCaptureSettings:
+      type: object
+      required: [mime_types]
+      properties:
+        default_max_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Default body capture limit for content types without an explicit rule. When omitted, the built-in 500 KiB default is used.
+        mime_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/MimeTypeRule"
+    MimeTypeRule:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: MIME type matcher such as `application/json`, `text/*`, or `*/*`.
+        max_size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Capture limit in bytes. At most one size field may be set.
+        max_size_kb:
+          type: number
+          minimum: 0
+          description: Capture limit in KiB. At most one size field may be set.
+        max_size_mb:
+          type: number
+          minimum: 0
+          description: Capture limit in MiB. At most one size field may be set.
     CertManagerConfig:
       type: object
       required: [ca_cert_file, ca_key_file, domain_certs_folder]

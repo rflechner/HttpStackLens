@@ -181,12 +181,26 @@ type WebUiConfigDto struct {
 }
 
 type DecryptHttpsConfigDto struct {
-	Enabled     bool                 `json:"enabled"`
-	CertManager CertManagerConfigDto `json:"cert_manager"`
+	Enabled         bool                 `json:"enabled"`
+	DefaultMaxBytes *int64               `json:"default_max_bytes,omitempty"`
+	MimeTypes       []MimeTypeRuleDto    `json:"mime_types"`
+	CertManager     CertManagerConfigDto `json:"cert_manager"`
 }
 
 type CertManagerConfigDto struct {
 	CaCertFile        string `json:"ca_cert_file"`
 	CaKeyFile         string `json:"ca_key_file"`
 	DomainCertsFolder string `json:"domain_certs_folder"`
+}
+
+type BodyCaptureSettingsDto struct {
+	DefaultMaxBytes *int64            `json:"default_max_bytes,omitempty"`
+	MimeTypes       []MimeTypeRuleDto `json:"mime_types"`
+}
+
+type MimeTypeRuleDto struct {
+	Name         string   `json:"name"`
+	MaxSizeBytes *int64   `json:"max_size_bytes,omitempty"`
+	MaxSizeKb    *float64 `json:"max_size_kb,omitempty"`
+	MaxSizeMb    *float64 `json:"max_size_mb,omitempty"`
 }

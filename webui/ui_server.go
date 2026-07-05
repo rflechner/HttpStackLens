@@ -27,6 +27,7 @@ const defaultCaptureRecordsLimit = 100
 const maxCaptureRecordsLimit = 1000
 
 type storageEnabledPersister func(bool) error
+type bodyCaptureSettingsPersister func(configuration.DecryptHttpsConfig) error
 
 type Hub struct {
 	clients  map[chan string]struct{}
@@ -130,7 +131,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister) *Hub {
+func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister) *Hub {
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -218,10 +219,15 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 	mux.HandleFunc("/api/capture/clear", captureClearHandler(hub, captureCtl, requestStore))
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
+	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
 
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		jsonData, err := json.Marshal(config.ToDto())
+		dtoConfig := config
+		if decryptHttpsSettings != nil {
+			dtoConfig.DecryptHttps = decryptHttpsSettings.Get()
+		}
+		jsonData, err := json.Marshal(dtoConfig.ToDto())
 		if err != nil {
 			log.Printf("Error marshaling request event: %v", err)
 			return
@@ -388,6 +394,121 @@ func publishCaptureState(hub *Hub, state shared.CaptureStateDto) {
 		return
 	}
 	hub.Publish("capture_state", string(jsonData))
+}
+
+func bodyCaptureSettingsHandler(settings *configuration.DecryptHttpsConfigStore, persist bodyCaptureSettingsPersister) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if settings == nil {
+			http.Error(w, "body capture settings are unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, bodyCaptureSettingsDto(settings.Get()))
+		case http.MethodPut:
+			var dto shared.BodyCaptureSettingsDto
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&dto); err != nil {
+				http.Error(w, "invalid body capture settings", http.StatusBadRequest)
+				return
+			}
+			rules, err := mimeTypeRulesFromDto(dto.MimeTypes)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if dto.DefaultMaxBytes != nil && *dto.DefaultMaxBytes < 0 {
+				http.Error(w, "default_max_bytes must be greater than or equal to 0", http.StatusBadRequest)
+				return
+			}
+
+			next := settings.Get()
+			next.DefaultMaxBytes = dto.DefaultMaxBytes
+			next.MimeTypes = rules
+			if persist != nil {
+				if err := persist(next); err != nil {
+					log.Printf("Error persisting decrypt_https body capture rules: %v", err)
+					http.Error(w, "could not persist body capture settings", http.StatusInternalServerError)
+					return
+				}
+			}
+			updated := settings.UpdateCaptureRules(dto.DefaultMaxBytes, rules)
+			writeJSON(w, bodyCaptureSettingsDto(updated))
+		default:
+			w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func bodyCaptureSettingsDto(config configuration.DecryptHttpsConfig) shared.BodyCaptureSettingsDto {
+	return shared.BodyCaptureSettingsDto{
+		DefaultMaxBytes: config.DefaultMaxBytes,
+		MimeTypes:       mimeTypeRulesToDto(config.MimeTypes),
+	}
+}
+
+func mimeTypeRulesToDto(rules []configuration.MimeTypeRule) []shared.MimeTypeRuleDto {
+	if rules == nil {
+		return nil
+	}
+	out := make([]shared.MimeTypeRuleDto, len(rules))
+	for i, rule := range rules {
+		out[i] = shared.MimeTypeRuleDto{
+			Name:         rule.Name,
+			MaxSizeBytes: rule.MaxSizeBytes,
+			MaxSizeKb:    rule.MaxSizeKb,
+			MaxSizeMb:    rule.MaxSizeMb,
+		}
+	}
+	return out
+}
+
+func mimeTypeRulesFromDto(rules []shared.MimeTypeRuleDto) ([]configuration.MimeTypeRule, error) {
+	if rules == nil {
+		return nil, nil
+	}
+	out := make([]configuration.MimeTypeRule, len(rules))
+	for i, rule := range rules {
+		name := strings.TrimSpace(rule.Name)
+		if name == "" {
+			return nil, fmt.Errorf("mime_types[%d].name is required", i)
+		}
+		if !strings.Contains(name, "/") {
+			return nil, fmt.Errorf("mime_types[%d].name must be a MIME type or wildcard", i)
+		}
+		sizeFields := 0
+		if rule.MaxSizeBytes != nil {
+			sizeFields++
+			if *rule.MaxSizeBytes < 0 {
+				return nil, fmt.Errorf("mime_types[%d].max_size_bytes must be greater than or equal to 0", i)
+			}
+		}
+		if rule.MaxSizeKb != nil {
+			sizeFields++
+			if *rule.MaxSizeKb < 0 {
+				return nil, fmt.Errorf("mime_types[%d].max_size_kb must be greater than or equal to 0", i)
+			}
+		}
+		if rule.MaxSizeMb != nil {
+			sizeFields++
+			if *rule.MaxSizeMb < 0 {
+				return nil, fmt.Errorf("mime_types[%d].max_size_mb must be greater than or equal to 0", i)
+			}
+		}
+		if sizeFields > 1 {
+			return nil, fmt.Errorf("mime_types[%d] must specify at most one size field", i)
+		}
+		out[i] = configuration.MimeTypeRule{
+			Name:         name,
+			MaxSizeBytes: rule.MaxSizeBytes,
+			MaxSizeKb:    rule.MaxSizeKb,
+			MaxSizeMb:    rule.MaxSizeMb,
+		}
+	}
+	return out, nil
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

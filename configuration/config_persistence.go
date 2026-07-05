@@ -3,6 +3,7 @@ package configuration
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +14,10 @@ const defaultConfigPath = "config.yaml"
 // preference survives the next application start.
 func PersistStorageEnabled(enabled bool) error {
 	return persistStorageEnabled(defaultConfigPath, enabled)
+}
+
+func PersistDecryptHttpsCaptureRules(config DecryptHttpsConfig) error {
+	return persistDecryptHttpsCaptureRules(defaultConfigPath, config)
 }
 
 func persistStorageEnabled(path string, enabled bool) error {
@@ -78,4 +83,101 @@ func leadingSpaces(s string) int {
 		n++
 	}
 	return n
+}
+
+func persistDecryptHttpsCaptureRules(path string, config DecryptHttpsConfig) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.SplitAfter(string(data), "\n")
+	sectionStart := -1
+	sectionEnd := len(lines)
+	sectionIndent := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := leadingSpaces(line)
+		if trimmed == "decrypt_https:" {
+			sectionStart = i
+			sectionIndent = indent
+			continue
+		}
+		if sectionStart >= 0 && indent <= sectionIndent {
+			sectionEnd = i
+			break
+		}
+	}
+	if sectionStart < 0 {
+		return fmt.Errorf("configuration: decrypt_https not found in %s", path)
+	}
+
+	out := make([]string, 0, len(lines)+len(config.MimeTypes)*3+2)
+	out = append(out, lines[:sectionStart+1]...)
+	for i := sectionStart + 1; i < sectionEnd; i++ {
+		if shouldRemoveCaptureRuleLine(lines, i, sectionIndent) {
+			i = skipYamlBlock(lines, i, sectionEnd)
+			continue
+		}
+		out = append(out, lines[i])
+	}
+	out = append(out, renderCaptureRuleLines(sectionIndent+2, config)...)
+	out = append(out, lines[sectionEnd:]...)
+
+	return os.WriteFile(path, []byte(strings.Join(out, "")), 0o644)
+}
+
+func shouldRemoveCaptureRuleLine(lines []string, i, parentIndent int) bool {
+	line := lines[i]
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return false
+	}
+	indent := leadingSpaces(line)
+	if indent != parentIndent+2 {
+		return false
+	}
+	key, _, ok := strings.Cut(strings.TrimLeft(line, " "), ":")
+	if !ok {
+		return false
+	}
+	key = strings.TrimSpace(key)
+	return key == "default_max_bytes" || key == "mime_types"
+}
+
+func skipYamlBlock(lines []string, start, sectionEnd int) int {
+	indent := leadingSpaces(lines[start])
+	for i := start + 1; i < sectionEnd; i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if leadingSpaces(lines[i]) <= indent {
+			return i - 1
+		}
+	}
+	return sectionEnd - 1
+}
+
+func renderCaptureRuleLines(indent int, config DecryptHttpsConfig) []string {
+	prefix := strings.Repeat(" ", indent)
+	lines := make([]string, 0, len(config.MimeTypes)*3+2)
+	if config.DefaultMaxBytes != nil {
+		lines = append(lines, fmt.Sprintf("%sdefault_max_bytes: %d\n", prefix, *config.DefaultMaxBytes))
+	}
+	lines = append(lines, fmt.Sprintf("%smime_types:\n", prefix))
+	for _, rule := range config.MimeTypes {
+		lines = append(lines, fmt.Sprintf("%s  - name: %s\n", prefix, strconv.Quote(rule.Name)))
+		if rule.MaxSizeBytes != nil {
+			lines = append(lines, fmt.Sprintf("%s    max_size_bytes: %d\n", prefix, *rule.MaxSizeBytes))
+		} else if rule.MaxSizeKb != nil {
+			lines = append(lines, fmt.Sprintf("%s    max_size_kb: %s\n", prefix, strconv.FormatFloat(*rule.MaxSizeKb, 'f', -1, 64)))
+		} else if rule.MaxSizeMb != nil {
+			lines = append(lines, fmt.Sprintf("%s    max_size_mb: %s\n", prefix, strconv.FormatFloat(*rule.MaxSizeMb, 'f', -1, 64)))
+		}
+	}
+	return lines
 }

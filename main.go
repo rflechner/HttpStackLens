@@ -51,8 +51,9 @@ func main() {
 	// fetch their full headers and bodies on demand.
 	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
 	captureCtl := storage.NewCaptureController(config.Storage.Enable)
+	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
 
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, requestStore, captureCtl, configuration.PersistStorageEnabled)
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules)
 
 	var certStore *certManager.CertStore
 
@@ -97,7 +98,7 @@ func main() {
 			CertStore:  certStore,
 			Next:       appContext.pipeline,
 			Capture:    captureWriter,
-			Limits:     config.DecryptHttps,
+			Limits:     decryptHttpsSettings,
 			Events:     logger,
 			Store:      requestStore,
 			CaptureCtl: captureCtl,

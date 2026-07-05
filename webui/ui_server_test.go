@@ -1,9 +1,11 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	configuration "httpStackLens/configuration"
 	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
 	"net/http"
@@ -401,6 +403,102 @@ func TestCapturePauseHandlerRejectsNonPost(t *testing.T) {
 	}
 	if got := rr.Header().Get("Allow"); got != http.MethodPost {
 		t.Fatalf("Allow = %q, want POST", got)
+	}
+}
+
+func TestBodyCaptureSettingsHandlerReturnsSettings(t *testing.T) {
+	defaultMax := int64(2048)
+	ruleLimit := int64(512)
+	settings := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{
+		DefaultMaxBytes: &defaultMax,
+		MimeTypes: []configuration.MimeTypeRule{
+			{Name: "application/json", MaxSizeBytes: &ruleLimit},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/body-capture", nil)
+	rr := httptest.NewRecorder()
+	bodyCaptureSettingsHandler(settings, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got shared.BodyCaptureSettingsDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.DefaultMaxBytes == nil || *got.DefaultMaxBytes != 2048 {
+		t.Fatalf("DefaultMaxBytes = %v, want 2048", got.DefaultMaxBytes)
+	}
+	if len(got.MimeTypes) != 1 || got.MimeTypes[0].Name != "application/json" || got.MimeTypes[0].MaxSizeBytes == nil || *got.MimeTypes[0].MaxSizeBytes != 512 {
+		t.Fatalf("MimeTypes = %+v", got.MimeTypes)
+	}
+}
+
+func TestBodyCaptureSettingsHandlerUpdatesRuntimeAndPersists(t *testing.T) {
+	settings := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{Enabled: true})
+	var persisted configuration.DecryptHttpsConfig
+	persist := func(config configuration.DecryptHttpsConfig) error {
+		persisted = config
+		return nil
+	}
+
+	body := []byte(`{"default_max_bytes":1024,"mime_types":[{"name":"text/*","max_size_kb":64}]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/body-capture", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	bodyCaptureSettingsHandler(settings, persist).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	updated := settings.Get()
+	if !updated.Enabled {
+		t.Fatal("non-body decrypt_https settings were not preserved")
+	}
+	if updated.DefaultMaxBytes == nil || *updated.DefaultMaxBytes != 1024 {
+		t.Fatalf("runtime default = %v, want 1024", updated.DefaultMaxBytes)
+	}
+	if len(updated.MimeTypes) != 1 || updated.MimeTypes[0].Name != "text/*" || updated.MimeTypes[0].MaxSizeKb == nil || *updated.MimeTypes[0].MaxSizeKb != 64 {
+		t.Fatalf("runtime rules = %+v", updated.MimeTypes)
+	}
+	if persisted.DefaultMaxBytes == nil || *persisted.DefaultMaxBytes != 1024 || len(persisted.MimeTypes) != 1 {
+		t.Fatalf("persisted = %+v", persisted)
+	}
+}
+
+func TestBodyCaptureSettingsHandlerDoesNotUpdateRuntimeWhenPersistenceFails(t *testing.T) {
+	initialLimit := int64(256)
+	settings := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{
+		MimeTypes: []configuration.MimeTypeRule{{Name: "application/json", MaxSizeBytes: &initialLimit}},
+	})
+
+	body := []byte(`{"mime_types":[{"name":"text/*","max_size_bytes":1024}]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/body-capture", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	bodyCaptureSettingsHandler(settings, func(configuration.DecryptHttpsConfig) error {
+		return errors.New("disk full")
+	}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	got := settings.Get()
+	if len(got.MimeTypes) != 1 || got.MimeTypes[0].Name != "application/json" {
+		t.Fatalf("runtime changed despite persistence failure: %+v", got.MimeTypes)
+	}
+}
+
+func TestBodyCaptureSettingsHandlerRejectsInvalidRules(t *testing.T) {
+	settings := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{})
+	body := []byte(`{"mime_types":[{"name":"text/*","max_size_bytes":1,"max_size_mb":1}]}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/body-capture", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	bodyCaptureSettingsHandler(settings, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusBadRequest, rr.Body.String())
 	}
 }
 

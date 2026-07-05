@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/goccy/go-yaml"
 )
@@ -41,6 +42,68 @@ type MimeTypeRule struct {
 	MaxSizeBytes *int64   `yaml:"max_size_bytes"` //
 	MaxSizeKb    *float64 `yaml:"max_size_kb"`    //
 	MaxSizeMb    *float64 `yaml:"max_size_mb"`    //
+}
+
+type DecryptHttpsConfigStore struct {
+	mu     sync.RWMutex
+	config DecryptHttpsConfig
+}
+
+func NewDecryptHttpsConfigStore(config DecryptHttpsConfig) *DecryptHttpsConfigStore {
+	return &DecryptHttpsConfigStore{config: cloneDecryptHttpsConfig(config)}
+}
+
+func (s *DecryptHttpsConfigStore) Get() DecryptHttpsConfig {
+	if s == nil {
+		return DecryptHttpsConfig{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneDecryptHttpsConfig(s.config)
+}
+
+func (s *DecryptHttpsConfigStore) UpdateCaptureRules(defaultMaxBytes *int64, rules []MimeTypeRule) DecryptHttpsConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.DefaultMaxBytes = cloneInt64Ptr(defaultMaxBytes)
+	s.config.MimeTypes = cloneMimeTypeRules(rules)
+	return cloneDecryptHttpsConfig(s.config)
+}
+
+func cloneDecryptHttpsConfig(config DecryptHttpsConfig) DecryptHttpsConfig {
+	config.DefaultMaxBytes = cloneInt64Ptr(config.DefaultMaxBytes)
+	config.MimeTypes = cloneMimeTypeRules(config.MimeTypes)
+	return config
+}
+
+func cloneMimeTypeRules(rules []MimeTypeRule) []MimeTypeRule {
+	if rules == nil {
+		return nil
+	}
+	out := make([]MimeTypeRule, len(rules))
+	for i, rule := range rules {
+		out[i] = rule
+		out[i].MaxSizeBytes = cloneInt64Ptr(rule.MaxSizeBytes)
+		out[i].MaxSizeKb = cloneFloat64Ptr(rule.MaxSizeKb)
+		out[i].MaxSizeMb = cloneFloat64Ptr(rule.MaxSizeMb)
+	}
+	return out
+}
+
+func cloneInt64Ptr(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneFloat64Ptr(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
 }
 
 // explicitLimit returns the size limit set by the rule's YAML, if any. The
@@ -183,7 +246,9 @@ func (c *AppConfig) ToDto() shared.AppConfigDto {
 			EnableRemoteConnection: c.WebUi.EnableRemoteConnection,
 		},
 		DecryptHttps: shared.DecryptHttpsConfigDto{
-			Enabled: c.DecryptHttps.Enabled,
+			Enabled:         c.DecryptHttps.Enabled,
+			DefaultMaxBytes: c.DecryptHttps.DefaultMaxBytes,
+			MimeTypes:       mimeTypeRulesToDto(c.DecryptHttps.MimeTypes),
 			CertManager: shared.CertManagerConfigDto{
 				CaCertFile:        c.DecryptHttps.CertManager.CaCertFile,
 				CaKeyFile:         c.DecryptHttps.CertManager.CaKeyFile,
@@ -191,4 +256,20 @@ func (c *AppConfig) ToDto() shared.AppConfigDto {
 			},
 		},
 	}
+}
+
+func mimeTypeRulesToDto(rules []MimeTypeRule) []shared.MimeTypeRuleDto {
+	if rules == nil {
+		return nil
+	}
+	out := make([]shared.MimeTypeRuleDto, len(rules))
+	for i, rule := range rules {
+		out[i] = shared.MimeTypeRuleDto{
+			Name:         rule.Name,
+			MaxSizeBytes: rule.MaxSizeBytes,
+			MaxSizeKb:    rule.MaxSizeKb,
+			MaxSizeMb:    rule.MaxSizeMb,
+		}
+	}
+	return out
 }

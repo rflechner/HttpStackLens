@@ -204,8 +204,12 @@ server and WASM.
   > duration only).
 
 ### EPIC B5 — Runtime settings
-- [ ] B5.1 Body-capture rules: expose/edit `DecryptHttpsConfig` (already modeled in
+- [x] B5.1 Body-capture rules: expose/edit `DecryptHttpsConfig` (already modeled in
       [`configuration/config.go`](configuration/config.go)) via API; apply without restart.
+      Added `GET`/`PUT /api/settings/body-capture` for `default_max_bytes` and
+      MIME capture rules, backed by a thread-safe runtime settings store consumed
+      by `HttpsInterceptor`; updates persist back to `config.yaml` and leave the
+      HTTPS decryption toggle to B6.3.
 - [ ] B5.2 Upstream proxy: read/write API (`OutputProxyUri`, bypass, NTLM/domain).
       Hot re-injection into the pipeline to be scoped.
 - [ ] B5.3 Access control: **new model** (loopback/lan/allowlist/open + CIDRs)
