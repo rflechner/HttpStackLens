@@ -55,6 +55,9 @@ type RequestDetailDto struct {
 	CreatedAt     string                    `json:"created_at"`
 	Request       *RequestDetailRequestDto  `json:"request,omitempty"`
 	Response      *RequestDetailResponseDto `json:"response,omitempty"`
+	// Timing is the per-phase breakdown of the exchange (B4). It is present only
+	// for decrypted HTTPS traffic, where the transport is instrumented.
+	Timing *TimingDto `json:"timing,omitempty"`
 }
 
 type RequestDetailRequestDto struct {
@@ -75,6 +78,19 @@ type RequestDetailResponseDto struct {
 	BodyAvailable bool        `json:"body_available"`
 	BodySkipped   bool        `json:"body_skipped"`
 	BodySize      int         `json:"body_size"`
+}
+
+// TimingDto carries the per-phase breakdown of an exchange, in milliseconds, so
+// the UI can draw a real waterfall / Timing tab instead of fake ratios. Phases
+// that did not occur — DNS/connect/TLS on a reused keep-alive connection — are
+// zero.
+type TimingDto struct {
+	DnsMs      int64 `json:"dns_ms"`
+	ConnectMs  int64 `json:"connect_ms"`
+	TlsMs      int64 `json:"tls_ms"`
+	TtfbMs     int64 `json:"ttfb_ms"`
+	DownloadMs int64 `json:"download_ms"`
+	TotalMs    int64 `json:"total_ms"`
 }
 
 type HeaderDto struct {

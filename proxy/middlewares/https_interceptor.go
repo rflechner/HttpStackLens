@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -155,9 +156,11 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	log.Printf("🔓 %s https://%s%s\n", req.Method, host, req.URL.RequestURI())
 
 	// Time the exchange from issuing the upstream request to finishing writing
-	// the response back to the client.
+	// the response back to the client, and instrument the transport so the UI can
+	// draw a real per-phase waterfall (DNS/connect/TLS/TTFB/download).
+	tracedReq, trace := newTracedRequest(req)
 	start := time.Now()
-	resp, err := transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(tracedReq)
 	if err != nil {
 		return err
 	}
@@ -200,6 +203,8 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 		m.recordResponse(recordID, resp, body, skipped)
 		m.publishResponseEvent(correlationID, resp, contentType, capture.total(), skipped, len(body), time.Since(start))
 	}
+
+	m.recordTiming(correlationID, trace.timing(start, time.Now()))
 
 	return writeErr
 }
@@ -388,6 +393,75 @@ func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, 
 	if m.Store != nil {
 		m.Store.PutResponse(id.String(), rec)
 	}
+}
+
+// recordTiming stores the measured per-phase breakdown for the exchange so the
+// Web UI can fetch it via the detail endpoint. It is gated the same way as the
+// other records: only while capturing and only when a store is wired.
+func (m *HttpsInterceptor) recordTiming(correlationID string, t storage.Timing) {
+	if !m.isCapturing() || m.Store == nil {
+		return
+	}
+	m.Store.PutTiming(correlationID, t)
+}
+
+// requestTrace captures the httptrace timestamps of a single exchange so the
+// per-phase durations can be derived once the response has been written.
+type requestTrace struct {
+	dnsStart, dnsDone         time.Time
+	connectStart, connectDone time.Time
+	tlsStart, tlsDone         time.Time
+	wroteRequest              time.Time
+	firstByte                 time.Time
+}
+
+// newTracedRequest returns a copy of req whose context carries an
+// httptrace.ClientTrace feeding the returned requestTrace.
+func newTracedRequest(req *http.Request) (*http.Request, *requestTrace) {
+	rt := &requestTrace{}
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(httptrace.DNSStartInfo) { rt.dnsStart = time.Now() },
+		DNSDone:  func(httptrace.DNSDoneInfo) { rt.dnsDone = time.Now() },
+		ConnectStart: func(_, _ string) {
+			if rt.connectStart.IsZero() {
+				rt.connectStart = time.Now()
+			}
+		},
+		ConnectDone:          func(_, _ string, _ error) { rt.connectDone = time.Now() },
+		TLSHandshakeStart:    func() { rt.tlsStart = time.Now() },
+		TLSHandshakeDone:     func(tls.ConnectionState, error) { rt.tlsDone = time.Now() },
+		WroteRequest:         func(httptrace.WroteRequestInfo) { rt.wroteRequest = time.Now() },
+		GotFirstResponseByte: func() { rt.firstByte = time.Now() },
+	}
+	return req.WithContext(httptrace.WithClientTrace(req.Context(), trace)), rt
+}
+
+// timing derives the per-phase durations from the captured timestamps, bounded
+// by the overall start/end of the exchange.
+func (rt *requestTrace) timing(start, end time.Time) storage.Timing {
+	t := storage.Timing{
+		Dns:     span(rt.dnsStart, rt.dnsDone),
+		Connect: span(rt.connectStart, rt.connectDone),
+		Tls:     span(rt.tlsStart, rt.tlsDone),
+		Total:   span(start, end),
+	}
+	if !rt.firstByte.IsZero() {
+		if !rt.wroteRequest.IsZero() {
+			t.Ttfb = span(rt.wroteRequest, rt.firstByte)
+		} else {
+			t.Ttfb = span(start, rt.firstByte)
+		}
+		t.Download = span(rt.firstByte, end)
+	}
+	return t
+}
+
+// span returns b-a, or 0 when either bound is missing or out of order.
+func span(a, b time.Time) time.Duration {
+	if a.IsZero() || b.IsZero() || b.Before(a) {
+		return 0
+	}
+	return b.Sub(a)
 }
 
 func (m *HttpsInterceptor) isCapturing() bool {

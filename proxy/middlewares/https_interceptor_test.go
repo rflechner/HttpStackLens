@@ -5,7 +5,66 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestRequestTraceTiming checks the per-phase durations are derived from the
+// captured httptrace timestamps, and that missing/out-of-order phases collapse
+// to zero (as on a reused keep-alive connection).
+func TestRequestTraceTiming(t *testing.T) {
+	base := time.Now()
+	at := func(ms int) time.Time { return base.Add(time.Duration(ms) * time.Millisecond) }
+
+	rt := &requestTrace{
+		dnsStart:     at(0),
+		dnsDone:      at(10),
+		connectStart: at(10),
+		connectDone:  at(30),
+		tlsStart:     at(30),
+		tlsDone:      at(60),
+		wroteRequest: at(60),
+		firstByte:    at(100),
+	}
+
+	got := rt.timing(at(0), at(150))
+	if got.Dns != 10*time.Millisecond {
+		t.Errorf("Dns = %v, want 10ms", got.Dns)
+	}
+	if got.Connect != 20*time.Millisecond {
+		t.Errorf("Connect = %v, want 20ms", got.Connect)
+	}
+	if got.Tls != 30*time.Millisecond {
+		t.Errorf("Tls = %v, want 30ms", got.Tls)
+	}
+	if got.Ttfb != 40*time.Millisecond {
+		t.Errorf("Ttfb = %v, want 40ms", got.Ttfb)
+	}
+	if got.Download != 50*time.Millisecond {
+		t.Errorf("Download = %v, want 50ms", got.Download)
+	}
+	if got.Total != 150*time.Millisecond {
+		t.Errorf("Total = %v, want 150ms", got.Total)
+	}
+}
+
+// TestRequestTraceTimingReusedConnection covers a keep-alive request where no
+// DNS/connect/TLS occurred: those phases must be zero, and TTFB falls back to
+// the overall start when the request-written timestamp is missing.
+func TestRequestTraceTimingReusedConnection(t *testing.T) {
+	base := time.Now()
+	rt := &requestTrace{firstByte: base.Add(20 * time.Millisecond)}
+
+	got := rt.timing(base, base.Add(70*time.Millisecond))
+	if got.Dns != 0 || got.Connect != 0 || got.Tls != 0 {
+		t.Errorf("reused connection should have zero dns/connect/tls: %+v", got)
+	}
+	if got.Ttfb != 20*time.Millisecond {
+		t.Errorf("Ttfb = %v, want 20ms (fallback to start)", got.Ttfb)
+	}
+	if got.Download != 50*time.Millisecond {
+		t.Errorf("Download = %v, want 50ms", got.Download)
+	}
+}
 
 // TestCapBodyAlwaysForwardsFullBody is the guarantee that the size limit never
 // truncates what the browser receives: whether the body fits or is skipped, the

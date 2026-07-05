@@ -847,7 +847,23 @@ func requestDetailDto(exchange storage.CapturedExchange) shared.RequestDetailDto
 			BodySize:      len(exchange.Response.Body),
 		}
 	}
+	if exchange.Timing != nil {
+		dto.Timing = timingDto(*exchange.Timing)
+	}
 	return dto
+}
+
+// timingDto converts the stored per-phase durations into the millisecond DTO
+// consumed by the UI's Timing tab / waterfall.
+func timingDto(t storage.Timing) *shared.TimingDto {
+	return &shared.TimingDto{
+		DnsMs:      t.Dns.Milliseconds(),
+		ConnectMs:  t.Connect.Milliseconds(),
+		TlsMs:      t.Tls.Milliseconds(),
+		TtfbMs:     t.Ttfb.Milliseconds(),
+		DownloadMs: t.Download.Milliseconds(),
+		TotalMs:    t.Total.Milliseconds(),
+	}
 }
 
 func bodyForSide(exchange storage.CapturedExchange, side string) (body []byte, contentType string, skipped bool, ok bool) {

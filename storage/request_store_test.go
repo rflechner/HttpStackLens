@@ -104,6 +104,35 @@ func TestRequestStoreReinsertsEvictedIDAsNewest(t *testing.T) {
 	}
 }
 
+func TestRequestStorePutTimingAttachesToExchange(t *testing.T) {
+	s := NewRequestStore(10)
+	s.PutRequest("a", RequestRecord{Method: "GET"})
+	s.PutTiming("a", Timing{Dns: 1, Total: 5})
+
+	got, ok := s.Get("a")
+	if !ok {
+		t.Fatal("expected exchange 'a' to be present")
+	}
+	if got.Request == nil {
+		t.Error("request should be preserved after PutTiming")
+	}
+	if got.Timing == nil || got.Timing.Dns != 1 || got.Timing.Total != 5 {
+		t.Errorf("timing not stored correctly: %+v", got.Timing)
+	}
+	if s.Len() != 1 {
+		t.Errorf("Len = %d, want 1 (PutTiming must not duplicate)", s.Len())
+	}
+}
+
+func TestRequestStorePutTimingCreatesEntryWhenMissing(t *testing.T) {
+	s := NewRequestStore(10)
+	s.PutTiming("orphan", Timing{Total: 42})
+	got, ok := s.Get("orphan")
+	if !ok || got.Timing == nil || got.Timing.Total != 42 {
+		t.Errorf("timing-only exchange not stored: ok=%v exch=%+v", ok, got)
+	}
+}
+
 func TestRequestStoreGetReturnsCopy(t *testing.T) {
 	// The returned exchange must not change when the store is updated afterwards.
 	s := NewRequestStore(10)

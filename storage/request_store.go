@@ -17,6 +17,20 @@ type CapturedExchange struct {
 	Request       *RequestRecord
 	Response      *ResponseRecord
 	CreatedAt     time.Time
+	// Timing is the per-phase breakdown of the exchange, when it was measured
+	// (decrypted HTTPS traffic instrumented via httptrace). It is nil otherwise.
+	Timing *Timing
+}
+
+// Timing holds the per-phase durations of a single exchange. Phases that did
+// not occur (e.g. DNS/connect/TLS on a reused keep-alive connection) are zero.
+type Timing struct {
+	Dns      time.Duration
+	Connect  time.Duration
+	Tls      time.Duration
+	Ttfb     time.Duration
+	Download time.Duration
+	Total    time.Duration
 }
 
 // RequestStore keeps the most recent exchanges in memory, indexed by correlation
@@ -68,6 +82,20 @@ func (s *RequestStore) PutResponse(id string, rec ResponseRecord) {
 		return
 	}
 	s.enqueue(&CapturedExchange{CorrelationID: id, Response: &r, CreatedAt: time.Now()})
+}
+
+// PutTiming attaches the measured timing breakdown to an existing exchange. If
+// the exchange was never seen (e.g. it was already evicted) a timing-only entry
+// is created.
+func (s *RequestStore) PutTiming(id string, t Timing) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tt := t
+	if e, ok := s.entries[id]; ok {
+		e.Timing = &tt
+		return
+	}
+	s.enqueue(&CapturedExchange{CorrelationID: id, Timing: &tt, CreatedAt: time.Now()})
 }
 
 // enqueue inserts a new exchange and evicts the oldest while over capacity. The

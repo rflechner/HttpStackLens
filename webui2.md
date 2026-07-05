@@ -187,9 +187,19 @@ server and WASM.
       `.capture` files from disk.
 
 ### EPIC B4 — Detailed timings (Timing tab / real waterfall)
-- [ ] B4.1 Instrument the transport (`httptrace.ClientTrace`: DNS, connect, TLS,
+- [x] B4.1 Instrument the transport (`httptrace.ClientTrace`: DNS, connect, TLS,
       TTFB, download) instead of the fake ratios in `timingBar()`.
-- [ ] B4.2 Add the segments to the detail DTO.
+      The decrypted-HTTPS `forward()` in
+      [`https_interceptor.go`](proxy/middlewares/https_interceptor.go) now wraps the
+      upstream request with an `httptrace.ClientTrace` (`requestTrace`) capturing
+      DNS/connect/TLS/wrote-request/first-byte timestamps around `transport.RoundTrip`,
+      and derives the per-phase durations bounded by the overall start/end of the
+      exchange (reused keep-alive connections yield zero for DNS/connect/TLS).
+- [x] B4.2 Add the segments to the detail DTO.
+      Added `storage.Timing` + `RequestStore.PutTiming`, kept in the in-memory
+      `CapturedExchange` (not the binary capture format), and exposed through the new
+      `shared.TimingDto` under `RequestDetailDto.timing` (`GET /api/requests/{id}`);
+      `openapi.yaml` updated. Frontend waterfall/Timing tab wiring is F2.4.
   > Medium/high complexity; can ship in phase 2 (waterfall first based on total
   > duration only).
 

@@ -384,6 +384,35 @@ components:
           $ref: "#/components/schemas/RequestDetailRequest"
         response:
           $ref: "#/components/schemas/RequestDetailResponse"
+        timing:
+          $ref: "#/components/schemas/Timing"
+    Timing:
+      type: object
+      description: >-
+        Per-phase timing breakdown of the exchange, in milliseconds, for the
+        UI's Timing tab / waterfall. Present only for decrypted HTTPS traffic,
+        where the upstream transport is instrumented. Phases that did not occur
+        (e.g. DNS/connect/TLS on a reused keep-alive connection) are zero.
+      required: [dns_ms, connect_ms, tls_ms, ttfb_ms, download_ms, total_ms]
+      properties:
+        dns_ms:
+          type: integer
+          format: int64
+        connect_ms:
+          type: integer
+          format: int64
+        tls_ms:
+          type: integer
+          format: int64
+        ttfb_ms:
+          type: integer
+          format: int64
+        download_ms:
+          type: integer
+          format: int64
+        total_ms:
+          type: integer
+          format: int64
     RequestDetailRequest:
       type: object
       required: [method, url, http_version, headers, body_available, body_skipped, body_size]

@@ -120,6 +120,56 @@ func TestRequestDetailHandlerReturnsStoredExchange(t *testing.T) {
 	}
 }
 
+func TestRequestDetailHandlerExposesTiming(t *testing.T) {
+	store := storage.NewRequestStore(10)
+	store.PutRequest("req-1", storage.RequestRecord{Method: "GET", URL: "https://example.com/"})
+	store.PutTiming("req-1", storage.Timing{
+		Dns:      10 * time.Millisecond,
+		Connect:  20 * time.Millisecond,
+		Tls:      30 * time.Millisecond,
+		Ttfb:     40 * time.Millisecond,
+		Download: 50 * time.Millisecond,
+		Total:    150 * time.Millisecond,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-1", nil)
+	rr := httptest.NewRecorder()
+	requestDetailHandler(store).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var dto shared.RequestDetailDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if dto.Timing == nil {
+		t.Fatalf("timing missing in dto = %+v", dto)
+	}
+	if dto.Timing.DnsMs != 10 || dto.Timing.ConnectMs != 20 || dto.Timing.TlsMs != 30 ||
+		dto.Timing.TtfbMs != 40 || dto.Timing.DownloadMs != 50 || dto.Timing.TotalMs != 150 {
+		t.Fatalf("timing dto = %+v", dto.Timing)
+	}
+}
+
+func TestRequestDetailHandlerOmitsTimingWhenAbsent(t *testing.T) {
+	store := storage.NewRequestStore(10)
+	store.PutRequest("req-1", storage.RequestRecord{Method: "GET", URL: "https://example.com/"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/requests/req-1", nil)
+	rr := httptest.NewRecorder()
+	requestDetailHandler(store).ServeHTTP(rr, req)
+
+	var dto shared.RequestDetailDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if dto.Timing != nil {
+		t.Fatalf("timing should be nil, got %+v", dto.Timing)
+	}
+}
+
 func TestRequestDetailHandlerNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/requests/missing", nil)
 	rr := httptest.NewRecorder()
