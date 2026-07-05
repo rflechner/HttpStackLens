@@ -47,7 +47,11 @@ func main() {
 
 	stopChan := make(chan bool)
 
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config)
+	// Keeps the most recent request/response records in memory so the Web UI can
+	// fetch their full headers and bodies on demand.
+	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
+
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, requestStore)
 
 	var certStore *certManager.CertStore
 
@@ -62,10 +66,6 @@ func main() {
 	// pipeline so the HTTPS interceptor can surface the decrypted requests and
 	// responses it sees (they are otherwise only written to the capture file).
 	logger := logging.CreateWebUiEventLogger(hub)
-
-	// Keeps the most recent request/response records in memory so the Web UI can
-	// fetch their full headers and bodies on demand.
-	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
 
 	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
 	// certificates we sign on the fly are accepted. A failure here is not fatal:

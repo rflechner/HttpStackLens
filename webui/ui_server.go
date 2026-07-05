@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"httpStackLens/certManager"
 	configuration "httpStackLens/configuration"
+	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -117,7 +119,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig) *Hub {
+func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requestStore *storage.RequestStore) *Hub {
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -187,6 +189,7 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig) *Hub
 
 	hub := newHub()
 	mux.HandleFunc("/events", sseHandler(hub))
+	mux.HandleFunc("/api/requests/", requestDetailHandler(requestStore))
 
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -257,4 +260,83 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig) *Hub
 	}()
 
 	return hub
+}
+
+func requestDetailHandler(store *storage.RequestStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if store == nil {
+			http.Error(w, "request store unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		id := strings.TrimPrefix(r.URL.Path, "/api/requests/")
+		if id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		exchange, ok := store.Get(id)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(requestDetailDto(exchange)); err != nil {
+			log.Printf("Error marshaling request detail: %v", err)
+		}
+	}
+}
+
+func requestDetailDto(exchange storage.CapturedExchange) shared.RequestDetailDto {
+	dto := shared.RequestDetailDto{
+		CorrelationID: exchange.CorrelationID,
+		CreatedAt:     exchange.CreatedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if exchange.Request != nil {
+		dto.Request = &shared.RequestDetailRequestDto{
+			Method:        exchange.Request.Method,
+			URL:           exchange.Request.URL,
+			HttpVersion:   httpVersionString(exchange.Request.HttpVersion),
+			Headers:       headerDtos(exchange.Request.Headers),
+			BodyAvailable: exchange.Request.Body != nil && !exchange.Request.BodySkipped,
+			BodySkipped:   exchange.Request.BodySkipped,
+			BodySize:      len(exchange.Request.Body),
+		}
+	}
+	if exchange.Response != nil {
+		dto.Response = &shared.RequestDetailResponseDto{
+			Status:        int(exchange.Response.StatusCode),
+			StatusText:    exchange.Response.StatusMessage,
+			HttpVersion:   httpVersionString(exchange.Response.HttpVersion),
+			Headers:       headerDtos(exchange.Response.Headers),
+			BodyAvailable: exchange.Response.Body != nil && !exchange.Response.BodySkipped,
+			BodySkipped:   exchange.Response.BodySkipped,
+			BodySize:      len(exchange.Response.Body),
+		}
+	}
+	return dto
+}
+
+func headerDtos(headers []storage.Header) []shared.HeaderDto {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make([]shared.HeaderDto, 0, len(headers))
+	for _, h := range headers {
+		out = append(out, shared.HeaderDto{Name: h.Name, Value: h.Value})
+	}
+	return out
+}
+
+func httpVersionString(v storage.HttpVersion) string {
+	if v == storage.HttpVersionUnknown {
+		return ""
+	}
+	return fmt.Sprintf("HTTP/%d.%d", v.Major(), v.Minor())
 }

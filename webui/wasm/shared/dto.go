@@ -48,6 +48,40 @@ type ResponseEventDto struct {
 	Stream bool `json:"stream"`
 }
 
+// RequestDetailDto is returned by GET /api/requests/{id}. It contains metadata
+// and headers only; bodies are fetched separately by /api/requests/{id}/body.
+type RequestDetailDto struct {
+	CorrelationID string                    `json:"correlation_id"`
+	CreatedAt     string                    `json:"created_at"`
+	Request       *RequestDetailRequestDto  `json:"request,omitempty"`
+	Response      *RequestDetailResponseDto `json:"response,omitempty"`
+}
+
+type RequestDetailRequestDto struct {
+	Method        string      `json:"method"`
+	URL           string      `json:"url"`
+	HttpVersion   string      `json:"http_version"`
+	Headers       []HeaderDto `json:"headers"`
+	BodyAvailable bool        `json:"body_available"`
+	BodySkipped   bool        `json:"body_skipped"`
+	BodySize      int         `json:"body_size"`
+}
+
+type RequestDetailResponseDto struct {
+	Status        int         `json:"status"`
+	StatusText    string      `json:"status_text"`
+	HttpVersion   string      `json:"http_version"`
+	Headers       []HeaderDto `json:"headers"`
+	BodyAvailable bool        `json:"body_available"`
+	BodySkipped   bool        `json:"body_skipped"`
+	BodySize      int         `json:"body_size"`
+}
+
+type HeaderDto struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 type CertificatesInfosDto struct {
 	CaCertSubject string `json:"ca_cert_subject"`
 }

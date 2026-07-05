@@ -157,7 +157,10 @@ server and WASM.
       plain-HTTP path (`proxy_server.go`), injected from `main.go`. Bodies are the
       already size-capped ones, so memory ≈ N × (req cap + resp cap). Not yet
       exposed over HTTP — that's B2.2.
-- [ ] B2.2 `/api/requests/{id}` endpoint (req+resp headers, metadata).
+- [x] B2.2 `/api/requests/{id}` endpoint (req+resp headers, metadata).
+      Added a Web UI API handler backed by `storage.RequestStore`, plus shared
+      detail DTOs containing request/response metadata, headers, and body
+      availability flags. Bodies remain separate for B2.3.
 - [ ] B2.3 `/api/requests/{id}/body` endpoint (honor `BodySkipped`, return the real
       `Content-Type` for Pretty/Hex rendering).
 - [ ] B2.4 Reuse [`storage/capture_session_reader.go`](storage/capture_session_reader.go)
