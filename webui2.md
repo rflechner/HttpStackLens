@@ -176,7 +176,7 @@ server and WASM.
 ### EPIC B3 — Capture control
 - [ ] B3.1 Server capture state (`capturing` on/off) + gate in the pipeline.
 - [ ] B3.2 pause/resume/clear endpoints + `capture_state` event.
-- [ ] B3.3 Decide: does "Clear" wipe the server buffer, the UI, or both?
+- [ ] B3.3 "Clear" wipes the server buffer
 
 ### EPIC B4 — Detailed timings (Timing tab / real waterfall)
 - [ ] B4.1 Instrument the transport (`httptrace.ClientTrace`: DNS, connect, TLS,

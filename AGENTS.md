@@ -136,6 +136,10 @@ parameters, status codes, or SSE event payloads, update `openapi.yaml` in the
 same change. Keeping this contract current is required so the local API remains
 usable from tools such as Swagger UI, Redoc, Bruno, Postman, and Insomnia.
 
+If a Web UI API changes a value that is configured in `config.yaml`, persist that
+change back to `config.yaml` as part of the API behavior. Users who prefer the UI
+over editing YAML should not lose their settings on the next application start.
+
 ## Build
 
 Recommended build command:

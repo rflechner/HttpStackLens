@@ -173,6 +173,11 @@ it from `config.yaml` with `goccy/go-yaml`. Key flags:
 safe to expose to the browser over `/config` — a deliberate duplicate type so
 internal-only fields never leak to the UI.
 
+Runtime APIs may expose UI-first settings flows for values that originate in
+`config.yaml`. When an API changes one of those values, it should also persist
+the updated configuration back to `config.yaml`, so the setting survives the next
+application start for users who prefer the Web UI over editing YAML manually.
+
 ## Web UI (`webui/`)
 
 `ui_server.go` runs a standard `net/http` server with:
