@@ -181,11 +181,17 @@ internal-only fields never leak to the UI.
   to WebAssembly).
 - `/events` — **Server-Sent Events** stream.
 - `/config`, `/certificates-infos` — JSON endpoints consumed by the WASM client.
+- `/openapi.yaml` — the OpenAPI contract for the Web UI HTTP API.
 
 Live traffic uses a small pub/sub **`Hub`**: SSE clients `subscribe()` to a
 buffered channel; `Publish(eventType, data)` fans messages out to all clients and
 **drops messages for slow clients** (non-blocking send) so one stuck browser
 can't stall the proxy.
+
+The API contract lives at `webui/wwwroot/openapi.yaml`, which means it is served
+directly in development and embedded into production binaries together with the
+rest of `wwwroot`. Any change to Web UI HTTP endpoints, DTOs, query parameters,
+status codes, or SSE event payloads should update this file in the same change.
 
 ### Client (`webui/wasm/`)
 
@@ -458,7 +464,7 @@ http/models/, http/parser/                            HTTP types and combinator 
 security/                                             SSPI / Windows authentication
 webui/                                                Embedded Web UI server + SSE hub
 webui/wasm/                                           Go/WASM client + shared DTOs
-webui/wwwroot/                                        Static assets (html/css/js/wasm)
+webui/wwwroot/                                        Static assets (html/css/js/wasm) + openapi.yaml
 logging/                                              Event loggers + structured logging
 build-tools/                                          WASM/CSS/native build orchestration
 ```

@@ -82,6 +82,61 @@ type HeaderDto struct {
 	Value string `json:"value"`
 }
 
+type CaptureFileDto struct {
+	Name       string `json:"name"`
+	Size       int64  `json:"size"`
+	ModifiedAt string `json:"modified_at"`
+}
+
+type CaptureMetadataDto struct {
+	Name           string `json:"name"`
+	Size           int64  `json:"size"`
+	ModifiedAt     string `json:"modified_at"`
+	Version        int16  `json:"version"`
+	HttpsDecrypted bool   `json:"https_decrypted"`
+	RecordsCount   int32  `json:"records_count"`
+}
+
+type CaptureRecordsDto struct {
+	Name       string             `json:"name"`
+	Offset     int                `json:"offset"`
+	Limit      int                `json:"limit"`
+	Records    []CaptureRecordDto `json:"records"`
+	NextOffset int                `json:"next_offset"`
+	HasMore    bool               `json:"has_more"`
+}
+
+type CaptureRecordDto struct {
+	Index    int                       `json:"index"`
+	Type     string                    `json:"type"`
+	Request  *CaptureRequestRecordDto  `json:"request,omitempty"`
+	Response *CaptureResponseRecordDto `json:"response,omitempty"`
+}
+
+type CaptureRequestRecordDto struct {
+	RequestID     string      `json:"request_id"`
+	Method        string      `json:"method"`
+	URL           string      `json:"url"`
+	HttpVersion   string      `json:"http_version"`
+	Headers       []HeaderDto `json:"headers"`
+	BodySkipped   bool        `json:"body_skipped"`
+	BodyAvailable bool        `json:"body_available"`
+	BodySize      int         `json:"body_size"`
+	BodyBase64    string      `json:"body_base64,omitempty"`
+}
+
+type CaptureResponseRecordDto struct {
+	RequestID     string      `json:"request_id"`
+	Status        int         `json:"status"`
+	StatusText    string      `json:"status_text"`
+	HttpVersion   string      `json:"http_version"`
+	Headers       []HeaderDto `json:"headers"`
+	BodySkipped   bool        `json:"body_skipped"`
+	BodyAvailable bool        `json:"body_available"`
+	BodySize      int         `json:"body_size"`
+	BodyBase64    string      `json:"body_base64,omitempty"`
+}
+
 type CertificatesInfosDto struct {
 	CaCertSubject string `json:"ca_cert_subject"`
 }

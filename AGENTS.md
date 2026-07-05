@@ -43,6 +43,7 @@ The app currently:
 - Has Windows-specific authentication support.
 - Serves a Web UI using Go/WASM.
 - Streams proxy events to the UI using SSE.
+- Serves an OpenAPI contract for the Web UI API at `/openapi.yaml`.
 
 ## Important Design Constraints
 
@@ -76,6 +77,7 @@ Key areas:
 - `security/`: Windows authentication helpers.
 - `webui/`: embedded Web UI server.
 - `webui/wasm/`: client-side UI logic.
+- `webui/wwwroot/openapi.yaml`: OpenAPI contract for Web UI HTTP endpoints.
 
 ## Coding Guidance
 
@@ -123,6 +125,16 @@ Prioritize:
 - export/replay later
 
 Avoid decorative UI that makes inspection slower.
+
+## API Documentation
+
+The Web UI HTTP API is documented in `webui/wwwroot/openapi.yaml` and served by
+the app at `/openapi.yaml`.
+
+When adding, removing, or changing Web UI endpoints, request/response DTOs, query
+parameters, status codes, or SSE event payloads, update `openapi.yaml` in the
+same change. Keeping this contract current is required so the local API remains
+usable from tools such as Swagger UI, Redoc, Bruno, Postman, and Insomnia.
 
 ## Build
 

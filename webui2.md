@@ -166,8 +166,12 @@ server and WASM.
       Added `side=request|response`, raw body responses, captured content-type
       propagation, `404` for absent bodies, and `413` + `X-Body-Skipped` for
       intentionally skipped bodies.
-- [ ] B2.4 Reuse [`storage/capture_session_reader.go`](storage/capture_session_reader.go)
+- [x] B2.4 Reuse [`storage/capture_session_reader.go`](storage/capture_session_reader.go)
       to optionally reopen a `.capture` file and replay it in the UI.
+      Added capture-file APIs: `GET /api/captures` lists `.capture` files,
+      `GET /api/captures/{name}/metadata` reads the file header, and
+      `GET /api/captures/{name}/records?offset=&limit=` reads records in order
+      through the existing binary reader, with bodies base64-encoded in JSON.
 
 ### EPIC B3 — Capture control
 - [ ] B3.1 Server capture state (`capturing` on/off) + gate in the pipeline.

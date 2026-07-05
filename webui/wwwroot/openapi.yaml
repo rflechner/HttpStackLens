@@ -1,0 +1,527 @@
+openapi: 3.1.0
+info:
+  title: HttpStackLens Web UI API
+  version: 0.1.0
+  description: Local-only API used by the HttpStackLens traffic inspector.
+servers:
+  - url: http://127.0.0.1:9000
+    description: Default local Web UI server
+tags:
+  - name: Runtime
+  - name: Requests
+  - name: Captures
+  - name: Events
+paths:
+  /config:
+    get:
+      tags: [Runtime]
+      summary: Read sanitized runtime configuration
+      responses:
+        "200":
+          description: Current configuration safe for the browser UI
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppConfig"
+  /certificates-infos:
+    get:
+      tags: [Runtime]
+      summary: Read local HTTPS debugging CA information
+      responses:
+        "200":
+          description: Certificate information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificatesInfos"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /events:
+    get:
+      tags: [Events]
+      summary: Subscribe to live proxy events
+      description: |
+        Server-Sent Events stream. Known event types are `request_occurred`
+        and `response_occurred`.
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                request_occurred:
+                  value: |
+                    event: request_occurred
+                    data: {"id":1,"correlation_id":"f47ac10b-58cc-4372-a567-0e02b2c3d479","method":"GET","host":"example.com","port":443,"path":"/","version":"HTTP/1.1","scheme":"https","tls":true,"decrypted":true}
+  /api/requests/{id}:
+    get:
+      tags: [Requests]
+      summary: Read one captured request/response detail
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: Request/response metadata and headers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/requests/{id}/body:
+    get:
+      tags: [Requests]
+      summary: Read a captured request or response body
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - name: side
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [request, response]
+          description: Which side of the exchange to read.
+      responses:
+        "200":
+          description: Raw captured body
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          description: Body was intentionally skipped by capture limits
+          headers:
+            X-Body-Skipped:
+              schema:
+                type: string
+                const: "true"
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/captures:
+    get:
+      tags: [Captures]
+      summary: List stored capture files
+      responses:
+        "200":
+          description: Capture files sorted by modification time, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CaptureFile"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/captures/{name}/metadata:
+    get:
+      tags: [Captures]
+      summary: Read capture file metadata
+      parameters:
+        - $ref: "#/components/parameters/CaptureName"
+      responses:
+        "200":
+          description: Capture header and file metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureMetadata"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/captures/{name}/records:
+    get:
+      tags: [Captures]
+      summary: Read capture records in file order
+      parameters:
+        - $ref: "#/components/parameters/CaptureName"
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Zero-based record index to start from.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Maximum number of records to return.
+      responses:
+        "200":
+          description: One page of decoded records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureRecords"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+components:
+  parameters:
+    RequestId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Request correlation id.
+    CaptureName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[^/]+\\.capture$"
+      description: Capture file name from `/api/captures`.
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        text/plain:
+          schema:
+            type: string
+    NotFound:
+      description: Resource not found
+      content:
+        text/plain:
+          schema:
+            type: string
+    MethodNotAllowed:
+      description: Method not allowed
+      headers:
+        Allow:
+          schema:
+            type: string
+      content:
+        text/plain:
+          schema:
+            type: string
+    ServiceUnavailable:
+      description: Request store is unavailable
+      content:
+        text/plain:
+          schema:
+            type: string
+    UnprocessableEntity:
+      description: Capture file is not readable as a supported HttpStackLens capture
+      content:
+        text/plain:
+          schema:
+            type: string
+    InternalServerError:
+      description: Internal server error
+      content:
+        text/plain:
+          schema:
+            type: string
+  schemas:
+    Header:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+    RequestEvent:
+      type: object
+      required: [id, correlation_id, method, host, port, path, version, scheme, tls, decrypted]
+      properties:
+        id:
+          type: integer
+        correlation_id:
+          type: string
+        method:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        path:
+          type: string
+        version:
+          type: string
+        scheme:
+          type: string
+          enum: [http, https]
+        tls:
+          type: boolean
+        decrypted:
+          type: boolean
+    ResponseEvent:
+      type: object
+      required: [correlation_id, status, status_text, content_type, size, duration_ms, body_available, body_skipped, stream]
+      properties:
+        correlation_id:
+          type: string
+        status:
+          type: integer
+        status_text:
+          type: string
+        content_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        duration_ms:
+          type: integer
+          format: int64
+        body_available:
+          type: boolean
+        body_skipped:
+          type: boolean
+        stream:
+          type: boolean
+    RequestDetail:
+      type: object
+      required: [correlation_id, created_at]
+      properties:
+        correlation_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        request:
+          $ref: "#/components/schemas/RequestDetailRequest"
+        response:
+          $ref: "#/components/schemas/RequestDetailResponse"
+    RequestDetailRequest:
+      type: object
+      required: [method, url, http_version, headers, body_available, body_skipped, body_size]
+      properties:
+        method:
+          type: string
+        url:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_available:
+          type: boolean
+        body_skipped:
+          type: boolean
+        body_size:
+          type: integer
+    RequestDetailResponse:
+      type: object
+      required: [status, status_text, http_version, headers, body_available, body_skipped, body_size]
+      properties:
+        status:
+          type: integer
+        status_text:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_available:
+          type: boolean
+        body_skipped:
+          type: boolean
+        body_size:
+          type: integer
+    CaptureFile:
+      type: object
+      required: [name, size, modified_at]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+        modified_at:
+          type: string
+          format: date-time
+    CaptureMetadata:
+      type: object
+      required: [name, size, modified_at, version, https_decrypted, records_count]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+        modified_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int32
+        https_decrypted:
+          type: boolean
+        records_count:
+          type: integer
+          format: int32
+          description: Number of records in the capture file. The API resolves legacy/streaming headers that store -1 by counting records on read.
+    CaptureRecords:
+      type: object
+      required: [name, offset, limit, records, next_offset, has_more]
+      properties:
+        name:
+          type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureRecord"
+        next_offset:
+          type: integer
+        has_more:
+          type: boolean
+    CaptureRecord:
+      type: object
+      required: [index, type]
+      properties:
+        index:
+          type: integer
+        type:
+          type: string
+          enum: [request, response, unknown]
+        request:
+          $ref: "#/components/schemas/CaptureRequestRecord"
+        response:
+          $ref: "#/components/schemas/CaptureResponseRecord"
+    CaptureRequestRecord:
+      type: object
+      required: [request_id, method, url, http_version, headers, body_skipped, body_available, body_size]
+      properties:
+        request_id:
+          type: string
+        method:
+          type: string
+        url:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_skipped:
+          type: boolean
+        body_available:
+          type: boolean
+        body_size:
+          type: integer
+        body_base64:
+          type: string
+          contentEncoding: base64
+    CaptureResponseRecord:
+      type: object
+      required: [request_id, status, status_text, http_version, headers, body_skipped, body_available, body_size]
+      properties:
+        request_id:
+          type: string
+        status:
+          type: integer
+        status_text:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_skipped:
+          type: boolean
+        body_available:
+          type: boolean
+        body_size:
+          type: integer
+        body_base64:
+          type: string
+          contentEncoding: base64
+    CertificatesInfos:
+      type: object
+      required: [ca_cert_subject]
+      properties:
+        ca_cert_subject:
+          type: string
+    AppConfig:
+      type: object
+      required: [proxy, web_ui, decrypt_https]
+      properties:
+        proxy:
+          $ref: "#/components/schemas/ProxyConfig"
+        web_ui:
+          $ref: "#/components/schemas/WebUiConfig"
+        decrypt_https:
+          $ref: "#/components/schemas/DecryptHttpsConfig"
+    ProxyConfig:
+      type: object
+      required: [port, enable_remote_connection]
+      properties:
+        port:
+          type: integer
+        enable_remote_connection:
+          type: boolean
+    WebUiConfig:
+      type: object
+      required: [port, enable_remote_connection]
+      properties:
+        port:
+          type: integer
+        enable_remote_connection:
+          type: boolean
+    DecryptHttpsConfig:
+      type: object
+      required: [enabled, cert_manager]
+      properties:
+        enabled:
+          type: boolean
+        cert_manager:
+          $ref: "#/components/schemas/CertManagerConfig"
+    CertManagerConfig:
+      type: object
+      required: [ca_cert_file, ca_key_file, domain_certs_folder]
+      properties:
+        ca_cert_file:
+          type: string
+        ca_key_file:
+          type: string
+        domain_certs_folder:
+          type: string

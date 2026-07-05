@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,13 +10,21 @@ import (
 	configuration "httpStackLens/configuration"
 	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+const defaultCaptureRecordsLimit = 100
+const maxCaptureRecordsLimit = 1000
 
 type Hub struct {
 	clients  map[chan string]struct{}
@@ -174,6 +183,17 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(data)
 	})
+	mux.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		data, err := fs.ReadFile(rootFS, "wwwroot/openapi.yaml")
+		if err != nil {
+			log.Printf("Request to %s failed: %v\n", r.URL, err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(data)
+	})
 
 	mux.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.FS(cssFS))))
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.FS(jsFS))))
@@ -190,6 +210,8 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 	hub := newHub()
 	mux.HandleFunc("/events", sseHandler(hub))
 	mux.HandleFunc("/api/requests/", requestsAPIHandler(requestStore))
+	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
+	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -262,6 +284,121 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, requ
 	return hub
 }
 
+func captureListHandler(folder string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/captures" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		files, err := listCaptureFiles(captureFolder(folder))
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				files = nil
+			} else {
+				log.Printf("Error listing capture files: %v", err)
+				http.Error(w, "could not list captures", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(files); err != nil {
+			log.Printf("Error marshaling capture list: %v", err)
+		}
+	}
+}
+
+func capturesAPIHandler(folder string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		name, action, ok := parseCaptureAPIPath(r.URL.Path)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		path, err := captureFilePath(captureFolder(folder), name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		switch action {
+		case "metadata":
+			captureMetadataHandler(path, name).ServeHTTP(w, r)
+		case "records":
+			captureRecordsHandler(path, name).ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}
+}
+
+func captureMetadataHandler(path, name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, header, err := readCaptureMetadata(path)
+		if err != nil {
+			writeCaptureReadError(w, err)
+			return
+		}
+
+		dto := shared.CaptureMetadataDto{
+			Name:           name,
+			Size:           info.Size(),
+			ModifiedAt:     info.ModTime().UTC().Format(time.RFC3339Nano),
+			Version:        header.Version,
+			HttpsDecrypted: header.HttpsDecrypted,
+			RecordsCount:   header.RecordsCount,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(dto); err != nil {
+			log.Printf("Error marshaling capture metadata: %v", err)
+		}
+	}
+}
+
+func captureRecordsHandler(path, name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		offset, limit, err := parseCaptureRecordPage(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		records, nextOffset, hasMore, err := readCaptureRecordsPage(path, offset, limit)
+		if err != nil {
+			writeCaptureReadError(w, err)
+			return
+		}
+
+		dto := shared.CaptureRecordsDto{
+			Name:       name,
+			Offset:     offset,
+			Limit:      limit,
+			Records:    records,
+			NextOffset: nextOffset,
+			HasMore:    hasMore,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(dto); err != nil {
+			log.Printf("Error marshaling capture records: %v", err)
+		}
+	}
+}
+
 func requestsAPIHandler(store *storage.RequestStore) http.HandlerFunc {
 	detail := requestDetailHandler(store)
 	body := requestBodyHandler(store)
@@ -271,6 +408,225 @@ func requestsAPIHandler(store *storage.RequestStore) http.HandlerFunc {
 			return
 		}
 		detail(w, r)
+	}
+}
+
+func captureFolder(folder string) string {
+	if folder == "" {
+		return "captures"
+	}
+	return folder
+}
+
+func listCaptureFiles(folder string) ([]shared.CaptureFileDto, error) {
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make([]shared.CaptureFileDto, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".capture" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, shared.CaptureFileDto{
+			Name:       entry.Name(),
+			Size:       info.Size(),
+			ModifiedAt: info.ModTime().UTC().Format(time.RFC3339Nano),
+		})
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].ModifiedAt > files[j].ModifiedAt
+	})
+	return files, nil
+}
+
+func parseCaptureAPIPath(path string) (name, action string, ok bool) {
+	rest := strings.TrimPrefix(path, "/api/captures/")
+	if rest == path || rest == "" {
+		return "", "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	if parts[1] != "metadata" && parts[1] != "records" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func captureFilePath(folder, name string) (string, error) {
+	if name == "" || name != filepath.Base(name) || filepath.Ext(name) != ".capture" {
+		return "", fmt.Errorf("invalid capture name")
+	}
+	return filepath.Join(folder, name), nil
+}
+
+func readCaptureMetadata(path string) (os.FileInfo, storage.FileHeader, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, storage.FileHeader{}, err
+	}
+	if info.IsDir() {
+		return nil, storage.FileHeader{}, os.ErrNotExist
+	}
+
+	reader, err := storage.NewFileCaptureSessionReader(path)
+	if err != nil {
+		return nil, storage.FileHeader{}, err
+	}
+	defer func() { _ = reader.Close() }()
+
+	header := reader.Header()
+	if header.RecordsCount < 0 {
+		count, err := countCaptureRecords(path)
+		if err != nil {
+			return nil, storage.FileHeader{}, err
+		}
+		header.RecordsCount = count
+	}
+	return info, header, nil
+}
+
+func countCaptureRecords(path string) (int32, error) {
+	reader, err := storage.NewFileCaptureSessionReader(path)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = reader.Close() }()
+
+	var count int32
+	for {
+		_, err := reader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return count, nil
+			}
+			return 0, err
+		}
+		count++
+	}
+}
+
+func parseCaptureRecordPage(r *http.Request) (offset, limit int, err error) {
+	offset, err = parseNonNegativeIntQuery(r, "offset", 0)
+	if err != nil {
+		return 0, 0, err
+	}
+	limit, err = parseNonNegativeIntQuery(r, "limit", defaultCaptureRecordsLimit)
+	if err != nil {
+		return 0, 0, err
+	}
+	if limit < 1 {
+		return 0, 0, fmt.Errorf("limit must be greater than zero")
+	}
+	if limit > maxCaptureRecordsLimit {
+		limit = maxCaptureRecordsLimit
+	}
+	return offset, limit, nil
+}
+
+func parseNonNegativeIntQuery(r *http.Request, name string, defaultValue int) (int, error) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer", name)
+	}
+	return value, nil
+}
+
+func readCaptureRecordsPage(path string, offset, limit int) ([]shared.CaptureRecordDto, int, bool, error) {
+	reader, err := storage.NewFileCaptureSessionReader(path)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer func() { _ = reader.Close() }()
+
+	records := make([]shared.CaptureRecordDto, 0, limit)
+	index := 0
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return records, index, false, nil
+			}
+			return nil, 0, false, err
+		}
+
+		if index >= offset {
+			if len(records) >= limit {
+				return records, index, true, nil
+			}
+			records = append(records, captureRecordDto(index, record))
+		}
+		index++
+	}
+}
+
+func captureRecordDto(index int, record storage.CaptureRecord) shared.CaptureRecordDto {
+	switch r := record.(type) {
+	case storage.RequestRecord:
+		return shared.CaptureRecordDto{
+			Index: index,
+			Type:  "request",
+			Request: &shared.CaptureRequestRecordDto{
+				RequestID:     r.RequestID.String(),
+				Method:        r.Method,
+				URL:           r.URL,
+				HttpVersion:   httpVersionString(r.HttpVersion),
+				Headers:       headerDtos(r.Headers),
+				BodySkipped:   r.BodySkipped,
+				BodyAvailable: r.Body != nil && !r.BodySkipped,
+				BodySize:      len(r.Body),
+				BodyBase64:    bodyBase64(r.Body, r.BodySkipped),
+			},
+		}
+	case storage.ResponseRecord:
+		return shared.CaptureRecordDto{
+			Index: index,
+			Type:  "response",
+			Response: &shared.CaptureResponseRecordDto{
+				RequestID:     r.RequestID.String(),
+				Status:        int(r.StatusCode),
+				StatusText:    r.StatusMessage,
+				HttpVersion:   httpVersionString(r.HttpVersion),
+				Headers:       headerDtos(r.Headers),
+				BodySkipped:   r.BodySkipped,
+				BodyAvailable: r.Body != nil && !r.BodySkipped,
+				BodySize:      len(r.Body),
+				BodyBase64:    bodyBase64(r.Body, r.BodySkipped),
+			},
+		}
+	default:
+		return shared.CaptureRecordDto{Index: index, Type: "unknown"}
+	}
+}
+
+func bodyBase64(body []byte, skipped bool) string {
+	if body == nil || skipped {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(body)
+}
+
+func writeCaptureReadError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		http.Error(w, "capture not found", http.StatusNotFound)
+	case errors.Is(err, storage.ErrBadMagic), errors.Is(err, storage.ErrUnsupportedVersion):
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+	default:
+		log.Printf("Error reading capture file: %v", err)
+		http.Error(w, "could not read capture", http.StatusInternalServerError)
 	}
 }
 

@@ -1,11 +1,14 @@
 package webui
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -223,5 +226,188 @@ func TestRequestBodyHandlerHonorsBodySkipped(t *testing.T) {
 	}
 	if got := rr.Header().Get("X-Body-Skipped"); got != "true" {
 		t.Fatalf("X-Body-Skipped = %q, want true", got)
+	}
+}
+
+func TestCaptureListHandlerReturnsCaptureFilesNewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.capture")
+	second := filepath.Join(dir, "second.capture")
+	writeTestCapture(t, first, false)
+	writeTestCapture(t, second, true)
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ignore"), 0o644); err != nil {
+		t.Fatalf("write notes: %v", err)
+	}
+
+	oldTime := time.Date(2026, 7, 5, 10, 0, 0, 0, time.UTC)
+	newTime := oldTime.Add(time.Hour)
+	if err := os.Chtimes(first, oldTime, oldTime); err != nil {
+		t.Fatalf("chtime first: %v", err)
+	}
+	if err := os.Chtimes(second, newTime, newTime); err != nil {
+		t.Fatalf("chtime second: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/captures", nil)
+	rr := httptest.NewRecorder()
+	captureListHandler(dir).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got []shared.CaptureFileDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("captures = %+v, want 2 entries", got)
+	}
+	if got[0].Name != "second.capture" || got[1].Name != "first.capture" {
+		t.Fatalf("capture order = %+v", got)
+	}
+}
+
+func TestCaptureMetadataHandlerReturnsResolvedRecordCount(t *testing.T) {
+	dir := t.TempDir()
+	writeTestCapture(t, filepath.Join(dir, "session.capture"), true)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/captures/session.capture/metadata", nil)
+	rr := httptest.NewRecorder()
+	capturesAPIHandler(dir).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got shared.CaptureMetadataDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Name != "session.capture" || !got.HttpsDecrypted || got.Version != storage.CaptureFormatVersion {
+		t.Fatalf("metadata = %+v", got)
+	}
+	if got.RecordsCount != 2 {
+		t.Fatalf("RecordsCount = %d, want 2", got.RecordsCount)
+	}
+}
+
+func TestCaptureRecordsHandlerReturnsRecordsPage(t *testing.T) {
+	dir := t.TempDir()
+	writeTestCapture(t, filepath.Join(dir, "session.capture"), true)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/captures/session.capture/records?offset=0&limit=1", nil)
+	rr := httptest.NewRecorder()
+	capturesAPIHandler(dir).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got shared.CaptureRecordsDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Name != "session.capture" || got.Offset != 0 || got.Limit != 1 || !got.HasMore || got.NextOffset != 1 {
+		t.Fatalf("page metadata = %+v", got)
+	}
+	if len(got.Records) != 1 {
+		t.Fatalf("records = %+v, want 1", got.Records)
+	}
+	rec := got.Records[0]
+	if rec.Index != 0 || rec.Type != "request" || rec.Request == nil {
+		t.Fatalf("record = %+v", rec)
+	}
+	if rec.Request.Method != "POST" || rec.Request.URL != "https://example.com/api" {
+		t.Fatalf("request record = %+v", rec.Request)
+	}
+	if rec.Request.BodyBase64 != base64.StdEncoding.EncodeToString([]byte("request body")) {
+		t.Fatalf("request body base64 = %q", rec.Request.BodyBase64)
+	}
+}
+
+func TestCaptureRecordsHandlerReturnsLaterPage(t *testing.T) {
+	dir := t.TempDir()
+	writeTestCapture(t, filepath.Join(dir, "session.capture"), true)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/captures/session.capture/records?offset=1&limit=10", nil)
+	rr := httptest.NewRecorder()
+	capturesAPIHandler(dir).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var got shared.CaptureRecordsDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.HasMore || got.NextOffset != 2 {
+		t.Fatalf("page metadata = %+v", got)
+	}
+	if len(got.Records) != 1 || got.Records[0].Type != "response" || got.Records[0].Response == nil {
+		t.Fatalf("records = %+v", got.Records)
+	}
+	if got.Records[0].Response.Status != 201 {
+		t.Fatalf("response record = %+v", got.Records[0].Response)
+	}
+}
+
+func TestCapturesAPIHandlerRejectsPathTraversal(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/captures/../secret.capture/metadata", nil)
+	rr := httptest.NewRecorder()
+	capturesAPIHandler(t.TempDir()).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
+	}
+}
+
+func TestCaptureRecordsHandlerRejectsBadPagination(t *testing.T) {
+	dir := t.TempDir()
+	writeTestCapture(t, filepath.Join(dir, "session.capture"), true)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/captures/session.capture/records?offset=-1", nil)
+	rr := httptest.NewRecorder()
+	capturesAPIHandler(dir).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+}
+
+func writeTestCapture(t *testing.T, path string, httpsDecrypted bool) {
+	t.Helper()
+	writer, err := storage.NewFileCaptureSessionWriter(path, httpsDecrypted)
+	if err != nil {
+		t.Fatalf("create capture: %v", err)
+	}
+	id := storage.UUID{0, 1, 2, 3, 4, 5, 0x46, 7, 0x88, 9, 10, 11, 12, 13, 14, 15}
+	if err := writer.WriteRequest(storage.RequestRecord{
+		RequestID:   id,
+		Method:      "POST",
+		URL:         "https://example.com/api",
+		HttpVersion: storage.HttpVersion11,
+		Headers: []storage.Header{
+			{Name: "Content-Type", Value: "text/plain"},
+		},
+		Body: []byte("request body"),
+	}); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	if err := writer.WriteResponse(storage.ResponseRecord{
+		RequestID:     id,
+		HttpVersion:   storage.HttpVersion11,
+		StatusCode:    201,
+		StatusMessage: "Created",
+		Headers: []storage.Header{
+			{Name: "Content-Type", Value: "application/json"},
+		},
+		Body: []byte(`{"created":true}`),
+	}); err != nil {
+		t.Fatalf("write response: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close capture: %v", err)
 	}
 }
