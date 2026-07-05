@@ -37,7 +37,8 @@ Do not prioritize:
 The app currently:
 - Starts a local HTTP proxy.
 - Supports HTTP requests.
-- Supports HTTPS `CONNECT` tunneling without decrypting TLS.
+- Supports HTTPS `CONNECT` tunneling.
+- Supports opt-in HTTPS decryption through local MITM when configured.
 - Can forward traffic to an upstream proxy.
 - Has Windows-specific authentication support.
 - Serves a Web UI using Go/WASM.
@@ -45,12 +46,13 @@ The app currently:
 
 ## Important Design Constraints
 
-HTTPS traffic is currently tunneled as-is. Do not assume HTTPS contents are
-inspectable unless explicit MITM support is being implemented.
+HTTPS traffic can run in two modes:
+- plain tunneling mode, where `CONNECT` traffic is forwarded as opaque TLS;
+- MITM inspection mode, where `decrypt_https.enabled` uses a local CA to decrypt
+  and inspect HTTPS traffic.
 
-Any future HTTPS interception must be opt-in and must clearly separate:
-- plain tunneling mode
-- MITM inspection mode
+HTTPS interception must remain opt-in and must clearly separate plain tunneling
+mode from MITM inspection mode.
 
 Avoid silently weakening security.
 
@@ -177,7 +179,7 @@ Possible future features:
 - filtering/search
 - replay requests
 - rules for header/body rewriting
-- opt-in HTTPS MITM with local CA
+- further HTTPS MITM controls and diagnostics
 - per-tool profiles
 - system proxy auto-configuration
 - diagnostics page for corporate proxy issues
