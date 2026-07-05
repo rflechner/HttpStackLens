@@ -63,6 +63,10 @@ func main() {
 	// responses it sees (they are otherwise only written to the capture file).
 	logger := logging.CreateWebUiEventLogger(hub)
 
+	// Keeps the most recent request/response records in memory so the Web UI can
+	// fetch their full headers and bodies on demand.
+	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
+
 	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
 	// certificates we sign on the fly are accepted. A failure here is not fatal:
 	// the user can still install the CA manually.
@@ -94,11 +98,12 @@ func main() {
 			Capture:   captureWriter,
 			Limits:    config.DecryptHttps,
 			Events:    logger,
+			Store:     requestStore,
 		}
 		slog.Info("HTTPS decryption enabled")
 	}
 
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.DecryptHttps.Enabled, certStore, captureWriter)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.DecryptHttps.Enabled, certStore, captureWriter, requestStore)
 
 	go proxyServer.Run()
 

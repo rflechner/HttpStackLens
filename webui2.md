@@ -150,8 +150,13 @@ server and WASM.
       (`text/event-stream`, HTTP 101 WebSocket upgrade).
 
 ### EPIC B2 — Detail on demand (headers + body)
-- [ ] B2.1 Keep a bounded in-memory buffer of the last N requests (records already
+- [x] B2.1 Keep a bounded in-memory buffer of the last N requests (records already
       produced; add an index by ID) — watch memory.
+      Added `storage.RequestStore` (FIFO-bounded, thread-safe, keyed by correlation
+      id; default 500). Fed by the HTTPS interceptor (req+resp records) and the
+      plain-HTTP path (`proxy_server.go`), injected from `main.go`. Bodies are the
+      already size-capped ones, so memory ≈ N × (req cap + resp cap). Not yet
+      exposed over HTTP — that's B2.2.
 - [ ] B2.2 `/api/requests/{id}` endpoint (req+resp headers, metadata).
 - [ ] B2.3 `/api/requests/{id}/body` endpoint (honor `BodySkipped`, return the real
       `Content-Type` for Pretty/Hex rendering).

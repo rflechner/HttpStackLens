@@ -48,6 +48,9 @@ type HttpsInterceptor struct {
 	// Events, when non-nil, receives a request/response event per decrypted
 	// request so live HTTPS traffic appears in the Web UI.
 	Events EventSink
+	// Store, when non-nil, keeps the decrypted request/response records in memory
+	// so the Web UI can fetch their headers and bodies on demand.
+	Store *storage.RequestStore
 	// seq numbers decrypted requests for the UI's display column. It is shared
 	// across all tunnels since one interceptor instance handles every CONNECT.
 	seq atomic.Int64
@@ -171,7 +174,7 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	// stall progressive and long-lived responses — video segments, SSE,
 	// long-poll — until they closed, leaving the browser stuck in "loading".
 	var capture *captureLimitWriter
-	if m.Capture != nil || m.Events != nil || isHtmlOrJs(contentType) {
+	if m.Capture != nil || m.Events != nil || m.Store != nil || isHtmlOrJs(contentType) {
 		capture = &captureLimitWriter{limit: limit}
 		resp.Body = io.NopCloser(io.TeeReader(originalBody, capture))
 	}
@@ -317,7 +320,7 @@ func capBody(body io.Reader, limit int64) (store []byte, forward io.Reader, skip
 // replay for forwarding upstream. It is a no-op when capture is off or the
 // request has no body.
 func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skipped bool, err error) {
-	if m.Capture == nil || req.Body == nil {
+	if (m.Capture == nil && m.Store == nil) || req.Body == nil {
 		return nil, false, nil
 	}
 	limit, _ := m.Limits.LimitForContentType(req.Header.Get("Content-Type"))
@@ -334,7 +337,7 @@ func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skip
 }
 
 func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, body []byte, skipped bool) {
-	if m.Capture == nil {
+	if m.Capture == nil && m.Store == nil {
 		return
 	}
 	rec := storage.RequestRecord{
@@ -346,13 +349,18 @@ func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, bod
 		BodySkipped: skipped,
 		Body:        body,
 	}
-	if err := m.Capture.WriteRequest(rec); err != nil {
-		log.Printf("⚠️  capture: failed to record request: %v\n", err)
+	if m.Capture != nil {
+		if err := m.Capture.WriteRequest(rec); err != nil {
+			log.Printf("⚠️  capture: failed to record request: %v\n", err)
+		}
+	}
+	if m.Store != nil {
+		m.Store.PutRequest(id.String(), rec)
 	}
 }
 
 func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, body []byte, skipped bool) {
-	if m.Capture == nil {
+	if m.Capture == nil && m.Store == nil {
 		return
 	}
 	rec := storage.ResponseRecord{
@@ -364,8 +372,13 @@ func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, 
 		BodySkipped:   skipped,
 		Body:          body,
 	}
-	if err := m.Capture.WriteResponse(rec); err != nil {
-		log.Printf("⚠️  capture: failed to record response: %v\n", err)
+	if m.Capture != nil {
+		if err := m.Capture.WriteResponse(rec); err != nil {
+			log.Printf("⚠️  capture: failed to record response: %v\n", err)
+		}
+	}
+	if m.Store != nil {
+		m.Store.PutResponse(id.String(), rec)
 	}
 }
 

@@ -21,7 +21,7 @@ logging:
   file: logs/httpStackLens.log # empty to disable the file sink
 
 storage:
-  enable: true
+  enable: false
   folder: "captures"
 
 decrypt_https:

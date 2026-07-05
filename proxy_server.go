@@ -25,7 +25,10 @@ type ProxyServer struct {
 	certStore *certManager.CertStore
 	// capture, when non-nil, persists top-level requests (HTTP and CONNECT) to
 	// the capture file. Decrypted bodies are recorded by the HTTPS interceptor.
-	capture      storage.CaptureSessionWriter
+	capture storage.CaptureSessionWriter
+	// store, when non-nil, keeps recent top-level request records in memory for
+	// on-demand inspection by the Web UI.
+	store        *storage.RequestStore
 	decryptHttps bool
 }
 
@@ -34,7 +37,7 @@ type ProxyEventLogger interface {
 	LogRequest(id int, correlationID string, request models.ProxyRequest)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter) ProxyServer {
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter, store *storage.RequestStore) ProxyServer {
 	log.Printf("Socket server started on port %v\n", appContext.port)
 	var addr string
 	if config.EnableRemoteConnection {
@@ -57,6 +60,7 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 		EventLogger:  eventLogger,
 		certStore:    certStore,
 		capture:      capture,
+		store:        store,
 		decryptHttps: decryptHttps,
 	}
 }
@@ -132,14 +136,20 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 // capture file. In decryption mode the CONNECT tunnel is skipped here because
 // the HTTPS interceptor records the decrypted requests/responses instead.
 func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest) {
-	if s.capture == nil {
+	if s.capture == nil && s.store == nil {
 		return
 	}
 	if s.decryptHttps && request.HttpRequestLine.IsConnect() {
 		return
 	}
-	if err := s.capture.WriteRequest(proxyRequestToRecord(correlationID, request)); err != nil {
-		log.Printf("capture: failed to record request: %v\n", err)
+	rec := proxyRequestToRecord(correlationID, request)
+	if s.capture != nil {
+		if err := s.capture.WriteRequest(rec); err != nil {
+			log.Printf("capture: failed to record request: %v\n", err)
+		}
+	}
+	if s.store != nil {
+		s.store.PutRequest(correlationID.String(), rec)
 	}
 }
 
