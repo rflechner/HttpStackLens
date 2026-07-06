@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"httpStackLens/certManager"
 	configuration "httpStackLens/configuration"
 	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
@@ -12,9 +13,23 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+type fakeCertInstaller struct {
+	supported bool
+	installed bool
+	err       error
+}
+
+func (f fakeCertInstaller) InstallCACert(string) error     { return nil }
+func (f fakeCertInstaller) InstallDomainCert(string) error { return nil }
+func (f fakeCertInstaller) IsSupported() bool              { return f.supported }
+func (f fakeCertInstaller) IsCACertInstalled(string) (bool, error) {
+	return f.installed, f.err
+}
 
 func TestRequestDetailDtoIncludesMetadataAndHeaders(t *testing.T) {
 	createdAt := time.Date(2026, 7, 5, 12, 30, 15, 123, time.FixedZone("test", 2*60*60))
@@ -403,6 +418,78 @@ func TestCapturePauseHandlerRejectsNonPost(t *testing.T) {
 	}
 	if got := rr.Header().Get("Allow"); got != http.MethodPost {
 		t.Fatalf("Allow = %q, want POST", got)
+	}
+}
+
+func TestCertificatesInfosHandlerReturnsCAStatus(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "ca.crt")
+	keyFile := filepath.Join(dir, "ca.key")
+	if err := certManager.GenerateCA(certFile, keyFile); err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/certificates-infos", nil)
+	rr := httptest.NewRecorder()
+	certificatesInfosHandler(configuration.CertManagerConfig{
+		CaCertFile: certFile,
+		CaKeyFile:  keyFile,
+	}, fakeCertInstaller{supported: true, installed: true}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got shared.CertificatesInfosDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Available || got.CaCertSubject == "" || got.CaCertIssuer == "" {
+		t.Fatalf("certificate metadata missing: %+v", got)
+	}
+	if got.FingerprintSha256 == "" || !strings.Contains(got.FingerprintSha256, ":") {
+		t.Fatalf("FingerprintSha256 = %q, want colon-separated SHA-256", got.FingerprintSha256)
+	}
+	if got.NotBefore == "" || got.NotAfter == "" || got.Expired {
+		t.Fatalf("validity = before %q after %q expired %v", got.NotBefore, got.NotAfter, got.Expired)
+	}
+	if !got.InstallSupported || !got.Installed || got.Error != "" || got.InstallCheckError != "" {
+		t.Fatalf("install status = %+v", got)
+	}
+}
+
+func TestCertificatesInfosHandlerReportsUnavailableCA(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/certificates-infos", nil)
+	rr := httptest.NewRecorder()
+	certificatesInfosHandler(configuration.CertManagerConfig{
+		CaCertFile: filepath.Join(t.TempDir(), "missing.crt"),
+		CaKeyFile:  filepath.Join(t.TempDir(), "missing.key"),
+	}, fakeCertInstaller{supported: true}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got shared.CertificatesInfosDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Available || got.Error == "" {
+		t.Fatalf("unavailable CA dto = %+v, want available false and error", got)
+	}
+	if !got.InstallSupported {
+		t.Fatalf("InstallSupported = false, want true from fake installer")
+	}
+}
+
+func TestCertificatesInfosHandlerRejectsNonGet(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/certificates-infos", nil)
+	rr := httptest.NewRecorder()
+	certificatesInfosHandler(configuration.CertManagerConfig{}, fakeCertInstaller{}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rr.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow = %q, want GET", got)
 	}
 }
 

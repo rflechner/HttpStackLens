@@ -2,7 +2,9 @@ package webui
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -246,25 +248,7 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 		_, _ = w.Write(jsonData)
 	})
 
-	mux.HandleFunc("/certificates-infos", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		certConfig := config.DecryptHttps.CertManager
-		caCert, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile)
-		if err != nil {
-			log.Printf("Failed to load CA: %v\n", err)
-			return
-		}
-
-		rs := shared.CertificatesInfosDto{
-			CaCertSubject: caCert.Subject.CommonName,
-		}
-		jsonData, err := json.Marshal(rs)
-		if err != nil {
-			log.Printf("Error marshaling request event: %v", err)
-			return
-		}
-		_, _ = w.Write(jsonData)
-	})
+	mux.HandleFunc("/certificates-infos", certificatesInfosHandler(config.DecryptHttps.CertManager, certManager.NewCertInstaller()))
 
 	access := configuration.NormalizeAccessControl(config.WebUi.AccessControl, config.WebUi.EnableRemoteConnection)
 	if accessControlSettings != nil {
@@ -421,6 +405,60 @@ func webUiAccessControlMiddleware(settings *configuration.AccessControlSettingsS
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func certificatesInfosHandler(certConfig configuration.CertManagerConfig, installer certManager.CertInstaller) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		dto := certificatesInfosDto(certConfig, installer)
+		writeJSON(w, dto)
+	}
+}
+
+func certificatesInfosDto(certConfig configuration.CertManagerConfig, installer certManager.CertInstaller) shared.CertificatesInfosDto {
+	dto := shared.CertificatesInfosDto{}
+	if installer != nil {
+		dto.InstallSupported = installer.IsSupported()
+	}
+
+	caCert, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile)
+	if err != nil {
+		dto.Error = err.Error()
+		return dto
+	}
+
+	now := time.Now()
+	dto.Available = true
+	dto.CaCertSubject = caCert.Subject.String()
+	dto.CaCertIssuer = caCert.Issuer.String()
+	dto.CaCertSerialNumber = caCert.SerialNumber.String()
+	dto.FingerprintSha256 = colonHex(sha256.Sum256(caCert.Raw))
+	dto.NotBefore = caCert.NotBefore.UTC().Format(time.RFC3339Nano)
+	dto.NotAfter = caCert.NotAfter.UTC().Format(time.RFC3339Nano)
+	dto.Expired = now.Before(caCert.NotBefore) || now.After(caCert.NotAfter)
+
+	if installer != nil && installer.IsSupported() {
+		installed, err := installer.IsCACertInstalled(certConfig.CaCertFile)
+		dto.Installed = installed
+		if err != nil {
+			dto.InstallCheckError = err.Error()
+		}
+	}
+	return dto
+}
+
+func colonHex(sum [32]byte) string {
+	encoded := strings.ToUpper(hex.EncodeToString(sum[:]))
+	parts := make([]string, 0, len(encoded)/2)
+	for i := 0; i < len(encoded); i += 2 {
+		parts = append(parts, encoded[i:i+2])
+	}
+	return strings.Join(parts, ":")
 }
 
 func bodyCaptureSettingsHandler(settings *configuration.DecryptHttpsConfigStore, persist bodyCaptureSettingsPersister) http.HandlerFunc {

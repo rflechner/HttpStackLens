@@ -228,8 +228,12 @@ server and WASM.
       restart when the process was started on `127.0.0.1`.
 
 ### EPIC B6 — TLS / Certificate (wizard)
-- [ ] B6.1 CA status endpoint (subject, fingerprint, expiry, installed?) — extend
+- [x] B6.1 CA status endpoint (subject, fingerprint, expiry, installed?) — extend
       `/certificates-infos` (`certManager.LoadCA`, cf. [`ui_server.go`](webui/ui_server.go)).
+      The endpoint now returns CA availability, subject/issuer/serial, SHA-256
+      fingerprint, validity dates, expired flag, install support, installed
+      status, and load/check errors; macOS and Windows installers expose trust
+      store checks through `CertInstaller`.
 - [ ] B6.2 Generate / (re)install / export the CA via `certManager` (install logic
       exists: `cert_install_*.go`) exposed over HTTP.
 - [ ] B6.3 Hot decryption toggle (insert/remove `HttpsInterceptor` from the

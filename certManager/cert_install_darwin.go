@@ -63,6 +63,14 @@ func (macOsCertInstaller) InstallDomainCert(domainCertFile string) error {
 	return nil
 }
 
+func (macOsCertInstaller) IsCACertInstalled(caCertFile string) (bool, error) {
+	keychain, err := loginKeychainPath()
+	if err != nil {
+		return false, err
+	}
+	return macOSCertTrusted(keychain, caCertFile)
+}
+
 func (macOsCertInstaller) IsSupported() bool {
 	return true
 }

@@ -159,7 +159,18 @@ type CaptureStateDto struct {
 }
 
 type CertificatesInfosDto struct {
-	CaCertSubject string `json:"ca_cert_subject"`
+	Available          bool   `json:"available"`
+	CaCertSubject      string `json:"ca_cert_subject"`
+	CaCertIssuer       string `json:"ca_cert_issuer"`
+	CaCertSerialNumber string `json:"ca_cert_serial_number"`
+	FingerprintSha256  string `json:"fingerprint_sha256"`
+	NotBefore          string `json:"not_before"`
+	NotAfter           string `json:"not_after"`
+	Expired            bool   `json:"expired"`
+	InstallSupported   bool   `json:"install_supported"`
+	Installed          bool   `json:"installed"`
+	InstallCheckError  string `json:"install_check_error,omitempty"`
+	Error              string `json:"error,omitempty"`
 }
 
 // duplicate of AppConfig to avoid security issues

@@ -143,6 +143,15 @@ func DisplayCertificates(this js.Value, args []js.Value) any {
 		doc := js.Global().Get("document")
 
 		doc.Call("getElementById", "cert-ca-common-name").Set("textContent", certsInfos.CaCertSubject)
+		installed := "not installed"
+		if certsInfos.Installed {
+			installed = "installed"
+		} else if !certsInfos.InstallSupported {
+			installed = "manual install"
+		} else if certsInfos.InstallCheckError != "" {
+			installed = "unknown"
+		}
+		doc.Call("getElementById", "cert-ca-installed").Set("textContent", installed)
 
 		return nil
 	}))

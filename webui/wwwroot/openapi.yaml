@@ -29,11 +29,13 @@ paths:
       summary: Read local HTTPS debugging CA information
       responses:
         "200":
-          description: Certificate information
+          description: Certificate information and trust-store status
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CertificatesInfos"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
         "500":
           $ref: "#/components/responses/InternalServerError"
   /api/settings/body-capture:
@@ -703,10 +705,54 @@ components:
           contentEncoding: base64
     CertificatesInfos:
       type: object
-      required: [ca_cert_subject]
+      required:
+        - available
+        - ca_cert_subject
+        - ca_cert_issuer
+        - ca_cert_serial_number
+        - fingerprint_sha256
+        - not_before
+        - not_after
+        - expired
+        - install_supported
+        - installed
       properties:
+        available:
+          type: boolean
+          description: Whether the configured CA certificate and key could be loaded.
         ca_cert_subject:
           type: string
+          description: X.509 subject of the local CA certificate.
+        ca_cert_issuer:
+          type: string
+          description: X.509 issuer of the local CA certificate.
+        ca_cert_serial_number:
+          type: string
+          description: Decimal serial number of the CA certificate.
+        fingerprint_sha256:
+          type: string
+          description: Colon-separated SHA-256 fingerprint of the CA certificate.
+        not_before:
+          type: string
+          format: date-time
+        not_after:
+          type: string
+          format: date-time
+        expired:
+          type: boolean
+          description: True when the current time is outside the certificate validity range.
+        install_supported:
+          type: boolean
+          description: Whether this OS build can check/install the CA trust store automatically.
+        installed:
+          type: boolean
+          description: Whether the CA is currently trusted in the OS store used by HttpStackLens.
+        install_check_error:
+          type: string
+          description: Error returned while checking OS trust-store status, when metadata loading succeeded.
+        error:
+          type: string
+          description: Error returned while loading the configured CA certificate/key.
     AppConfig:
       type: object
       required: [proxy, web_ui, decrypt_https]
