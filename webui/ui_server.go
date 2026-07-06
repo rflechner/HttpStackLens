@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +31,7 @@ const maxCaptureRecordsLimit = 1000
 type storageEnabledPersister func(bool) error
 type bodyCaptureSettingsPersister func(configuration.DecryptHttpsConfig) error
 type upstreamSettingsPersister func(configuration.UpstreamSettings) error
+type accessControlSettingsPersister func(configuration.AccessControlSettings) error
 
 type Hub struct {
 	clients  map[chan string]struct{}
@@ -133,7 +135,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister, persistUpstreamSettings upstreamSettingsPersister) *Hub {
+func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessControlSettings *configuration.AccessControlSettingsStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister, persistUpstreamSettings upstreamSettingsPersister, persistAccessControlSettings accessControlSettingsPersister) *Hub {
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -223,12 +225,18 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
 	mux.HandleFunc("/api/settings/upstream", upstreamSettingsHandler(upstreamSettings, persistUpstreamSettings))
+	mux.HandleFunc("/api/settings/access-control", accessControlSettingsHandler(accessControlSettings, persistAccessControlSettings))
 
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		dtoConfig := config
 		if decryptHttpsSettings != nil {
 			dtoConfig.DecryptHttps = decryptHttpsSettings.Get()
+		}
+		if accessControlSettings != nil {
+			access := accessControlSettings.Get()
+			dtoConfig.Proxy.AccessControl = access.Proxy
+			dtoConfig.WebUi.AccessControl = access.WebUi
 		}
 		jsonData, err := json.Marshal(dtoConfig.ToDto())
 		if err != nil {
@@ -258,17 +266,19 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 		_, _ = w.Write(jsonData)
 	})
 
-	var addr string
-	if config.WebUi.EnableRemoteConnection {
-		addr = fmt.Sprintf("0.0.0.0:%d", port)
-		fmt.Printf("❗️🔓 Web UI accepting remote connections on port %d\n", port)
-	} else {
-		addr = fmt.Sprintf("127.0.0.1:%d", port)
+	access := configuration.NormalizeAccessControl(config.WebUi.AccessControl, config.WebUi.EnableRemoteConnection)
+	if accessControlSettings != nil {
+		access = accessControlSettings.Get().WebUi
+	}
+	addr := fmt.Sprintf("%s:%d", access.ListenHost(), port)
+	if access.Mode == configuration.AccessControlLoopback {
 		fmt.Printf("✅🔒 Web UI restricted to localhost on port %d\n", port)
+	} else {
+		fmt.Printf("❗️🔓 Web UI listening on %s with %s access control\n", addr, access.Mode)
 	}
 	server := &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: webUiAccessControlMiddleware(accessControlSettings, mux),
 	}
 
 	// Start web server
@@ -399,6 +409,20 @@ func publishCaptureState(hub *Hub, state shared.CaptureStateDto) {
 	hub.Publish("capture_state", string(jsonData))
 }
 
+func webUiAccessControlMiddleware(settings *configuration.AccessControlSettingsStore, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if settings != nil {
+			addr, err := net.ResolveTCPAddr("tcp", r.RemoteAddr)
+			if err != nil || !settings.AllowsWebUi(addr) {
+				log.Printf("Rejected Web UI request from %s by access control\n", r.RemoteAddr)
+				http.Error(w, "forbidden by access control", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func bodyCaptureSettingsHandler(settings *configuration.DecryptHttpsConfigStore, persist bodyCaptureSettingsPersister) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if settings == nil {
@@ -444,6 +468,82 @@ func bodyCaptureSettingsHandler(settings *configuration.DecryptHttpsConfigStore,
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+func accessControlSettingsHandler(settings *configuration.AccessControlSettingsStore, persist accessControlSettingsPersister) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if settings == nil {
+			http.Error(w, "access control settings are unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, accessControlSettingsDto(settings.Get()))
+		case http.MethodPut:
+			var dto shared.AccessControlSettingsDto
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&dto); err != nil {
+				http.Error(w, "invalid access control settings", http.StatusBadRequest)
+				return
+			}
+			next, err := accessControlSettingsFromDto(dto)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if persist != nil {
+				if err := persist(next); err != nil {
+					log.Printf("Error persisting access control settings: %v", err)
+					http.Error(w, "could not persist access control settings", http.StatusInternalServerError)
+					return
+				}
+			}
+			updated := settings.Update(next)
+			writeJSON(w, accessControlSettingsDto(updated))
+		default:
+			w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func accessControlSettingsDto(settings configuration.AccessControlSettings) shared.AccessControlSettingsDto {
+	return shared.AccessControlSettingsDto{
+		Proxy: accessControlConfigDto(settings.Proxy),
+		WebUi: accessControlConfigDto(settings.WebUi),
+	}
+}
+
+func accessControlConfigDto(config configuration.AccessControlConfig) shared.AccessControlConfigDto {
+	return shared.AccessControlConfigDto{
+		Mode:     string(config.Mode),
+		Networks: config.Networks,
+	}
+}
+
+func accessControlSettingsFromDto(dto shared.AccessControlSettingsDto) (configuration.AccessControlSettings, error) {
+	proxy, err := accessControlConfigFromDto("proxy", dto.Proxy)
+	if err != nil {
+		return configuration.AccessControlSettings{}, err
+	}
+	webUi, err := accessControlConfigFromDto("web_ui", dto.WebUi)
+	if err != nil {
+		return configuration.AccessControlSettings{}, err
+	}
+	return configuration.AccessControlSettings{Proxy: proxy, WebUi: webUi}, nil
+}
+
+func accessControlConfigFromDto(name string, dto shared.AccessControlConfigDto) (configuration.AccessControlConfig, error) {
+	config, err := configuration.ValidateAccessControl(configuration.AccessControlConfig{
+		Mode:     configuration.AccessControlMode(dto.Mode),
+		Networks: dto.Networks,
+	})
+	if err != nil {
+		return configuration.AccessControlConfig{}, fmt.Errorf("%s: %v", name, err)
+	}
+	return config, nil
 }
 
 func upstreamSettingsHandler(settings *configuration.UpstreamSettingsStore, persist upstreamSettingsPersister) http.HandlerFunc {

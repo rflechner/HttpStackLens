@@ -171,13 +171,15 @@ type AppConfigDto struct {
 }
 
 type ProxyConfigDto struct {
-	Port                   int  `json:"port"`
-	EnableRemoteConnection bool `json:"enable_remote_connection"`
+	Port                   int                    `json:"port"`
+	EnableRemoteConnection bool                   `json:"enable_remote_connection"`
+	AccessControl          AccessControlConfigDto `json:"access_control"`
 }
 
 type WebUiConfigDto struct {
-	Port                   int  `json:"port"`
-	EnableRemoteConnection bool `json:"enable_remote_connection"`
+	Port                   int                    `json:"port"`
+	EnableRemoteConnection bool                   `json:"enable_remote_connection"`
+	AccessControl          AccessControlConfigDto `json:"access_control"`
 }
 
 type DecryptHttpsConfigDto struct {
@@ -212,6 +214,16 @@ type UpstreamSettingsDto struct {
 	// AddWindowsAuthentication enables Windows (NTLM/Negotiate) authentication
 	// against the upstream proxy. Only effective on Windows.
 	AddWindowsAuthentication bool `json:"add_windows_authentication"`
+}
+
+type AccessControlSettingsDto struct {
+	Proxy AccessControlConfigDto `json:"proxy"`
+	WebUi AccessControlConfigDto `json:"web_ui"`
+}
+
+type AccessControlConfigDto struct {
+	Mode     string   `json:"mode"`
+	Networks []string `json:"networks"`
 }
 
 type MimeTypeRuleDto struct {

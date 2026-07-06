@@ -53,7 +53,7 @@ API what capture already knows, plus correlate and measure it.**
 | HTTPS decryption toggle | enable/disable MITM at runtime | **config-only, at startup** | runtime toggle (big piece) |
 | Certificate wizard | generate/install/export CA | logic exists (`certManager`), **no HTTP API** | cert endpoints |
 | Upstream proxy modal | read/write outbound proxy + NTLM | config exists, **read-only via /config** | upstream read/write API |
-| Access control modal | loopback/lan/allowlist/open mode + CIDR | **only `enable_remote_connection` bool** | access model + API |
+| Access control modal | loopback/lan/allowlist/open mode + networks | **only `enable_remote_connection` bool** | access model + API |
 | Body capture rules modal | MIME rules + sizes | config exists (`DecryptHttpsConfig`), **read-only** | rules read/write API |
 | Replay / Edit & send | replay a request | **absent** | replay endpoint |
 | Status bar (throughput ↓/↑) | real-time rate | **not measured** | bytes/s counter |
@@ -120,7 +120,7 @@ server and WASM.
 | POST | `/api/capture/clear` | clear the session |
 | GET/PUT | `/api/settings/body-rules` | MIME capture rules |
 | GET/PUT | `/api/settings/upstream` | outbound proxy + NTLM |
-| GET/PUT | `/api/settings/access` | access mode + CIDRs |
+| GET/PUT | `/api/settings/access` | access mode + networks |
 | POST | `/api/tls/decryption` | enable/disable MITM at runtime |
 | GET | `/api/tls/ca` | CA status (subject, fingerprint, expiry, installed?) |
 | POST | `/api/tls/ca/generate` · `/install` · `/export` | certificate wizard |
@@ -218,10 +218,14 @@ server and WASM.
       `PersistUpstreamSettings`. `openapi.yaml` updated. Hot re-injection into the
       running pipeline remains out of scope: edits take effect on the next
       application start.
-- [ ] B5.3 Access control: **new model** (loopback/lan/allowlist/open + CIDRs)
+- [x] B5.3 Access control: **new model** (loopback/lan/allowlist/open + networks)
       replacing the plain `EnableRemoteConnection` bool; filtering at `Accept()` in
       [`proxy_server.go`](proxy_server.go) and the UI server.
-- [ ] B5.4 Optional persistence of settings to `config.yaml`.
+      Added `GET`/`PUT /api/settings/access-control` for proxy + Web UI policies,
+      backed by `configuration.AccessControlSettingsStore`; active filters update
+      immediately and settings persist to `config.yaml` as `access_control`.
+      Switching from loopback binding to a remote-capable binding may still require
+      restart when the process was started on `127.0.0.1`.
 
 ### EPIC B6 — TLS / Certificate (wizard)
 - [ ] B6.1 CA status endpoint (subject, fingerprint, expiry, installed?) — extend

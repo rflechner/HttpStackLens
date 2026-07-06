@@ -192,24 +192,26 @@ type LoggingConfig struct {
 }
 
 type ProxyConfig struct {
-	Port                                  int      `yaml:"port"`
-	EnableRemoteConnection                bool     `yaml:"enable_remote_connection"`
-	OutputProxyUri                        string   `yaml:"output_proxy_uri"`
-	AddWindowsAuthenticationToOutputProxy bool     `yaml:"add_windows_authentication_to_output_proxy"`
-	Treat401AsProxyAuthentication         bool     `yaml:"treat_401_as_proxy_authentication"`
-	RequireWindowsAuthentication          bool     `yaml:"require_windows_authentication"`
-	NoProxy                               []string `yaml:"no_proxy"` // hosts that bypass the upstream proxy and connect directly
+	Port                                  int                 `yaml:"port"`
+	EnableRemoteConnection                bool                `yaml:"enable_remote_connection"`
+	AccessControl                         AccessControlConfig `yaml:"access_control"`
+	OutputProxyUri                        string              `yaml:"output_proxy_uri"`
+	AddWindowsAuthenticationToOutputProxy bool                `yaml:"add_windows_authentication_to_output_proxy"`
+	Treat401AsProxyAuthentication         bool                `yaml:"treat_401_as_proxy_authentication"`
+	RequireWindowsAuthentication          bool                `yaml:"require_windows_authentication"`
+	NoProxy                               []string            `yaml:"no_proxy"` // hosts that bypass the upstream proxy and connect directly
 }
 
 type WebUiConfig struct {
-	Port                   int  `yaml:"port"`
-	EnableRemoteConnection bool `yaml:"enable_remote_connection"`
+	Port                   int                 `yaml:"port"`
+	EnableRemoteConnection bool                `yaml:"enable_remote_connection"`
+	AccessControl          AccessControlConfig `yaml:"access_control"`
 }
 
 func DefaultAppConfig() AppConfig {
 	return AppConfig{
-		Proxy:   ProxyConfig{Port: 3128, EnableRemoteConnection: false},
-		WebUi:   WebUiConfig{Port: 9000, EnableRemoteConnection: false},
+		Proxy:   ProxyConfig{Port: 3128, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
+		WebUi:   WebUiConfig{Port: 9000, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
 		Logging: LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
 		Storage: StorageConfig{Enable: false, Folder: "captures"},
 		DecryptHttps: DecryptHttpsConfig{
@@ -236,14 +238,17 @@ func ReadConfiguration() AppConfig {
 }
 
 func (c *AppConfig) ToDto() shared.AppConfigDto {
+	accessControl := AccessControlSettingsFromConfig(*c)
 	return shared.AppConfigDto{
 		Proxy: shared.ProxyConfigDto{
 			Port:                   c.Proxy.Port,
-			EnableRemoteConnection: c.Proxy.EnableRemoteConnection,
+			EnableRemoteConnection: accessControl.Proxy.Mode != AccessControlLoopback,
+			AccessControl:          accessControlConfigToDto(accessControl.Proxy),
 		},
 		WebUi: shared.WebUiConfigDto{
 			Port:                   c.WebUi.Port,
-			EnableRemoteConnection: c.WebUi.EnableRemoteConnection,
+			EnableRemoteConnection: accessControl.WebUi.Mode != AccessControlLoopback,
+			AccessControl:          accessControlConfigToDto(accessControl.WebUi),
 		},
 		DecryptHttps: shared.DecryptHttpsConfigDto{
 			Enabled:         c.DecryptHttps.Enabled,
@@ -255,6 +260,13 @@ func (c *AppConfig) ToDto() shared.AppConfigDto {
 				DomainCertsFolder: c.DecryptHttps.CertManager.DomainCertsFolder,
 			},
 		},
+	}
+}
+
+func accessControlConfigToDto(config AccessControlConfig) shared.AccessControlConfigDto {
+	return shared.AccessControlConfigDto{
+		Mode:     string(config.Mode),
+		Networks: cloneStringSlice(config.Networks),
 	}
 }
 

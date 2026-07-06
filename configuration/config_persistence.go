@@ -27,6 +27,13 @@ func PersistUpstreamSettings(settings UpstreamSettings) error {
 	return persistUpstreamSettings(defaultConfigPath, settings)
 }
 
+// PersistAccessControlSettings writes the new access_control blocks back to
+// config.yaml and removes the legacy enable_remote_connection keys from the
+// proxy/webui sections.
+func PersistAccessControlSettings(settings AccessControlSettings) error {
+	return persistAccessControlSettings(defaultConfigPath, settings)
+}
+
 func persistStorageEnabled(path string, enabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -254,6 +261,101 @@ func renderUpstreamLines(indent int, settings UpstreamSettings) []string {
 		lines = append(lines, fmt.Sprintf("%sno_proxy:\n", prefix))
 		for _, host := range settings.NoProxy {
 			lines = append(lines, fmt.Sprintf("%s  - %s\n", prefix, strconv.Quote(host)))
+		}
+	}
+	return lines
+}
+
+func persistAccessControlSettings(path string, settings AccessControlSettings) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.SplitAfter(string(data), "\n")
+	lines, err = replaceAccessControlSection(lines, "proxy", settings.Proxy)
+	if err != nil {
+		return err
+	}
+	lines, err = replaceAccessControlSection(lines, "webui", settings.WebUi)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "")), 0o644)
+}
+
+func replaceAccessControlSection(lines []string, section string, config AccessControlConfig) ([]string, error) {
+	sectionStart := -1
+	sectionEnd := len(lines)
+	sectionIndent := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := leadingSpaces(line)
+		if trimmed == section+":" {
+			sectionStart = i
+			sectionIndent = indent
+			continue
+		}
+		if sectionStart >= 0 && indent <= sectionIndent {
+			sectionEnd = i
+			break
+		}
+	}
+	if sectionStart < 0 {
+		return nil, fmt.Errorf("configuration: %s not found", section)
+	}
+
+	out := make([]string, 0, len(lines)+len(config.Networks)+3)
+	out = append(out, lines[:sectionStart+1]...)
+	for i := sectionStart + 1; i < sectionEnd; i++ {
+		if shouldRemoveAccessControlLine(lines, i, sectionIndent) {
+			i = skipYamlBlock(lines, i, sectionEnd)
+			continue
+		}
+		out = append(out, lines[i])
+	}
+	out = append(out, renderAccessControlLines(sectionIndent+2, config)...)
+	out = append(out, lines[sectionEnd:]...)
+	return out, nil
+}
+
+func shouldRemoveAccessControlLine(lines []string, i, parentIndent int) bool {
+	line := lines[i]
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return false
+	}
+	if leadingSpaces(line) != parentIndent+2 {
+		return false
+	}
+	key, _, ok := strings.Cut(strings.TrimLeft(line, " "), ":")
+	if !ok {
+		return false
+	}
+	switch strings.TrimSpace(key) {
+	case "enable_remote_connection", "access_control":
+		return true
+	default:
+		return false
+	}
+}
+
+func renderAccessControlLines(indent int, config AccessControlConfig) []string {
+	prefix := strings.Repeat(" ", indent)
+	lines := []string{
+		fmt.Sprintf("%saccess_control:\n", prefix),
+		fmt.Sprintf("%s  mode: %s\n", prefix, strconv.Quote(string(config.Mode))),
+	}
+	if len(config.Networks) == 0 {
+		lines = append(lines, fmt.Sprintf("%s  networks: []\n", prefix))
+	} else {
+		lines = append(lines, fmt.Sprintf("%s  networks:\n", prefix))
+		for _, network := range config.Networks {
+			lines = append(lines, fmt.Sprintf("%s    - %s\n", prefix, strconv.Quote(network)))
 		}
 	}
 	return lines

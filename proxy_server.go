@@ -28,9 +28,10 @@ type ProxyServer struct {
 	capture storage.CaptureSessionWriter
 	// store, when non-nil, keeps recent top-level request records in memory for
 	// on-demand inspection by the Web UI.
-	store        *storage.RequestStore
-	captureCtl   *storage.CaptureController
-	decryptHttps bool
+	store         *storage.RequestStore
+	captureCtl    *storage.CaptureController
+	decryptHttps  bool
+	accessControl *configuration.AccessControlSettingsStore
 }
 
 type ProxyEventLogger interface {
@@ -38,15 +39,17 @@ type ProxyEventLogger interface {
 	LogRequest(id int, correlationID string, request models.ProxyRequest)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) ProxyServer {
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, accessControl *configuration.AccessControlSettingsStore, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) ProxyServer {
 	log.Printf("Socket server started on port %v\n", appContext.port)
-	var addr string
-	if config.EnableRemoteConnection {
-		addr = fmt.Sprintf("0.0.0.0:%d", appContext.port)
-		fmt.Printf("❗🔓 Proxy accepting remote connections on port %d\n", appContext.port)
-	} else {
-		addr = fmt.Sprintf("127.0.0.1:%d", appContext.port)
+	access := configuration.NormalizeAccessControl(config.AccessControl, config.EnableRemoteConnection)
+	if accessControl != nil {
+		access = accessControl.Get().Proxy
+	}
+	addr := fmt.Sprintf("%s:%d", access.ListenHost(), appContext.port)
+	if access.Mode == configuration.AccessControlLoopback {
 		fmt.Printf("✅🔒 Proxy restricted to localhost on port %d\n", appContext.port)
+	} else {
+		fmt.Printf("❗🔓 Proxy listening on %s with %s access control\n", addr, access.Mode)
 	}
 
 	listener, err := net.Listen("tcp", addr)
@@ -56,14 +59,15 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 	}
 
 	return ProxyServer{
-		listener:     listener,
-		appContext:   appContext,
-		EventLogger:  eventLogger,
-		certStore:    certStore,
-		capture:      capture,
-		store:        store,
-		captureCtl:   captureCtl,
-		decryptHttps: decryptHttps,
+		listener:      listener,
+		appContext:    appContext,
+		EventLogger:   eventLogger,
+		certStore:     certStore,
+		capture:       capture,
+		store:         store,
+		captureCtl:    captureCtl,
+		decryptHttps:  decryptHttps,
+		accessControl: accessControl,
 	}
 }
 
@@ -88,10 +92,22 @@ func (s *ProxyServer) Run() {
 			log.Println("Error accepting connection:", err)
 			continue
 		}
+		if !s.allowsClient(browser.RemoteAddr()) {
+			log.Printf("Rejected proxy connection from %s by access control\n", browser.RemoteAddr().String())
+			_ = browser.Close()
+			continue
+		}
 		fmt.Printf("New connection from %s\n", browser.RemoteAddr().String())
 		requestId++
 		go s.handleRequest(browser, requestId)(s.appContext.pipeline)
 	}
+}
+
+func (s *ProxyServer) allowsClient(addr net.Addr) bool {
+	if s.accessControl == nil {
+		return true
+	}
+	return s.accessControl.AllowsProxy(addr)
 }
 
 func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeline middlewares.Middleware) {

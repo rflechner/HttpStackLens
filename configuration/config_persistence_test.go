@@ -107,3 +107,61 @@ func TestPersistDecryptHttpsCaptureRulesReturnsErrorWhenMissing(t *testing.T) {
 		t.Fatal("expected missing decrypt_https error")
 	}
 }
+
+func TestPersistAccessControlSettingsReplacesLegacyRemoteFlags(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	input := `proxy:
+  enable_remote_connection: true
+  port: 3128
+  output_proxy_uri:
+
+webui:
+  port: 9000
+  enable_remote_connection: false
+  access_control:
+    mode: "open"
+    networks: []
+`
+	if err := os.WriteFile(path, []byte(input), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	err := persistAccessControlSettings(path, AccessControlSettings{
+		Proxy: AccessControlConfig{Mode: AccessControlLan},
+		WebUi: AccessControlConfig{Mode: AccessControlAllowlist, Networks: []string{"192.168.1.0/24", "2001:db8::/32"}},
+	})
+	if err != nil {
+		t.Fatalf("persistAccessControlSettings: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"proxy:\n  port: 3128",
+		"  output_proxy_uri:",
+		"  access_control:\n    mode: \"lan\"\n    networks: []",
+		"webui:\n  port: 9000",
+		"  access_control:\n    mode: \"allowlist\"\n    networks:\n      - \"192.168.1.0/24\"\n      - \"2001:db8::/32\"",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "enable_remote_connection") || strings.Contains(got, "mode: \"open\"") {
+		t.Fatalf("legacy access settings still present:\n%s", got)
+	}
+}
+
+func TestPersistAccessControlSettingsReturnsErrorWhenSectionMissing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("proxy:\n  port: 3128\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := persistAccessControlSettings(path, AccessControlSettings{}); err == nil {
+		t.Fatal("expected missing webui section error")
+	}
+}

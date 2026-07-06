@@ -53,8 +53,9 @@ func main() {
 	captureCtl := storage.NewCaptureController(config.Storage.Enable)
 	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
 	upstreamSettings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettingsFromProxyConfig(config.Proxy))
+	accessControlSettings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettingsFromConfig(config))
 
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, upstreamSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules, configuration.PersistUpstreamSettings)
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, upstreamSettings, accessControlSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules, configuration.PersistUpstreamSettings, configuration.PersistAccessControlSettings)
 
 	var certStore *certManager.CertStore
 
@@ -107,7 +108,7 @@ func main() {
 		slog.Info("HTTPS decryption enabled")
 	}
 
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.DecryptHttps.Enabled, certStore, captureWriter, requestStore, captureCtl)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, accessControlSettings, config.DecryptHttps.Enabled, certStore, captureWriter, requestStore, captureCtl)
 
 	go proxyServer.Run()
 

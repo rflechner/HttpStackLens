@@ -502,6 +502,110 @@ func TestBodyCaptureSettingsHandlerRejectsInvalidRules(t *testing.T) {
 	}
 }
 
+func TestAccessControlSettingsHandlerReturnsSettings(t *testing.T) {
+	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
+		Proxy: configuration.AccessControlConfig{Mode: configuration.AccessControlLan},
+		WebUi: configuration.AccessControlConfig{Mode: configuration.AccessControlAllowlist, Networks: []string{"192.168.1.0/24"}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/access-control", nil)
+	rr := httptest.NewRecorder()
+	accessControlSettingsHandler(settings, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got shared.AccessControlSettingsDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Proxy.Mode != "lan" || got.WebUi.Mode != "allowlist" || len(got.WebUi.Networks) != 1 {
+		t.Fatalf("settings = %+v", got)
+	}
+}
+
+func TestAccessControlSettingsHandlerUpdatesRuntimeAndPersists(t *testing.T) {
+	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
+		Proxy: configuration.AccessControlConfig{Mode: configuration.AccessControlLoopback},
+		WebUi: configuration.AccessControlConfig{Mode: configuration.AccessControlLoopback},
+	})
+	var persisted configuration.AccessControlSettings
+	persist := func(s configuration.AccessControlSettings) error {
+		persisted = s
+		return nil
+	}
+
+	body := []byte(`{"proxy":{"mode":"lan","networks":[]},"web_ui":{"mode":"allowlist","networks":["10.0.0.0/8"]}}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/access-control", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	accessControlSettingsHandler(settings, persist).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	updated := settings.Get()
+	if updated.Proxy.Mode != configuration.AccessControlLan || updated.WebUi.Mode != configuration.AccessControlAllowlist {
+		t.Fatalf("runtime = %+v", updated)
+	}
+	if len(persisted.WebUi.Networks) != 1 || persisted.WebUi.Networks[0] != "10.0.0.0/8" {
+		t.Fatalf("persisted = %+v", persisted)
+	}
+}
+
+func TestAccessControlSettingsHandlerRejectsInvalidNetwork(t *testing.T) {
+	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{})
+	body := []byte(`{"proxy":{"mode":"allowlist","networks":["bad"]},"web_ui":{"mode":"loopback","networks":[]}}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/access-control", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	accessControlSettingsHandler(settings, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+}
+
+func TestWebUiAccessControlMiddlewareRejectsForbiddenRemote(t *testing.T) {
+	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
+		WebUi: configuration.AccessControlConfig{Mode: configuration.AccessControlLoopback},
+	})
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.168.1.42:50000"
+	rr := httptest.NewRecorder()
+	webUiAccessControlMiddleware(settings, next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusForbidden)
+	}
+	if nextCalled {
+		t.Fatal("next handler was called for forbidden remote")
+	}
+}
+
+func TestWebUiAccessControlMiddlewareAllowsPermittedRemote(t *testing.T) {
+	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
+		WebUi: configuration.AccessControlConfig{Mode: configuration.AccessControlLan},
+	})
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.168.1.42:50000"
+	rr := httptest.NewRecorder()
+	webUiAccessControlMiddleware(settings, next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
+	}
+}
+
 func TestUpstreamSettingsHandlerReturnsSettings(t *testing.T) {
 	settings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{
 		OutputProxyUri:           "http://proxy:8080",

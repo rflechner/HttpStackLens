@@ -155,7 +155,7 @@ data: {"t":1732038292,"cpu":0.43}
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
     upstream: { on: true, ntlm: true, host: 'http://proxy.corp.local:8080', domain: 'CORP' },
-    access: { mode: 'loopback', cidrs: ['192.168.1.0/24'] },
+    access: { mode: 'loopback', networks: ['192.168.1.0/24'] },
     bodyRules: [
       { id: 'json', label: 'JSON', mimes: 'application/json · application/*+json', on: true, max: 2097152 },
       { id: 'html', label: 'HTML', mimes: 'text/html · application/xhtml+xml', on: true, max: 1048576 },
@@ -582,14 +582,14 @@ data: {"t":1732038292,"cpu":0.43}
     const radio = (mode, title, sub, danger) => `<button data-access="${mode}" class="flex items-center gap-3 w-full text-left" style="padding:10px 12px;background:${a.mode === mode ? C.bg3 : C.bg2};border:1px solid ${a.mode === mode ? (danger ? C.danger : C.mint) : C.line};border-radius:4px;cursor:pointer;color:${C.ink};font-family:Inter">
       <span style="width:14px;height:14px;border-radius:7px;flex-shrink:0;border:1.5px solid ${a.mode === mode ? (danger ? C.danger : C.mint) : C.faint};display:inline-flex;align-items:center;justify-content:center">${a.mode === mode ? `<span style="width:6px;height:6px;border-radius:3px;background:${danger ? C.danger : C.mint}"></span>` : ''}</span>
       <div class="flex-1"><div style="font-size:12.5px;font-weight:500;color:${danger && a.mode === mode ? C.danger : C.ink}">${title}</div><div style="font-size:11px;color:${C.dim};margin-top:2px">${sub}</div></div></button>`;
-    let cidrs = '';
+    let networks = '';
     if (a.mode === 'allowlist') {
-      cidrs = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed CIDRs</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${a.cidrs.map((c) => `<div class="flex items-center gap-[10px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><span style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};flex:1">${c}</span></div>`).join('')}<div style="padding:8px;background:${C.bg1}">${btn('+ Add CIDR', 'noop', 'ghost')}</div></div></div>`;
+      networks = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed networks</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${a.networks.map((c) => `<div class="flex items-center gap-[10px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><span style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};flex:1">${c}</span></div>`).join('')}<div style="padding:8px;background:${C.bg1}">${btn('+ Add network', 'noop', 'ghost')}</div></div></div>`;
     }
     return `<div class="grid gap-[14px]">
       <div style="font-size:12px;color:${C.dim};line-height:1.6">Control which machines can connect to this proxy. By default only loopback (127.0.0.1) is accepted — safer when the machine is on an untrusted network.</div>
-      <div class="grid gap-2">${radio('loopback', 'Loopback only', '127.0.0.1 and ::1 · recommended')}${radio('lan', 'Private LAN', 'RFC 1918 — 10/8 · 172.16/12 · 192.168/16')}${radio('allowlist', 'Explicit allowlist', 'Only the CIDRs below')}${radio('open', 'Open — any source', 'Dangerous on untrusted networks', true)}</div>
-      ${cidrs}
+      <div class="grid gap-2">${radio('loopback', 'Loopback only', '127.0.0.1 and ::1 · recommended')}${radio('lan', 'Private LAN', 'RFC 1918 — 10/8 · 172.16/12 · 192.168/16')}${radio('allowlist', 'Explicit allowlist', 'Only the networks below')}${radio('open', 'Open — any source', 'Dangerous on untrusted networks', true)}</div>
+      ${networks}
       <div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono';padding:8px 10px;background:${C.bg2};border-radius:3px;border:1px solid ${C.line}">listening on <span style="color:${C.mint}">0.0.0.0:8823</span> · <span style="color:${C.ink}">${a.mode}</span></div></div>`;
   }
 
