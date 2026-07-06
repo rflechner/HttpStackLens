@@ -20,6 +20,13 @@ func PersistDecryptHttpsCaptureRules(config DecryptHttpsConfig) error {
 	return persistDecryptHttpsCaptureRules(defaultConfigPath, config)
 }
 
+// PersistUpstreamSettings writes the upstream proxy settings (output_proxy_uri,
+// add_windows_authentication_to_output_proxy, no_proxy) back into the proxy
+// section of config.yaml so Web UI edits survive the next application start.
+func PersistUpstreamSettings(settings UpstreamSettings) error {
+	return persistUpstreamSettings(defaultConfigPath, settings)
+}
+
 func persistStorageEnabled(path string, enabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -160,6 +167,96 @@ func skipYamlBlock(lines []string, start, sectionEnd int) int {
 		}
 	}
 	return sectionEnd - 1
+}
+
+func persistUpstreamSettings(path string, settings UpstreamSettings) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.SplitAfter(string(data), "\n")
+	sectionStart := -1
+	sectionEnd := len(lines)
+	sectionIndent := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := leadingSpaces(line)
+		if trimmed == "proxy:" {
+			sectionStart = i
+			sectionIndent = indent
+			continue
+		}
+		if sectionStart >= 0 && indent <= sectionIndent {
+			sectionEnd = i
+			break
+		}
+	}
+	if sectionStart < 0 {
+		return fmt.Errorf("configuration: proxy not found in %s", path)
+	}
+
+	out := make([]string, 0, len(lines)+len(settings.NoProxy)+4)
+	out = append(out, lines[:sectionStart+1]...)
+	for i := sectionStart + 1; i < sectionEnd; i++ {
+		if shouldRemoveUpstreamLine(lines, i, sectionIndent) {
+			i = skipYamlBlock(lines, i, sectionEnd)
+			continue
+		}
+		out = append(out, lines[i])
+	}
+	out = append(out, renderUpstreamLines(sectionIndent+2, settings)...)
+	out = append(out, lines[sectionEnd:]...)
+
+	return os.WriteFile(path, []byte(strings.Join(out, "")), 0o644)
+}
+
+func shouldRemoveUpstreamLine(lines []string, i, parentIndent int) bool {
+	line := lines[i]
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return false
+	}
+	if leadingSpaces(line) != parentIndent+2 {
+		return false
+	}
+	key, _, ok := strings.Cut(strings.TrimLeft(line, " "), ":")
+	if !ok {
+		return false
+	}
+	switch strings.TrimSpace(key) {
+	case "output_proxy_uri", "add_windows_authentication_to_output_proxy", "no_proxy":
+		return true
+	default:
+		return false
+	}
+}
+
+func renderUpstreamLines(indent int, settings UpstreamSettings) []string {
+	prefix := strings.Repeat(" ", indent)
+	lines := make([]string, 0, len(settings.NoProxy)+3)
+
+	uri := strings.TrimSpace(settings.OutputProxyUri)
+	if uri == "" {
+		lines = append(lines, fmt.Sprintf("%soutput_proxy_uri:\n", prefix))
+	} else {
+		lines = append(lines, fmt.Sprintf("%soutput_proxy_uri: %s\n", prefix, strconv.Quote(uri)))
+	}
+
+	lines = append(lines, fmt.Sprintf("%sadd_windows_authentication_to_output_proxy: %t\n", prefix, settings.AddWindowsAuthentication))
+
+	if len(settings.NoProxy) == 0 {
+		lines = append(lines, fmt.Sprintf("%sno_proxy: []\n", prefix))
+	} else {
+		lines = append(lines, fmt.Sprintf("%sno_proxy:\n", prefix))
+		for _, host := range settings.NoProxy {
+			lines = append(lines, fmt.Sprintf("%s  - %s\n", prefix, strconv.Quote(host)))
+		}
+	}
+	return lines
 }
 
 func renderCaptureRuleLines(indent int, config DecryptHttpsConfig) []string {

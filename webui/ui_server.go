@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,6 +29,7 @@ const maxCaptureRecordsLimit = 1000
 
 type storageEnabledPersister func(bool) error
 type bodyCaptureSettingsPersister func(configuration.DecryptHttpsConfig) error
+type upstreamSettingsPersister func(configuration.UpstreamSettings) error
 
 type Hub struct {
 	clients  map[chan string]struct{}
@@ -131,7 +133,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister) *Hub {
+func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister, persistUpstreamSettings upstreamSettingsPersister) *Hub {
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -220,6 +222,7 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
+	mux.HandleFunc("/api/settings/upstream", upstreamSettingsHandler(upstreamSettings, persistUpstreamSettings))
 
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -441,6 +444,81 @@ func bodyCaptureSettingsHandler(settings *configuration.DecryptHttpsConfigStore,
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+func upstreamSettingsHandler(settings *configuration.UpstreamSettingsStore, persist upstreamSettingsPersister) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if settings == nil {
+			http.Error(w, "upstream settings are unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, upstreamSettingsDto(settings.Get()))
+		case http.MethodPut:
+			var dto shared.UpstreamSettingsDto
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&dto); err != nil {
+				http.Error(w, "invalid upstream settings", http.StatusBadRequest)
+				return
+			}
+			next, err := upstreamSettingsFromDto(dto)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if persist != nil {
+				if err := persist(next); err != nil {
+					log.Printf("Error persisting upstream proxy settings: %v", err)
+					http.Error(w, "could not persist upstream settings", http.StatusInternalServerError)
+					return
+				}
+			}
+			updated := settings.Update(next)
+			writeJSON(w, upstreamSettingsDto(updated))
+		default:
+			w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func upstreamSettingsDto(settings configuration.UpstreamSettings) shared.UpstreamSettingsDto {
+	return shared.UpstreamSettingsDto{
+		OutputProxyUri:           settings.OutputProxyUri,
+		NoProxy:                  settings.NoProxy,
+		AddWindowsAuthentication: settings.AddWindowsAuthentication,
+	}
+}
+
+func upstreamSettingsFromDto(dto shared.UpstreamSettingsDto) (configuration.UpstreamSettings, error) {
+	uri := strings.TrimSpace(dto.OutputProxyUri)
+	if uri != "" {
+		parsed, err := url.Parse(uri)
+		if err != nil {
+			return configuration.UpstreamSettings{}, fmt.Errorf("output_proxy_uri is not a valid URL: %v", err)
+		}
+		if parsed.Scheme == "" || parsed.Host == "" {
+			return configuration.UpstreamSettings{}, fmt.Errorf("output_proxy_uri must include a scheme and host")
+		}
+	}
+
+	var noProxy []string
+	for _, host := range dto.NoProxy {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			continue
+		}
+		noProxy = append(noProxy, host)
+	}
+
+	return configuration.UpstreamSettings{
+		OutputProxyUri:           uri,
+		NoProxy:                  noProxy,
+		AddWindowsAuthentication: dto.AddWindowsAuthentication,
+	}, nil
 }
 
 func bodyCaptureSettingsDto(config configuration.DecryptHttpsConfig) shared.BodyCaptureSettingsDto {

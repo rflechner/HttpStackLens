@@ -502,6 +502,92 @@ func TestBodyCaptureSettingsHandlerRejectsInvalidRules(t *testing.T) {
 	}
 }
 
+func TestUpstreamSettingsHandlerReturnsSettings(t *testing.T) {
+	settings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{
+		OutputProxyUri:           "http://proxy:8080",
+		NoProxy:                  []string{"localhost"},
+		AddWindowsAuthentication: true,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/upstream", nil)
+	rr := httptest.NewRecorder()
+	upstreamSettingsHandler(settings, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got shared.UpstreamSettingsDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.OutputProxyUri != "http://proxy:8080" || !got.AddWindowsAuthentication {
+		t.Fatalf("got = %+v", got)
+	}
+	if len(got.NoProxy) != 1 || got.NoProxy[0] != "localhost" {
+		t.Fatalf("NoProxy = %v", got.NoProxy)
+	}
+}
+
+func TestUpstreamSettingsHandlerUpdatesRuntimeAndPersists(t *testing.T) {
+	settings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{})
+	var persisted configuration.UpstreamSettings
+	persist := func(s configuration.UpstreamSettings) error {
+		persisted = s
+		return nil
+	}
+
+	body := []byte(`{"output_proxy_uri":"http://proxy:3129","no_proxy":["example.com"," ","host.docker.internal"],"add_windows_authentication":true}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/upstream", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	upstreamSettingsHandler(settings, persist).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	updated := settings.Get()
+	if updated.OutputProxyUri != "http://proxy:3129" || !updated.AddWindowsAuthentication {
+		t.Fatalf("runtime = %+v", updated)
+	}
+	// Blank entries are dropped.
+	if len(updated.NoProxy) != 2 || updated.NoProxy[0] != "example.com" || updated.NoProxy[1] != "host.docker.internal" {
+		t.Fatalf("runtime NoProxy = %v", updated.NoProxy)
+	}
+	if persisted.OutputProxyUri != "http://proxy:3129" || len(persisted.NoProxy) != 2 {
+		t.Fatalf("persisted = %+v", persisted)
+	}
+}
+
+func TestUpstreamSettingsHandlerDoesNotUpdateRuntimeWhenPersistenceFails(t *testing.T) {
+	settings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{OutputProxyUri: "http://old:1"})
+
+	body := []byte(`{"output_proxy_uri":"http://new:2","no_proxy":[],"add_windows_authentication":false}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/upstream", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	upstreamSettingsHandler(settings, func(configuration.UpstreamSettings) error {
+		return errors.New("disk full")
+	}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	if got := settings.Get().OutputProxyUri; got != "http://old:1" {
+		t.Fatalf("runtime changed despite persistence failure: %q", got)
+	}
+}
+
+func TestUpstreamSettingsHandlerRejectsInvalidUri(t *testing.T) {
+	settings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{})
+	body := []byte(`{"output_proxy_uri":"not a url","no_proxy":[],"add_windows_authentication":false}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/upstream", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	upstreamSettingsHandler(settings, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+}
+
 func TestCaptureListHandlerReturnsCaptureFilesNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "first.capture")

@@ -210,8 +210,14 @@ server and WASM.
       MIME capture rules, backed by a thread-safe runtime settings store consumed
       by `HttpsInterceptor`; updates persist back to `config.yaml` and leave the
       HTTPS decryption toggle to B6.3.
-- [ ] B5.2 Upstream proxy: read/write API (`OutputProxyUri`, bypass, NTLM/domain).
-      Hot re-injection into the pipeline to be scoped.
+- [x] B5.2 Upstream proxy: read/write API (`OutputProxyUri`, bypass, NTLM/domain).
+      Added `GET`/`PUT /api/settings/upstream` for `output_proxy_uri`, `no_proxy`
+      (bypass), and `add_windows_authentication` (NTLM/Negotiate), backed by a
+      thread-safe `configuration.UpstreamSettingsStore`; updates are validated
+      (URL scheme/host) and persisted back to `config.yaml` via
+      `PersistUpstreamSettings`. `openapi.yaml` updated. Hot re-injection into the
+      running pipeline remains out of scope: edits take effect on the next
+      application start.
 - [ ] B5.3 Access control: **new model** (loopback/lan/allowlist/open + CIDRs)
       replacing the plain `EnableRemoteConnection` bool; filtering at `Accept()` in
       [`proxy_server.go`](proxy_server.go) and the UI server.

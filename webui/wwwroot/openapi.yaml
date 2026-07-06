@@ -75,6 +75,48 @@ paths:
           $ref: "#/components/responses/InternalServerError"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/settings/upstream:
+    get:
+      tags: [Runtime]
+      summary: Read upstream proxy settings
+      description: Reads the outbound (corporate) proxy configuration used to forward traffic.
+      responses:
+        "200":
+          description: Current upstream proxy settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpstreamSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [Runtime]
+      summary: Replace upstream proxy settings
+      description: |
+        Updates the outbound proxy URL, bypass list, and Windows authentication toggle and
+        persists them to `config.yaml`. Changes take effect on the next application start;
+        the running pipeline is not hot-reconfigured yet.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpstreamSettings"
+      responses:
+        "200":
+          description: Updated upstream proxy settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpstreamSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /events:
     get:
       tags: [Events]
@@ -678,6 +720,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MimeTypeRule"
+    UpstreamSettings:
+      type: object
+      required: [output_proxy_uri, no_proxy, add_windows_authentication]
+      properties:
+        output_proxy_uri:
+          type: string
+          description: Upstream proxy URL (for example `http://proxy:8080`). Empty means direct connections with no upstream proxy.
+        no_proxy:
+          type: array
+          items:
+            type: string
+          description: Hosts or suffixes that bypass the upstream proxy and connect directly.
+          nullable: true
+        add_windows_authentication:
+          type: boolean
+          description: Enable Windows (NTLM/Negotiate) authentication against the upstream proxy. Only effective on Windows.
     MimeTypeRule:
       type: object
       required: [name]

@@ -52,8 +52,9 @@ func main() {
 	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
 	captureCtl := storage.NewCaptureController(config.Storage.Enable)
 	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
+	upstreamSettings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettingsFromProxyConfig(config.Proxy))
 
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules)
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, upstreamSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules, configuration.PersistUpstreamSettings)
 
 	var certStore *certManager.CertStore
 

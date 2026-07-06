@@ -198,6 +198,22 @@ type BodyCaptureSettingsDto struct {
 	MimeTypes       []MimeTypeRuleDto `json:"mime_types"`
 }
 
+// UpstreamSettingsDto is the read/write contract for the outbound (corporate)
+// proxy exposed by GET/PUT /api/settings/upstream (B5.2). Changes are persisted
+// back to config.yaml; hot re-injection into the running pipeline is out of
+// scope for now and takes effect on the next application start.
+type UpstreamSettingsDto struct {
+	// OutputProxyUri is the upstream proxy URL (e.g. "http://proxy:8080"). Empty
+	// means direct connections with no upstream proxy.
+	OutputProxyUri string `json:"output_proxy_uri"`
+	// NoProxy lists hosts/suffixes that bypass the upstream proxy and connect
+	// directly.
+	NoProxy []string `json:"no_proxy"`
+	// AddWindowsAuthentication enables Windows (NTLM/Negotiate) authentication
+	// against the upstream proxy. Only effective on Windows.
+	AddWindowsAuthentication bool `json:"add_windows_authentication"`
+}
+
 type MimeTypeRuleDto struct {
 	Name         string   `json:"name"`
 	MaxSizeBytes *int64   `json:"max_size_bytes,omitempty"`
