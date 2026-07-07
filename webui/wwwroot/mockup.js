@@ -6,16 +6,29 @@
   'use strict';
 
   // ─── palette (mirrors Tailwind config) ───────────────────
-  const C = {
-    bg0: '#0e0f12', bg1: '#15171c', bg2: '#1c1f26', bg3: '#23272f',
-    line: '#262a33', lineSoft: '#1f232a',
-    ink: '#d8dce4', dim: '#8a93a3', faint: '#5a6173',
-    mint: '#7fd4b4', warn: '#f1b45a', danger: '#e86a6a', info: '#7aa7ff', pink: '#d48ad6',
+  const PALETTES = {
+    light: {
+      bg0: '#f1eee8', bg1: '#ffffff', bg2: '#f6f3ee', bg3: '#eae5db',
+      line: '#e5e0d6', lineSoft: '#efebe3',
+      ink: '#2b2926', dim: '#6f6b62', faint: '#a49f94',
+      mint: '#2f9e8f', warn: '#c98a2b', danger: '#d1584f', info: '#4a7fc4', pink: '#9a6cc9',
+      white: '#ffffff', onAccent: '#0c2a24',
+    },
+    dark: {
+      bg0: '#0e0f12', bg1: '#15171c', bg2: '#1c1f26', bg3: '#23272f',
+      line: '#262a33', lineSoft: '#1f232a',
+      ink: '#d8dce4', dim: '#8a93a3', faint: '#5a6173',
+      mint: '#7fd4b4', warn: '#f1b45a', danger: '#e86a6a', info: '#7aa7ff', pink: '#d48ad6',
+      white: '#ffffff', onAccent: '#0c2a24',
+    },
   };
-  const METHOD_COLOR = {
-    GET: '#7fd4b4', POST: '#f1b45a', PUT: '#7aa7ff', DELETE: '#e86a6a',
-    PATCH: '#d48ad6', OPTIONS: '#8a93a3', HEAD: '#8a93a3', CONNECT: '#5a6173',
+  const METHODS_BY_THEME = {
+    light: { GET: '#2f9e8f', POST: '#c98a2b', PUT: '#4a7fc4', DELETE: '#d1584f', PATCH: '#9a6cc9', OPTIONS: '#6f6b62', HEAD: '#6f6b62', CONNECT: '#a49f94' },
+    dark: { GET: '#7fd4b4', POST: '#f1b45a', PUT: '#7aa7ff', DELETE: '#e86a6a', PATCH: '#d48ad6', OPTIONS: '#8a93a3', HEAD: '#8a93a3', CONNECT: '#5a6173' },
   };
+  let themeName = (function () { try { return localStorage.getItem('hsl-theme') === 'dark' ? 'dark' : 'light'; } catch (e) { return 'light'; } })();
+  let C = PALETTES[themeName];
+  let METHOD_COLOR = METHODS_BY_THEME[themeName];
   function statusColor(s) {
     if (s >= 500) return C.danger;
     if (s >= 400) return C.warn;
@@ -27,11 +40,22 @@
   // ─── mock data ───────────────────────────────────────────
   const HOSTS = [
     ['api.github.com', 'https'], ['raw.githubusercontent.com', 'https'],
-    ['registry.npmjs.org', 'https'], ['auth.corp.local', 'https']
+    ['registry.npmjs.org', 'https'], ['auth.corp.local', 'https'],
+    ['metrics.internal', 'http'], ['cdn.jsdelivr.net', 'https'],
+    ['telemetry.ingest.sentry.io', 'https'], ['fonts.googleapis.com', 'https'],
+    ['s3.eu-west-3.amazonaws.com', 'https'], ['proxy-egress.corp.local', 'http'],
   ];
   const PATHS = {
     'api.github.com': ['/repos/anthropics/claude-cli/pulls?state=open', '/user', '/repos/golang/go/issues/68412/comments', '/search/code?q=ReverseProxy'],
-    'raw.githubusercontent.com': ['/golang/go/master/src/net/http/server.go', '/anthropics/anthropic-sdk-go/main/client.go']
+    'raw.githubusercontent.com': ['/golang/go/master/src/net/http/server.go', '/anthropics/anthropic-sdk-go/main/client.go'],
+    'registry.npmjs.org': ['/react', '/vite', '/@tanstack/react-query', '/esbuild'],
+    'auth.corp.local': ['/oauth2/token', '/.well-known/jwks.json', '/me'],
+    'metrics.internal': ['/v1/ingest', '/v1/timeseries/query'],
+    'cdn.jsdelivr.net': ['/npm/react@18.3.1/umd/react.production.min.js'],
+    'telemetry.ingest.sentry.io': ['/api/42/envelope/'],
+    'fonts.googleapis.com': ['/css2?family=JetBrains+Mono&display=swap'],
+    's3.eu-west-3.amazonaws.com': ['/artifacts-prod/build-9182/bundle.tar.zst', '/avatars/u_88122.jpg'],
+    'proxy-egress.corp.local': ['/'],
   };
   const MIMES = [
     ['application/json', 'json'], ['text/html', 'html'], ['text/css', 'css'],
@@ -40,7 +64,7 @@
   ];
   const METHODS = ['GET', 'GET', 'GET', 'POST', 'POST', 'PUT', 'DELETE', 'PATCH'];
   const PROCS = ['chrome.exe', 'node.exe', 'curl.exe', 'code.exe', 'msedge.exe'];
-  const CLIENTS = ['127.0.0.1', '192.168.1.42'];
+  const CLIENTS = ['127.0.0.1', '192.168.1.42', '10.0.0.17'];
 
   function rnd(a) { return a[Math.floor(Math.random() * a.length)]; }
   function mockReq(id) {
@@ -155,7 +179,7 @@ data: {"t":1732038292,"cpu":0.43}
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
     upstream: { on: true, ntlm: true, host: 'http://proxy.corp.local:8080', domain: 'CORP' },
-    access: { mode: 'loopback', networks: ['192.168.1.0/24'] },
+    access: { mode: 'loopback', cidrs: ['192.168.1.0/24'] },
     bodyRules: [
       { id: 'json', label: 'JSON', mimes: 'application/json · application/*+json', on: true, max: 2097152 },
       { id: 'html', label: 'HTML', mimes: 'text/html · application/xhtml+xml', on: true, max: 1048576 },
@@ -175,14 +199,14 @@ data: {"t":1732038292,"cpu":0.43}
 
   function methodTag(m, sm) {
     const c = METHOD_COLOR[m] || C.dim;
-    const pad = sm ? '1px 5px' : '2px 6px', fs = sm ? '10px' : '11px', mw = sm ? '40px' : '46px';
-    return `<span class="font-mono font-semibold inline-block text-center rounded-[3px]" style="color:${c};background:${c}18;border:1px solid ${c}33;padding:${pad};font-size:${fs};min-width:${mw};letter-spacing:.3px">${m}</span>`;
+    const pad = sm ? '2px 6px' : '3px 8px', fs = sm ? '10.5px' : '11.5px', mw = sm ? '44px' : '50px';
+    return `<span class="inline-block text-center rounded-[6px]" style="color:${c};background:${c}1c;padding:${pad};font-size:${fs};min-width:${mw};letter-spacing:.2px;font-family:Inter;font-weight:600">${m}</span>`;
   }
   function statusPill(s, sm) {
     const c = statusColor(s);
-    const pad = sm ? '1px 5px' : '2px 7px', fs = sm ? '10px' : '11px';
-    return `<span class="font-mono font-semibold inline-flex items-center gap-[5px] rounded-[3px]" style="color:${c};background:${c}14;border:1px solid ${c}33;padding:${pad};font-size:${fs}">
-      <span style="width:5px;height:5px;border-radius:2px;background:${c}"></span>${s || '—'}</span>`;
+    const pad = sm ? '2px 7px' : '3px 9px', fs = sm ? '10.5px' : '11.5px';
+    return `<span class="inline-flex items-center gap-[5px] rounded-[6px]" style="color:${c};background:${c}18;padding:${pad};font-size:${fs};font-family:Inter;font-weight:600">
+      <span style="width:5px;height:5px;border-radius:3px;background:${c}"></span>${s || '—'}</span>`;
   }
   function lock(on, warn) {
     const c = warn ? C.warn : on ? C.mint : C.faint;
@@ -192,8 +216,8 @@ data: {"t":1732038292,"cpu":0.43}
   }
 
   // ─── request list ────────────────────────────────────────
-  const GRID = 'grid-template-columns:48px 54px 20px 56px 178px 1fr 132px 70px 76px 54px';
-  function rowHeight() { return state.density === 'compact' ? 22 : state.density === 'comfy' ? 30 : 26; }
+  const GRID = 'grid-template-columns:44px 60px 22px 66px 190px 1fr 140px 74px 84px 58px';
+  function rowHeight() { return state.density === 'compact' ? 28 : state.density === 'comfy' ? 42 : 34; }
 
   function filteredRows() {
     let rows = state.rows;
@@ -218,13 +242,13 @@ data: {"t":1732038292,"cpu":0.43}
     const sel = r.id === state.selId;
     const stream = r.mimeColor === 'stream';
     const tooLarge = r.size > 512000 && !stream;
-    return `<div data-row="${r.id}" class="grid items-center gap-[10px] cursor-pointer select-none" style="${GRID};height:${rowHeight()}px;padding:0 12px;background:${sel ? C.bg3 : 'transparent'};border-left:2px solid ${sel ? statusColor(r.status) : 'transparent'};border-bottom:1px solid ${C.lineSoft};font-family:'JetBrains Mono',monospace;font-size:11.5px;color:${C.ink}">
-      <span style="color:${C.faint};text-align:right">${String(r.id).padStart(3, '0')}</span>
+    return `<div data-row="${r.id}" class="grid items-center gap-[12px] cursor-pointer select-none" style="${GRID};height:${rowHeight()}px;padding:0 16px;background:${sel ? C.bg3 : 'transparent'};border-left:3px solid ${sel ? statusColor(r.status) : 'transparent'};border-bottom:1px solid ${C.lineSoft};font-family:Inter;font-size:12.5px;color:${C.ink}">
+      <span style="color:${C.faint};text-align:right;font-variant-numeric:tabular-nums">${String(r.id).padStart(3, '0')}</span>
       ${methodTag(r.method, true)}
-      <span title="${r.tls ? (r.decrypted ? 'decrypted' : 'encrypted') : 'cleartext'}">${r.tls ? lock(true, !r.decrypted) : `<span style="color:${C.faint};font-size:10px">◌</span>`}</span>
+      <span title="${r.tls ? (r.decrypted ? 'decrypted' : 'encrypted') : 'cleartext'}">${r.tls ? lock(true, !r.decrypted) : `<span style="color:${C.faint};font-size:11px">◌</span>`}</span>
       ${statusPill(r.status, true)}
       <span class="truncate" style="color:${C.dim}">${r.host}</span>
-      <span class="truncate" style="color:${C.ink}">${esc(r.path)}${stream ? `<span style="color:${C.warn};margin-left:8px;font-size:10px">· stream</span>` : ''}${tooLarge ? `<span style="color:${C.faint};margin-left:8px;font-size:10px">· body skipped</span>` : ''}</span>
+      <span class="truncate" style="color:${C.ink}">${esc(r.path)}${stream ? `<span style="color:${C.warn};margin-left:8px;font-size:11px">· stream</span>` : ''}${tooLarge ? `<span style="color:${C.faint};margin-left:8px;font-size:11px">· body skipped</span>` : ''}</span>
       <span class="truncate" style="color:${C.faint}">${r.mime}</span>
       <span style="color:${C.dim};text-align:right;font-variant-numeric:tabular-nums">${fmtBytes(r.size)}</span>
       <span style="color:${C.faint};text-align:right;font-variant-numeric:tabular-nums">${fmtTime(r.ts)}</span>
@@ -265,8 +289,8 @@ data: {"t":1732038292,"cpu":0.43}
     const rows = state.rows.slice(-130);
     const max = Math.max(1, ...rows.map((r) => r.ms));
     wf.innerHTML = rows.map((r) => {
-      const h = Math.max(2, (r.ms / max) * 30);
-      return `<div title="${r.method} ${esc(r.path)} · ${fmtMs(r.ms)}" style="width:3px;height:${h}px;background:${statusColor(r.status)};opacity:.85;flex-shrink:0;border-radius:1px"></div>`;
+      const h = Math.max(2, (r.ms / max) * 34);
+      return `<div title="${r.method} ${esc(r.path)} · ${fmtMs(r.ms)}" style="width:4px;height:${h}px;background:${statusColor(r.status)};opacity:.9;flex-shrink:0;border-radius:2px"></div>`;
     }).join('');
   }
 
@@ -293,8 +317,8 @@ data: {"t":1732038292,"cpu":0.43}
     for (const r of rows) hostMap[r.host] = (hostMap[r.host] || 0) + 1;
     const top = Object.entries(hostMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
     $('#hosts').innerHTML = top.map(([h, n]) =>
-      `<button data-host="${h}" class="flex items-center gap-2 w-full text-left rounded-[3px]" style="padding:5px 8px;background:transparent;border:none;cursor:pointer;color:${C.dim};font-family:'JetBrains Mono';font-size:11px">
-        <span class="flex-1 truncate">${h}</span><span style="color:${C.faint};font-size:10.5px">${n}</span></button>`).join('');
+      `<button data-host="${h}" class="flex items-center gap-2 w-full text-left rounded-[8px]" style="padding:7px 10px;background:transparent;border:none;cursor:pointer;color:${C.dim};font-family:Inter;font-size:12px;font-weight:500">
+        <span class="flex-1 truncate">${h}</span><span style="color:${C.faint};font-size:11px">${n}</span></button>`).join('');
   }
 
   // ─── detail pane ─────────────────────────────────────────
@@ -436,25 +460,28 @@ data: {"t":1732038292,"cpu":0.43}
     cap.style.background = state.capturing ? C.bg3 : 'transparent';
 
     const dec = $('#btn-decrypt');
-    dec.innerHTML = `${lock(state.decryption)} HTTPS decryption · ${state.decryption ? 'on' : 'off'}`;
+    dec.innerHTML = `${lock(state.decryption)} HTTPS decryption · ${state.decryption ? 'On' : 'Off'}`;
     dec.style.color = state.decryption ? C.mint : C.dim;
     dec.style.background = state.decryption ? C.bg3 : 'transparent';
 
     const up = $('#btn-upstream');
-    up.textContent = `⇢ upstream · ${state.upstream.on ? (state.upstream.ntlm ? 'NTLM' : 'direct') : 'off'}`;
+    up.textContent = `Upstream · ${state.upstream.on ? (state.upstream.ntlm ? 'NTLM' : 'Direct') : 'Off'}`;
     up.style.color = state.upstream.on ? C.mint : C.dim;
 
-    $('#btn-access').textContent = `⊙ access · ${state.access.mode}`;
+    const acc = $('#btn-access');
+    const modeLabel = { loopback: 'Loopback', lan: 'Private LAN', allowlist: 'Allowlist', open: 'Open' };
+    acc.textContent = `Access · ${modeLabel[state.access.mode] || state.access.mode}`;
   }
 
   // ─── modals ──────────────────────────────────────────────
+  let modalKind = null;
   function openModal(html, width) {
     const root = $('#modal-root');
-    root.innerHTML = `<div class="modal-backdrop" style="position:absolute;inset:0;background:rgba(8,9,12,.62);backdrop-filter:blur(3px);z-index:50;display:flex;align-items:center;justify-content:center">
-      <div class="modal-card" style="width:${width || 620}px;max-width:92%;max-height:88%;display:flex;flex-direction:column;background:${C.bg1};border:1px solid ${C.line};border-radius:6px;box-shadow:0 24px 60px rgba(0,0,0,.55);overflow:hidden;color:${C.ink};font-family:Inter">${html}</div></div>`;
+    root.innerHTML = `<div class="modal-backdrop" style="position:absolute;inset:0;background:rgba(43,41,38,.34);backdrop-filter:blur(3px);z-index:50;display:flex;align-items:center;justify-content:center">
+      <div class="modal-card" style="width:${width || 620}px;max-width:92%;max-height:88%;display:flex;flex-direction:column;background:${C.bg1};border:1px solid ${C.line};border-radius:12px;box-shadow:0 24px 60px rgba(43,41,38,.22);overflow:hidden;color:${C.ink};font-family:Inter">${html}</div></div>`;
     root.style.pointerEvents = 'auto';
   }
-  function closeModal() { $('#modal-root').innerHTML = ''; $('#modal-root').style.pointerEvents = 'none'; }
+  function closeModal() { modalKind = null; $('#modal-root').innerHTML = ''; $('#modal-root').style.pointerEvents = 'none'; }
 
   function modalHeader(title, subtitle) {
     return `<div style="padding:14px 18px 12px;border-bottom:1px solid ${C.line};display:flex;align-items:flex-start;gap:10px">
@@ -466,7 +493,7 @@ data: {"t":1732038292,"cpu":0.43}
   }
   function btn(label, action, tone) {
     const tones = {
-      primary: `background:${C.mint};color:${C.bg0};border:1px solid ${C.mint};font-weight:600`,
+      primary: `background:${C.mint};color:${C.onAccent};border:1px solid ${C.mint};font-weight:600`,
       danger: `background:transparent;color:${C.danger};border:1px solid ${C.danger}66`,
       ghost: `background:transparent;color:${C.dim};border:1px solid ${C.line}`,
       default: `background:${C.bg3};color:${C.ink};border:1px solid ${C.line}`,
@@ -476,16 +503,16 @@ data: {"t":1732038292,"cpu":0.43}
   function toggle(on, action, sm, disabled) {
     const w = sm ? 28 : 34, h = sm ? 16 : 20, dot = sm ? 12 : 16;
     return `<button ${disabled ? '' : `data-action="${action}"`} style="width:${w}px;height:${h}px;border-radius:${h / 2}px;padding:2px;background:${on ? C.mint : C.bg3};border:1px solid ${on ? C.mint : C.line};cursor:${disabled ? 'not-allowed' : 'pointer'};display:flex;align-items:center;opacity:${disabled ? .5 : 1}">
-      <span style="width:${dot}px;height:${dot}px;border-radius:${dot / 2}px;background:${on ? C.bg0 : C.dim};transform:translateX(${on ? w - dot - 6 : 0}px);transition:transform .15s"></span></button>`;
+      <span style="width:${dot}px;height:${dot}px;border-radius:${dot / 2}px;background:${on ? C.onAccent : C.dim};transform:translateX(${on ? w - dot - 6 : 0}px);transition:transform .15s"></span></button>`;
   }
 
   // cert wizard
   const cert = { step: 0, progress: 0, timer: null };
-  function openCert() { cert.step = 0; cert.progress = 0; renderCert(); }
+  function openCert() { modalKind = 'cert'; cert.step = 0; cert.progress = 0; renderCert(); }
   function renderCert() {
     const stepper = ['Review', 'Generate', 'Trust'].map((s, i) => {
       const on = i === cert.step, done = i < cert.step;
-      return `<div class="flex items-center gap-2 flex-1"><span style="width:20px;height:20px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:${done ? C.mint : on ? C.bg3 : C.bg2};border:1px solid ${done || on ? C.mint : C.line};color:${done ? C.bg0 : on ? C.mint : C.dim};font-size:11px;font-weight:600;font-family:'JetBrains Mono'">${done ? '✓' : i + 1}</span><span style="font-size:12px;color:${on || done ? C.ink : C.dim};font-weight:500">${s}</span></div>`;
+      return `<div class="flex items-center gap-2 flex-1"><span style="width:20px;height:20px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:${done ? C.mint : on ? C.bg3 : C.bg2};border:1px solid ${done || on ? C.mint : C.line};color:${done ? C.onAccent : on ? C.mint : C.dim};font-size:11px;font-weight:600;font-family:'JetBrains Mono'">${done ? '✓' : i + 1}</span><span style="font-size:12px;color:${on || done ? C.ink : C.dim};font-weight:500">${s}</span></div>`;
     }).join(`<div style="height:1px;flex:.3;background:${C.line}"></div>`);
 
     let inner = '';
@@ -520,7 +547,7 @@ data: {"t":1732038292,"cpu":0.43}
 
   // settings modal with tabs
   let settingsTab = 'body';
-  function openSettings(tab) { settingsTab = tab || 'body'; renderSettings(); }
+  function openSettings(tab) { modalKind = 'settings'; settingsTab = tab || 'body'; renderSettings(); }
   function renderSettings() {
     const tabs = [['cert', 'TLS / Certificate'], ['body', 'Body capture'], ['upstream', 'Upstream proxy'], ['access', 'Access control'], ['hotkeys', 'Shortcuts']];
     const nav = tabs.map(([id, l]) => `<button data-settab="${id}" style="display:block;width:100%;text-align:left;background:${settingsTab === id ? C.bg3 : 'transparent'};border:none;cursor:pointer;padding:7px 10px;border-radius:3px;margin-bottom:2px;color:${settingsTab === id ? C.ink : C.dim};font-size:12px;font-family:Inter;font-weight:500">${l}</button>`).join('');
@@ -582,14 +609,14 @@ data: {"t":1732038292,"cpu":0.43}
     const radio = (mode, title, sub, danger) => `<button data-access="${mode}" class="flex items-center gap-3 w-full text-left" style="padding:10px 12px;background:${a.mode === mode ? C.bg3 : C.bg2};border:1px solid ${a.mode === mode ? (danger ? C.danger : C.mint) : C.line};border-radius:4px;cursor:pointer;color:${C.ink};font-family:Inter">
       <span style="width:14px;height:14px;border-radius:7px;flex-shrink:0;border:1.5px solid ${a.mode === mode ? (danger ? C.danger : C.mint) : C.faint};display:inline-flex;align-items:center;justify-content:center">${a.mode === mode ? `<span style="width:6px;height:6px;border-radius:3px;background:${danger ? C.danger : C.mint}"></span>` : ''}</span>
       <div class="flex-1"><div style="font-size:12.5px;font-weight:500;color:${danger && a.mode === mode ? C.danger : C.ink}">${title}</div><div style="font-size:11px;color:${C.dim};margin-top:2px">${sub}</div></div></button>`;
-    let networks = '';
+    let cidrs = '';
     if (a.mode === 'allowlist') {
-      networks = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed networks</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${a.networks.map((c) => `<div class="flex items-center gap-[10px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><span style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};flex:1">${c}</span></div>`).join('')}<div style="padding:8px;background:${C.bg1}">${btn('+ Add network', 'noop', 'ghost')}</div></div></div>`;
+      cidrs = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed CIDRs</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${a.cidrs.map((c) => `<div class="flex items-center gap-[10px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><span style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};flex:1">${c}</span></div>`).join('')}<div style="padding:8px;background:${C.bg1}">${btn('+ Add CIDR', 'noop', 'ghost')}</div></div></div>`;
     }
     return `<div class="grid gap-[14px]">
       <div style="font-size:12px;color:${C.dim};line-height:1.6">Control which machines can connect to this proxy. By default only loopback (127.0.0.1) is accepted — safer when the machine is on an untrusted network.</div>
-      <div class="grid gap-2">${radio('loopback', 'Loopback only', '127.0.0.1 and ::1 · recommended')}${radio('lan', 'Private LAN', 'RFC 1918 — 10/8 · 172.16/12 · 192.168/16')}${radio('allowlist', 'Explicit allowlist', 'Only the networks below')}${radio('open', 'Open — any source', 'Dangerous on untrusted networks', true)}</div>
-      ${networks}
+      <div class="grid gap-2">${radio('loopback', 'Loopback only', '127.0.0.1 and ::1 · recommended')}${radio('lan', 'Private LAN', 'RFC 1918 — 10/8 · 172.16/12 · 192.168/16')}${radio('allowlist', 'Explicit allowlist', 'Only the CIDRs below')}${radio('open', 'Open — any source', 'Dangerous on untrusted networks', true)}</div>
+      ${cidrs}
       <div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono';padding:8px 10px;background:${C.bg2};border-radius:3px;border:1px solid ${C.line}">listening on <span style="color:${C.mint}">0.0.0.0:8823</span> · <span style="color:${C.ink}">${a.mode}</span></div></div>`;
   }
 
@@ -654,9 +681,11 @@ data: {"t":1732038292,"cpu":0.43}
       state.density = b.dataset.density;
       $$('[data-density]').forEach((x) => {
         const on = x.dataset.density === state.density;
-        x.style.background = on ? C.mint + '22' : C.bg2;
+        x.style.background = on ? C.white : 'transparent';
         x.style.color = on ? C.mint : C.dim;
-        x.style.borderColor = on ? C.mint + '66' : C.line;
+        x.style.border = on ? `1px solid ${C.line}` : 'none';
+        x.style.fontWeight = on ? '600' : '500';
+        x.style.boxShadow = on ? '0 1px 2px rgba(0,0,0,.04)' : 'none';
       });
       renderList(); renderDetail();
     }));
@@ -685,6 +714,7 @@ data: {"t":1732038292,"cpu":0.43}
       case 'open-upstream': openSettings('upstream'); break;
       case 'open-access': openSettings('access'); break;
       case 'open-settings': openSettings('body'); break;
+      case 'toggle-theme': applyTheme(themeName === 'dark' ? 'light' : 'dark'); break;
       case 'close-modal': closeModal(); break;
       case 'close-detail': state.selId = null; renderList(); renderDetail(); break;
       case 'cert-generate':
@@ -702,9 +732,30 @@ data: {"t":1732038292,"cpu":0.43}
     }
   }
 
+  // ─── theme ───────────────────────────────────────────────
+  function themeIcon() {
+    // icon shows the mode you'll switch TO
+    return themeName === 'dark'
+      ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.3" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`
+      : `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.4 9.5A5.4 5.4 0 016.5 2.6 5.5 5.5 0 108.8 13.5a5.4 5.4 0 004.6-4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+  }
+  function applyTheme(name) {
+    themeName = name;
+    C = PALETTES[name];
+    METHOD_COLOR = METHODS_BY_THEME[name];
+    document.documentElement.dataset.theme = name;
+    try { localStorage.setItem('hsl-theme', name); } catch (e) {}
+    const t = $('#btn-theme'); if (t) t.innerHTML = themeIcon();
+    renderToolbar(); renderList(); renderDetail(); renderStatusBar();
+    if (modalKind === 'settings') renderSettings();
+    else if (modalKind === 'cert') renderCert();
+  }
+
   // ─── boot ────────────────────────────────────────────────
   function boot() {
     for (let i = 1; i <= 36; i++) state.rows.push(mockReq(i));
+    document.documentElement.dataset.theme = themeName;
+    $('#btn-theme').innerHTML = themeIcon();
     wire();
     renderToolbar();
     renderList();
