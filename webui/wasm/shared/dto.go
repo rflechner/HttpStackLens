@@ -173,6 +173,10 @@ type CertificatesInfosDto struct {
 	Error              string `json:"error,omitempty"`
 }
 
+type CertificateGenerateRequestDto struct {
+	Replace bool `json:"replace"`
+}
+
 // duplicate of AppConfig to avoid security issues
 
 type AppConfigDto struct {

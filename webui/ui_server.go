@@ -248,7 +248,11 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 		_, _ = w.Write(jsonData)
 	})
 
-	mux.HandleFunc("/certificates-infos", certificatesInfosHandler(config.DecryptHttps.CertManager, certManager.NewCertInstaller()))
+	certInstaller := certManager.NewCertInstaller()
+	mux.HandleFunc("/certificates-infos", certificatesInfosHandler(config.DecryptHttps.CertManager, certInstaller))
+	mux.HandleFunc("/api/certificates/ca/generate", certificateGenerateHandler(config.DecryptHttps.CertManager, certInstaller))
+	mux.HandleFunc("/api/certificates/ca/install", certificateInstallHandler(config.DecryptHttps.CertManager, certInstaller))
+	mux.HandleFunc("/api/certificates/ca/export", certificateExportHandler(config.DecryptHttps.CertManager))
 
 	access := configuration.NormalizeAccessControl(config.WebUi.AccessControl, config.WebUi.EnableRemoteConnection)
 	if accessControlSettings != nil {
@@ -418,6 +422,120 @@ func certificatesInfosHandler(certConfig configuration.CertManagerConfig, instal
 		dto := certificatesInfosDto(certConfig, installer)
 		writeJSON(w, dto)
 	}
+}
+
+func certificateGenerateHandler(certConfig configuration.CertManagerConfig, installer certManager.CertInstaller) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		replace, err := readCertificateGenerateRequest(r)
+		if err != nil {
+			http.Error(w, "invalid certificate generation request", http.StatusBadRequest)
+			return
+		}
+		if err := validateCAConfig(certConfig); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !replace && localFileExists(certConfig.CaCertFile) && localFileExists(certConfig.CaKeyFile) {
+			http.Error(w, "CA already exists; set replace=true to regenerate it", http.StatusConflict)
+			return
+		}
+		if err := certManager.GenerateCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+			log.Printf("Error generating local CA: %v", err)
+			http.Error(w, "could not generate CA", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, certificatesInfosDto(certConfig, installer))
+	}
+}
+
+func certificateInstallHandler(certConfig configuration.CertManagerConfig, installer certManager.CertInstaller) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := validateCAConfig(certConfig); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if installer == nil || !installer.IsSupported() {
+			http.Error(w, "CA installation is not supported on this operating system", http.StatusServiceUnavailable)
+			return
+		}
+		if _, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+			http.Error(w, "CA certificate/key could not be loaded", http.StatusBadRequest)
+			return
+		}
+		if err := installer.InstallCACert(certConfig.CaCertFile); err != nil {
+			log.Printf("Error installing local CA: %v", err)
+			http.Error(w, "could not install CA", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, certificatesInfosDto(certConfig, installer))
+	}
+}
+
+func certificateExportHandler(certConfig configuration.CertManagerConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := validateCAConfig(certConfig); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+			http.Error(w, "CA certificate/key could not be loaded", http.StatusNotFound)
+			return
+		}
+		data, err := os.ReadFile(certConfig.CaCertFile)
+		if err != nil {
+			log.Printf("Error exporting local CA: %v", err)
+			http.Error(w, "could not export CA", http.StatusInternalServerError)
+			return
+		}
+		name := filepath.Base(certConfig.CaCertFile)
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, strings.ReplaceAll(name, `"`, "")))
+		_, _ = w.Write(data)
+	}
+}
+
+func readCertificateGenerateRequest(r *http.Request) (bool, error) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return false, err
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return false, nil
+	}
+	var dto shared.CertificateGenerateRequestDto
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&dto); err != nil {
+		return false, err
+	}
+	return dto.Replace, nil
+}
+
+func validateCAConfig(certConfig configuration.CertManagerConfig) error {
+	if certConfig.CaCertFile == "" || certConfig.CaKeyFile == "" {
+		return errors.New("CA certificate and key files must be configured")
+	}
+	return nil
+}
+
+func localFileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func certificatesInfosDto(certConfig configuration.CertManagerConfig, installer certManager.CertInstaller) shared.CertificatesInfosDto {

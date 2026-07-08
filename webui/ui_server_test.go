@@ -31,6 +31,24 @@ func (f fakeCertInstaller) IsCACertInstalled(string) (bool, error) {
 	return f.installed, f.err
 }
 
+type recordingCertInstaller struct {
+	supported     bool
+	installed     bool
+	installErr    error
+	installedPath string
+}
+
+func (f *recordingCertInstaller) InstallCACert(path string) error {
+	f.installedPath = path
+	f.installed = f.installErr == nil
+	return f.installErr
+}
+func (f *recordingCertInstaller) InstallDomainCert(string) error { return nil }
+func (f *recordingCertInstaller) IsSupported() bool              { return f.supported }
+func (f *recordingCertInstaller) IsCACertInstalled(string) (bool, error) {
+	return f.installed, nil
+}
+
 func TestRequestDetailDtoIncludesMetadataAndHeaders(t *testing.T) {
 	createdAt := time.Date(2026, 7, 5, 12, 30, 15, 123, time.FixedZone("test", 2*60*60))
 	exchange := storage.CapturedExchange{
@@ -490,6 +508,207 @@ func TestCertificatesInfosHandlerRejectsNonGet(t *testing.T) {
 	}
 	if got := rr.Header().Get("Allow"); got != http.MethodGet {
 		t.Fatalf("Allow = %q, want GET", got)
+	}
+}
+
+func TestCertificateGenerateHandlerCreatesMissingCA(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "ca.crt")
+	keyFile := filepath.Join(dir, "ca.key")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/certificates/ca/generate", nil)
+	rr := httptest.NewRecorder()
+	certificateGenerateHandler(configuration.CertManagerConfig{
+		CaCertFile: certFile,
+		CaKeyFile:  keyFile,
+	}, fakeCertInstaller{}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if _, err := os.Stat(certFile); err != nil {
+		t.Fatalf("generated cert missing: %v", err)
+	}
+	if _, err := os.Stat(keyFile); err != nil {
+		t.Fatalf("generated key missing: %v", err)
+	}
+	var got shared.CertificatesInfosDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Available || got.Error != "" {
+		t.Fatalf("generated CA status = %+v, want available without error", got)
+	}
+}
+
+func TestCertificateGenerateHandlerRejectsExistingCAWithoutReplace(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "ca.crt")
+	keyFile := filepath.Join(dir, "ca.key")
+	if err := certManager.GenerateCA(certFile, keyFile); err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/certificates/ca/generate", nil)
+	rr := httptest.NewRecorder()
+	certificateGenerateHandler(configuration.CertManagerConfig{
+		CaCertFile: certFile,
+		CaKeyFile:  keyFile,
+	}, fakeCertInstaller{}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusConflict, rr.Body.String())
+	}
+}
+
+func TestCertificateGenerateHandlerReplacesExistingCAWhenRequested(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "ca.crt")
+	keyFile := filepath.Join(dir, "ca.key")
+	if err := certManager.GenerateCA(certFile, keyFile); err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+	before, _, err := certManager.LoadCA(certFile, keyFile)
+	if err != nil {
+		t.Fatalf("LoadCA before replace: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/certificates/ca/generate", strings.NewReader(`{"replace":true}`))
+	rr := httptest.NewRecorder()
+	certificateGenerateHandler(configuration.CertManagerConfig{
+		CaCertFile: certFile,
+		CaKeyFile:  keyFile,
+	}, fakeCertInstaller{}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	after, _, err := certManager.LoadCA(certFile, keyFile)
+	if err != nil {
+		t.Fatalf("LoadCA after replace: %v", err)
+	}
+	if before.NotBefore.Equal(after.NotBefore) && before.SerialNumber.Cmp(after.SerialNumber) == 0 && bytes.Equal(before.Raw, after.Raw) {
+		t.Fatalf("CA was not replaced")
+	}
+}
+
+func TestCertificateInstallHandlerInstallsExistingCA(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "ca.crt")
+	keyFile := filepath.Join(dir, "ca.key")
+	if err := certManager.GenerateCA(certFile, keyFile); err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+	installer := &recordingCertInstaller{supported: true}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/certificates/ca/install", nil)
+	rr := httptest.NewRecorder()
+	certificateInstallHandler(configuration.CertManagerConfig{
+		CaCertFile: certFile,
+		CaKeyFile:  keyFile,
+	}, installer).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if installer.installedPath != certFile {
+		t.Fatalf("installed path = %q, want %q", installer.installedPath, certFile)
+	}
+	var got shared.CertificatesInfosDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Installed {
+		t.Fatalf("Installed = false, want true: %+v", got)
+	}
+}
+
+func TestCertificateInstallHandlerRejectsUnsupportedInstaller(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/certificates/ca/install", nil)
+	rr := httptest.NewRecorder()
+	certificateInstallHandler(configuration.CertManagerConfig{
+		CaCertFile: "ca.crt",
+		CaKeyFile:  "ca.key",
+	}, fakeCertInstaller{}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestCertificateExportHandlerReturnsPEM(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "ca.crt")
+	keyFile := filepath.Join(dir, "ca.key")
+	if err := certManager.GenerateCA(certFile, keyFile); err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/certificates/ca/export", nil)
+	rr := httptest.NewRecorder()
+	certificateExportHandler(configuration.CertManagerConfig{
+		CaCertFile: certFile,
+		CaKeyFile:  keyFile,
+	}).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/x-pem-file" {
+		t.Fatalf("Content-Type = %q, want application/x-pem-file", got)
+	}
+	if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, "ca.crt") {
+		t.Fatalf("Content-Disposition = %q, want attachment with ca.crt", got)
+	}
+	if !strings.Contains(rr.Body.String(), "BEGIN CERTIFICATE") {
+		t.Fatalf("export body does not look like PEM: %q", rr.Body.String())
+	}
+}
+
+func TestCertificateActionHandlersRejectWrongMethods(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		method  string
+		path    string
+		allow   string
+	}{
+		{
+			name:    "generate",
+			handler: certificateGenerateHandler(configuration.CertManagerConfig{}, fakeCertInstaller{}),
+			method:  http.MethodGet,
+			path:    "/api/certificates/ca/generate",
+			allow:   http.MethodPost,
+		},
+		{
+			name:    "install",
+			handler: certificateInstallHandler(configuration.CertManagerConfig{}, fakeCertInstaller{}),
+			method:  http.MethodGet,
+			path:    "/api/certificates/ca/install",
+			allow:   http.MethodPost,
+		},
+		{
+			name:    "export",
+			handler: certificateExportHandler(configuration.CertManagerConfig{}),
+			method:  http.MethodPost,
+			path:    "/api/certificates/ca/export",
+			allow:   http.MethodGet,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			rr := httptest.NewRecorder()
+			tt.handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+			}
+			if got := rr.Header().Get("Allow"); got != tt.allow {
+				t.Fatalf("Allow = %q, want %q", got, tt.allow)
+			}
+		})
 	}
 }
 

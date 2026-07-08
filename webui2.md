@@ -234,7 +234,7 @@ server and WASM.
       fingerprint, validity dates, expired flag, install support, installed
       status, and load/check errors; macOS and Windows installers expose trust
       store checks through `CertInstaller`.
-- [ ] B6.2 Generate / (re)install / export the CA via `certManager` (install logic
+- [x] B6.2 Generate / (re)install / export the CA via `certManager` (install logic
       exists: `cert_install_*.go`) exposed over HTTP.
 - [ ] B6.3 Hot decryption toggle (insert/remove `HttpsInterceptor` from the
       pipeline). **The trickiest** — currently fixed at startup in `main.go`.
