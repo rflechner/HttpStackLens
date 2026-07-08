@@ -242,11 +242,11 @@ server and WASM.
       mode while existing tunnels keep their startup mode. Updates persist
       `decrypt_https.enabled` back to `config.yaml`.
 
-### EPIC B7 — Replay / Edit & send
+### EPIC B7 (deferred) — Replay / Edit & send
 - [ ] B7.1 Replay endpoint for a remembered request (re-emit through the pipeline).
 - [ ] B7.2 "Edit & send": accept a modified body/headers. (Phase 2.)
 
-### EPIC B8 — Metrics
+### EPIC B8 (deferred) — Metrics
 - [ ] B8.1 In/out byte counters (aggregated ~1 Hz) → `throughput` event.
 - [ ] B8.2 (Optional) errors/avg already computable on the front from the stream.
 
