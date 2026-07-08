@@ -4,8 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>HttpStackLens — light / dark</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -87,6 +85,13 @@
 </style>
 </head>
 <body>
+
+<!-- Page loader -->
+<div id="loader">
+  <div class="loader-spinner"></div>
+  <span class="text-dim text-xs">Loading WASM…</span>
+</div>
+
 <div class="flex flex-col h-screen w-screen overflow-hidden bg-bg0">
 
   <!-- title bar -->
@@ -207,5 +212,25 @@
 <div id="modal-root" style="position:fixed;inset:0;pointer-events:none;z-index:50"></div>
 
 <script src="mockup.js"></script>
+<script src="js/wasm_exec.js"></script>
+
+<script>
+  // ── Clear ───────────────────────────────────────────────────────────
+  function clearRequests() {
+    document.getElementById('request-rows').innerHTML = '';
+    document.getElementById('request-count').textContent = '0 requests';
+    if (window.wasmClear) window.wasmClear();
+  }
+
+  // ── WASM ────────────────────────────────────────────────────────────
+  const go = new Go();
+  WebAssembly.instantiateStreaming(fetch('wasm/app.wasm'), go.importObject)
+          .then(result => {
+            go.run(result.instance);
+            const loader = document.getElementById('loader');
+            loader.hidden = true;
+          });
+</script>
+
 </body>
 </html>

@@ -268,8 +268,8 @@ func dismissLoader() {
 }
 
 func main() {
-	initTheme()
-	initTabs()
+	//initTheme()
+	//initTabs()
 
 	js.Global().Set("DisplayConfig", js.FuncOf(DisplayConfig))
 	js.Global().Set("DisplayCertificates", js.FuncOf(DisplayCertificates))
