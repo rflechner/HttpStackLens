@@ -108,6 +108,53 @@ func TestPersistDecryptHttpsCaptureRulesReturnsErrorWhenMissing(t *testing.T) {
 	}
 }
 
+func TestPersistDecryptHttpsEnabledUpdatesExistingValue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	input := `proxy:
+  port: 3128
+
+decrypt_https:
+  enabled: false # keep toggle comment
+  cert_manager:
+    ca_cert_file: "ca.crt"
+  mime_types:
+    - name: "text/*"
+`
+	if err := os.WriteFile(path, []byte(input), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := persistDecryptHttpsEnabled(path, true); err != nil {
+		t.Fatalf("persistDecryptHttpsEnabled: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"  enabled: true # keep toggle comment",
+		"  cert_manager:\n    ca_cert_file: \"ca.crt\"",
+		"    - name: \"text/*\"",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("updated config missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestPersistDecryptHttpsEnabledReturnsErrorWhenMissing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("decrypt_https:\n  cert_manager: {}\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := persistDecryptHttpsEnabled(path, true); err == nil {
+		t.Fatal("expected missing decrypt_https.enabled error")
+	}
+}
+
 func TestPersistAccessControlSettingsReplacesLegacyRemoteFlags(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	input := `proxy:

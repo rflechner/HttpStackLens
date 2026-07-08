@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"httpStackLens/certManager"
 	"httpStackLens/configuration"
 	"httpStackLens/logging"
 	"httpStackLens/proxy/middlewares"
@@ -54,10 +53,9 @@ func main() {
 	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
 	upstreamSettings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettingsFromProxyConfig(config.Proxy))
 	accessControlSettings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettingsFromConfig(config))
-
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, upstreamSettings, accessControlSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules, configuration.PersistUpstreamSettings, configuration.PersistAccessControlSettings)
-
-	var certStore *certManager.CertStore
+	basePipeline := appContext.pipeline
+	activePipeline := middlewares.NewSwitchableMiddleware(basePipeline)
+	appContext.pipeline = activePipeline
 
 	// Optional capture file. When decrypting, the interceptor stores clear-text
 	// requests/responses; otherwise only top-level HTTP requests and CONNECTs.
@@ -66,49 +64,27 @@ func main() {
 		defer func() { _ = captureWriter.Close() }()
 	}
 
+	var decryptRuntime *decryptHttpsRuntime
+	updateDecryptHttps := func(enabled bool) (configuration.DecryptHttpsConfig, error) {
+		if decryptRuntime == nil {
+			return decryptHttpsSettings.Get(), fmt.Errorf("HTTPS decryption runtime is not ready")
+		}
+		return decryptRuntime.SetEnabled(enabled)
+	}
+
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, upstreamSettings, accessControlSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules, configuration.PersistUpstreamSettings, configuration.PersistAccessControlSettings, updateDecryptHttps)
+
 	// Streams request/response events to the Web UI over SSE. Created before the
 	// pipeline so the HTTPS interceptor can surface the decrypted requests and
 	// responses it sees (they are otherwise only written to the capture file).
 	logger := logging.CreateWebUiEventLogger(hub)
 
-	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
-	// certificates we sign on the fly are accepted. A failure here is not fatal:
-	// the user can still install the CA manually.
-	if config.DecryptHttps.Enabled {
-		caCert, caKey, err := certManager.GetHttpsDebugRootCertificates(config)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// Issues and caches the per-domain certificates used to decrypt HTTPS.
-		// Each new domain cert is also added to the user's personal store (see
-		// NewCertStoreFromConfig).
-		certStore = certManager.NewCertStoreFromConfig(caCert, caKey, config)
-
-		installer := certManager.NewCertInstaller()
-		if !installer.IsSupported() {
-			slog.Warn("Automatic certificate installation is not supported on this OS; install the CA manually",
-				"caCertFile", config.DecryptHttps.CertManager.CaCertFile)
-		} else if err := installer.InstallCACert(config.DecryptHttps.CertManager.CaCertFile); err != nil {
-			slog.Warn("Failed to install the CA certificate in the OS trust store; install it manually",
-				"caCertFile", config.DecryptHttps.CertManager.CaCertFile, "error", err)
-		}
-
-		// Insert the man-in-the-middle in front of the tunnel so CONNECT requests
-		// are decrypted instead of blindly piped.
-		appContext.pipeline = &middlewares.HttpsInterceptor{
-			CertStore:  certStore,
-			Next:       appContext.pipeline,
-			Capture:    captureWriter,
-			Limits:     decryptHttpsSettings,
-			Events:     logger,
-			Store:      requestStore,
-			CaptureCtl: captureCtl,
-		}
-		slog.Info("HTTPS decryption enabled")
+	decryptRuntime = newDecryptHttpsRuntime(config, basePipeline, activePipeline, decryptHttpsSettings, captureWriter, logger, requestStore, captureCtl, configuration.PersistDecryptHttpsEnabled)
+	if err := decryptRuntime.ApplyInitial(); err != nil {
+		log.Fatal(err)
 	}
 
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, accessControlSettings, config.DecryptHttps.Enabled, certStore, captureWriter, requestStore, captureCtl)
+	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, accessControlSettings, captureWriter, requestStore, captureCtl)
 
 	go proxyServer.Run()
 

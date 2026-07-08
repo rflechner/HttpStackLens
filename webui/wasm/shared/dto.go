@@ -215,6 +215,10 @@ type BodyCaptureSettingsDto struct {
 	MimeTypes       []MimeTypeRuleDto `json:"mime_types"`
 }
 
+type DecryptHttpsToggleSettingsDto struct {
+	Enabled bool `json:"enabled"`
+}
+
 // UpstreamSettingsDto is the read/write contract for the outbound (corporate)
 // proxy exposed by GET/PUT /api/settings/upstream (B5.2). Changes are persisted
 // back to config.yaml; hot re-injection into the running pipeline is out of

@@ -20,6 +20,12 @@ func PersistDecryptHttpsCaptureRules(config DecryptHttpsConfig) error {
 	return persistDecryptHttpsCaptureRules(defaultConfigPath, config)
 }
 
+// PersistDecryptHttpsEnabled updates decrypt_https.enabled in config.yaml while
+// preserving certificate and body capture settings.
+func PersistDecryptHttpsEnabled(enabled bool) error {
+	return persistDecryptHttpsEnabled(defaultConfigPath, enabled)
+}
+
 // PersistUpstreamSettings writes the upstream proxy settings (output_proxy_uri,
 // add_windows_authentication_to_output_proxy, no_proxy) back into the proxy
 // section of config.yaml so Web UI edits survive the next application start.
@@ -142,6 +148,65 @@ func persistDecryptHttpsCaptureRules(path string, config DecryptHttpsConfig) err
 	out = append(out, lines[sectionEnd:]...)
 
 	return os.WriteFile(path, []byte(strings.Join(out, "")), 0o644)
+}
+
+func persistDecryptHttpsEnabled(path string, enabled bool) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.SplitAfter(string(data), "\n")
+	inDecryptHttps := false
+	sectionIndent := 0
+	value := "false"
+	if enabled {
+		value = "true"
+	}
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		indent := leadingSpaces(line)
+		if inDecryptHttps && indent <= sectionIndent {
+			break
+		}
+		if !inDecryptHttps {
+			if trimmed == "decrypt_https:" {
+				inDecryptHttps = true
+				sectionIndent = indent
+			}
+			continue
+		}
+		if indent != sectionIndent+2 {
+			continue
+		}
+
+		key, rest, ok := strings.Cut(strings.TrimLeft(line, " "), ":")
+		if !ok || strings.TrimSpace(key) != "enabled" {
+			continue
+		}
+
+		comment := ""
+		if idx := strings.Index(rest, "#"); idx >= 0 {
+			comment = strings.TrimRight(rest[idx:], "\r\n")
+		}
+		lineEnd := ""
+		if strings.HasSuffix(line, "\n") {
+			lineEnd = "\n"
+		}
+		prefix := line[:indent]
+		if comment != "" {
+			lines[i] = fmt.Sprintf("%senabled: %s %s%s", prefix, value, comment, lineEnd)
+		} else {
+			lines[i] = fmt.Sprintf("%senabled: %s%s", prefix, value, lineEnd)
+		}
+		return os.WriteFile(path, []byte(strings.Join(lines, "")), 0o644)
+	}
+
+	return fmt.Errorf("configuration: decrypt_https.enabled not found in %s", path)
 }
 
 func shouldRemoveCaptureRuleLine(lines []string, i, parentIndent int) bool {

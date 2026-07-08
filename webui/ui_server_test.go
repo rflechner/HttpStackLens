@@ -808,6 +808,73 @@ func TestBodyCaptureSettingsHandlerRejectsInvalidRules(t *testing.T) {
 	}
 }
 
+func TestDecryptHttpsToggleHandlerReturnsSettings(t *testing.T) {
+	settings := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{Enabled: true})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/decrypt-https", nil)
+	rr := httptest.NewRecorder()
+	decryptHttpsToggleHandler(settings, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var got shared.DecryptHttpsToggleSettingsDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Enabled {
+		t.Fatalf("Enabled = false, want true")
+	}
+}
+
+func TestDecryptHttpsToggleHandlerUpdatesRuntime(t *testing.T) {
+	settings := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{})
+	called := false
+	update := func(enabled bool) (configuration.DecryptHttpsConfig, error) {
+		called = true
+		return settings.UpdateEnabled(enabled), nil
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/decrypt-https", strings.NewReader(`{"enabled":true}`))
+	rr := httptest.NewRecorder()
+	decryptHttpsToggleHandler(settings, update).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !called {
+		t.Fatal("update callback was not called")
+	}
+	if !settings.Get().Enabled {
+		t.Fatal("runtime setting was not updated")
+	}
+	var got shared.DecryptHttpsToggleSettingsDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.Enabled {
+		t.Fatalf("response Enabled = false, want true")
+	}
+}
+
+func TestDecryptHttpsToggleHandlerDoesNotUpdateRuntimeWhenCallbackFails(t *testing.T) {
+	settings := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{})
+	update := func(enabled bool) (configuration.DecryptHttpsConfig, error) {
+		return settings.Get(), errors.New("CA unavailable")
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/decrypt-https", strings.NewReader(`{"enabled":true}`))
+	rr := httptest.NewRecorder()
+	decryptHttpsToggleHandler(settings, update).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	if settings.Get().Enabled {
+		t.Fatal("runtime changed despite callback failure")
+	}
+}
+
 func TestAccessControlSettingsHandlerReturnsSettings(t *testing.T) {
 	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
 		Proxy: configuration.AccessControlConfig{Mode: configuration.AccessControlLan},

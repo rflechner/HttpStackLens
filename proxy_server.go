@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"httpStackLens/certManager"
 	"httpStackLens/configuration"
 	"httpStackLens/http"
 	"httpStackLens/http/models"
@@ -20,9 +19,6 @@ type ProxyServer struct {
 	mu          sync.Mutex
 	closed      bool
 	EventLogger ProxyEventLogger
-	// certStore issues per-domain certificates for HTTPS interception. It is
-	// used by the decryption path (when decrypt_https.enabled is true).
-	certStore *certManager.CertStore
 	// capture, when non-nil, persists top-level requests (HTTP and CONNECT) to
 	// the capture file. Decrypted bodies are recorded by the HTTPS interceptor.
 	capture storage.CaptureSessionWriter
@@ -30,7 +26,6 @@ type ProxyServer struct {
 	// on-demand inspection by the Web UI.
 	store         *storage.RequestStore
 	captureCtl    *storage.CaptureController
-	decryptHttps  bool
 	accessControl *configuration.AccessControlSettingsStore
 }
 
@@ -39,7 +34,11 @@ type ProxyEventLogger interface {
 	LogRequest(id int, correlationID string, request models.ProxyRequest)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, accessControl *configuration.AccessControlSettingsStore, decryptHttps bool, certStore *certManager.CertStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) ProxyServer {
+type pipelineSnapshotter interface {
+	Snapshot() (middlewares.Middleware, bool)
+}
+
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, accessControl *configuration.AccessControlSettingsStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) ProxyServer {
 	log.Printf("Socket server started on port %v\n", appContext.port)
 	access := configuration.NormalizeAccessControl(config.AccessControl, config.EnableRemoteConnection)
 	if accessControl != nil {
@@ -62,11 +61,9 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 		listener:      listener,
 		appContext:    appContext,
 		EventLogger:   eventLogger,
-		certStore:     certStore,
 		capture:       capture,
 		store:         store,
 		captureCtl:    captureCtl,
-		decryptHttps:  decryptHttps,
 		accessControl: accessControl,
 	}
 }
@@ -132,35 +129,44 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 			log.Printf("capture: failed to generate correlation id: %v\n", err)
 		}
 
+		pipelineToUse, decryptingHttps := snapshotPipeline(pipeline)
+
 		// In decryption mode the CONNECT tunnel itself is not surfaced to the UI:
 		// the HTTPS interceptor emits the decrypted requests/responses instead, so
 		// showing the opaque CONNECT would only add a permanently-pending row.
-		if s.isCapturing() && !(s.decryptHttps && request.HttpRequestLine.IsConnect()) {
+		if s.isCapturing() && !(decryptingHttps && request.HttpRequestLine.IsConnect()) {
 			s.EventLogger.LogRequest(requestId, correlationID.String(), request)
 		}
-		s.recordTopLevelRequest(correlationID, request)
+		s.recordTopLevelRequest(correlationID, request, decryptingHttps)
 
 		// Pass the buffered stream (not the raw connection) down the pipeline so
 		// any request body bytes already pulled into the read buffer alongside
 		// the headers are not lost when the pipeline forwards the connection.
-		err = pipeline.HandleProxyRequest(stream, request)
+		err = pipelineToUse.HandleProxyRequest(stream, request)
 		if err != nil {
 			fmt.Printf("Error handling request from %s: %v\n", browser.RemoteAddr().String(), err)
 		}
 	}
 }
 
+func snapshotPipeline(pipeline middlewares.Middleware) (middlewares.Middleware, bool) {
+	if snapshotter, ok := pipeline.(pipelineSnapshotter); ok {
+		return snapshotter.Snapshot()
+	}
+	return pipeline, false
+}
+
 // recordTopLevelRequest persists the proxied request line + headers to the
 // capture file. In decryption mode the CONNECT tunnel is skipped here because
 // the HTTPS interceptor records the decrypted requests/responses instead.
-func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest) {
+func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest, decryptingHttps bool) {
 	if !s.isCapturing() {
 		return
 	}
 	if s.capture == nil && s.store == nil {
 		return
 	}
-	if s.decryptHttps && request.HttpRequestLine.IsConnect() {
+	if decryptingHttps && request.HttpRequestLine.IsConnect() {
 		return
 	}
 	rec := proxyRequestToRecord(correlationID, request)

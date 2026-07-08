@@ -34,6 +34,7 @@ type storageEnabledPersister func(bool) error
 type bodyCaptureSettingsPersister func(configuration.DecryptHttpsConfig) error
 type upstreamSettingsPersister func(configuration.UpstreamSettings) error
 type accessControlSettingsPersister func(configuration.AccessControlSettings) error
+type decryptHttpsToggleUpdater func(bool) (configuration.DecryptHttpsConfig, error)
 
 type Hub struct {
 	clients  map[chan string]struct{}
@@ -137,7 +138,7 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessControlSettings *configuration.AccessControlSettingsStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister, persistUpstreamSettings upstreamSettingsPersister, persistAccessControlSettings accessControlSettingsPersister) *Hub {
+func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessControlSettings *configuration.AccessControlSettingsStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister, persistUpstreamSettings upstreamSettingsPersister, persistAccessControlSettings accessControlSettingsPersister, updateDecryptHttps decryptHttpsToggleUpdater) *Hub {
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -226,6 +227,7 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
+	mux.HandleFunc("/api/settings/decrypt-https", decryptHttpsToggleHandler(decryptHttpsSettings, updateDecryptHttps))
 	mux.HandleFunc("/api/settings/upstream", upstreamSettingsHandler(upstreamSettings, persistUpstreamSettings))
 	mux.HandleFunc("/api/settings/access-control", accessControlSettingsHandler(accessControlSettings, persistAccessControlSettings))
 
@@ -626,6 +628,42 @@ func bodyCaptureSettingsHandler(settings *configuration.DecryptHttpsConfigStore,
 	}
 }
 
+func decryptHttpsToggleHandler(settings *configuration.DecryptHttpsConfigStore, update decryptHttpsToggleUpdater) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if settings == nil {
+			http.Error(w, "HTTPS decryption settings are unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, decryptHttpsToggleSettingsDto(settings.Get()))
+		case http.MethodPut:
+			if update == nil {
+				http.Error(w, "HTTPS decryption toggle is unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			var dto shared.DecryptHttpsToggleSettingsDto
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&dto); err != nil {
+				http.Error(w, "invalid HTTPS decryption settings", http.StatusBadRequest)
+				return
+			}
+			updated, err := update(dto.Enabled)
+			if err != nil {
+				log.Printf("Error updating HTTPS decryption setting: %v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, decryptHttpsToggleSettingsDto(updated))
+		default:
+			w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
 func accessControlSettingsHandler(settings *configuration.AccessControlSettingsStore, persist accessControlSettingsPersister) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if settings == nil {
@@ -782,6 +820,10 @@ func bodyCaptureSettingsDto(config configuration.DecryptHttpsConfig) shared.Body
 		DefaultMaxBytes: config.DefaultMaxBytes,
 		MimeTypes:       mimeTypeRulesToDto(config.MimeTypes),
 	}
+}
+
+func decryptHttpsToggleSettingsDto(config configuration.DecryptHttpsConfig) shared.DecryptHttpsToggleSettingsDto {
+	return shared.DecryptHttpsToggleSettingsDto{Enabled: config.Enabled}
 }
 
 func mimeTypeRulesToDto(rules []configuration.MimeTypeRule) []shared.MimeTypeRuleDto {

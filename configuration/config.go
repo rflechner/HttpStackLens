@@ -70,6 +70,13 @@ func (s *DecryptHttpsConfigStore) UpdateCaptureRules(defaultMaxBytes *int64, rul
 	return cloneDecryptHttpsConfig(s.config)
 }
 
+func (s *DecryptHttpsConfigStore) UpdateEnabled(enabled bool) DecryptHttpsConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.Enabled = enabled
+	return cloneDecryptHttpsConfig(s.config)
+}
+
 func cloneDecryptHttpsConfig(config DecryptHttpsConfig) DecryptHttpsConfig {
 	config.DefaultMaxBytes = cloneInt64Ptr(config.DefaultMaxBytes)
 	config.MimeTypes = cloneMimeTypeRules(config.MimeTypes)

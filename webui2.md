@@ -236,8 +236,11 @@ server and WASM.
       store checks through `CertInstaller`.
 - [x] B6.2 Generate / (re)install / export the CA via `certManager` (install logic
       exists: `cert_install_*.go`) exposed over HTTP.
-- [ ] B6.3 Hot decryption toggle (insert/remove `HttpsInterceptor` from the
-      pipeline). **The trickiest** — currently fixed at startup in `main.go`.
+- [x] B6.3 Hot decryption toggle (insert/remove `HttpsInterceptor` from the
+      pipeline). Added `GET`/`PUT /api/settings/decrypt-https`, backed by a
+      switchable middleware pointer so new CONNECT requests use the current
+      mode while existing tunnels keep their startup mode. Updates persist
+      `decrypt_https.enabled` back to `config.yaml`.
 
 ### EPIC B7 — Replay / Edit & send
 - [ ] B7.1 Replay endpoint for a remembered request (re-emit through the pipeline).
@@ -312,9 +315,9 @@ server and WASM.
 
 ## 7. Watch-outs / risks
 
-- **Hot HTTPS toggle (B6.3)**: the pipeline is assembled once at startup in
-  `main.go`. Making it reconfigurable is structural — consider an indirected
-  pipeline (atomic pointer) rather than fragile hot re-assembly.
+- **Hot HTTPS toggle (B6.3)**: implemented with an indirected pipeline
+  (`SwitchableMiddleware`). Existing tunnels keep their current mode; new
+  CONNECT requests use the latest setting.
 - **Memory**: keeping headers+body for the last N requests for on-demand detail has
   a cost; reuse the `DecryptHttpsConfig` size cap and bound N.
 - **Security**: the modals expose the CA/private key, the "Open" access mode, and
