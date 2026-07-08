@@ -156,7 +156,8 @@
     if (!rows.length) {
       list.innerHTML = `<div class="text-center" style="padding:40px;color:${C.faint};font-size:12px">no requests match <span style="color:${C.ink};font-family:'JetBrains Mono'">${esc(state.filter)}</span></div>`;
     } else {
-      list.innerHTML = rows.map(rowHTML).join('');
+      // Newest first: state.rows stays chronological, the list renders reversed.
+      list.innerHTML = rows.slice().reverse().map(rowHTML).join('');
     }
     renderWaterfall();
     renderSidebarCounts();
@@ -166,14 +167,18 @@
   function appendRow(r) {
     const list = $('#list');
     const rows = filteredRows();
-    // Only append if it passes the current filter and list isn't in empty-state.
+    // Only insert if it passes the current filter and list isn't in empty-state.
     if (!rows.some((x) => x.id === r.id)) return;
-    const wasBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 30;
     if ($('#list .text-center')) { renderList(); return; }
-    list.insertAdjacentHTML('beforeend', rowHTML(r));
-    const el = list.lastElementChild;
+    // Newest first: prepend at the top of the list.
+    const atTop = list.scrollTop <= 30;
+    list.insertAdjacentHTML('afterbegin', rowHTML(r));
+    const el = list.firstElementChild;
     el.classList.add('row-new');
-    if (wasBottom) list.scrollTop = list.scrollHeight;
+    // Keep the viewport stable: follow the top when already there, otherwise
+    // offset the scroll so existing rows don't jump under the new one.
+    if (atTop) list.scrollTop = 0;
+    else list.scrollTop += el.offsetHeight;
     renderWaterfall(); renderSidebarCounts(); renderStatusBar();
   }
 
