@@ -160,20 +160,26 @@ func DisplayCertificates(this js.Value, args []js.Value) any {
 
 // ── SSE ───────────────────────────────────────────────────────────────────
 
+// setSSEStatus updates the connection indicator when present. The v2 (mockup)
+// UI has no #sse-status element, so this is a no-op there rather than a crash.
+func setSSEStatus(html string) {
+	el := js.Global().Get("document").Call("getElementById", "sse-status")
+	if el.IsNull() || el.IsUndefined() {
+		return
+	}
+	el.Set("innerHTML", html)
+}
+
 func (m *StateModel) connectSSE() {
 	es := js.Global().Get("EventSource").New("/events")
 
 	es.Set("onopen", js.FuncOf(func(this js.Value, args []js.Value) any {
-		js.Global().Get("document").
-			Call("getElementById", "sse-status").
-			Set("innerHTML", "🟢 Connected to server stream")
+		setSSEStatus("🟢 Connected to server stream")
 		return nil
 	}))
 
 	es.Set("onerror", js.FuncOf(func(this js.Value, args []js.Value) any {
-		js.Global().Get("document").
-			Call("getElementById", "sse-status").
-			Set("innerHTML", "🔴 Disconnected from server stream")
+		setSSEStatus("🔴 Disconnected from server stream")
 		return nil
 	}))
 
@@ -195,6 +201,36 @@ func (m *StateModel) connectSSE() {
 		m.Lines = append(m.Lines, req)
 		m.RequestCount++
 		m.appendRow(req)
+		return nil
+	}))
+
+	es.Call("addEventListener", "response_occurred", js.FuncOf(func(this js.Value, args []js.Value) any {
+		data := args[0].Get("data").String()
+		if data == "" {
+			return nil
+		}
+		var resp shared.ResponseEventDto
+		if err := json.Unmarshal([]byte(data), &resp); err != nil {
+			consoleLog("Error parsing response JSON: " + err.Error())
+			return nil
+		}
+		m.updateRow(resp)
+		return nil
+	}))
+
+	es.Call("addEventListener", "capture_state", js.FuncOf(func(this js.Value, args []js.Value) any {
+		data := args[0].Get("data").String()
+		if data == "" {
+			return nil
+		}
+		var st shared.CaptureStateDto
+		if err := json.Unmarshal([]byte(data), &st); err != nil {
+			return nil
+		}
+		callMockup("setCaptureState", map[string]any{
+			"capturing":  st.Capturing,
+			"bufferSize": st.BufferSize,
+		})
 		return nil
 	}))
 }
@@ -228,8 +264,15 @@ func methodIcon(method string) string {
 }
 
 func (m *StateModel) appendRow(line shared.RequestEventDto) {
+	if m.appendMockupRow(line) {
+		return
+	}
+
 	doc := js.Global().Get("document")
 	tbody := doc.Call("getElementById", "request-rows")
+	if tbody.IsNull() || tbody.IsUndefined() {
+		return
+	}
 
 	tr := doc.Call("createElement", "tr")
 	tr.Set("className", "border-b border-border-subtle hover:bg-surface-alt/50 transition-colors "+methodClass(line.Method))
@@ -260,6 +303,195 @@ func (m *StateModel) appendRow(line shared.RequestEventDto) {
 		fmt.Sprintf("%d requests", m.RequestCount))
 }
 
+// appendMockupRow pushes a new request into the v2 (mockup) UI. It returns
+// false when that UI isn't present (e.g. the legacy index.html table), so the
+// caller can fall back to the plain DOM table.
+func (m *StateModel) appendMockupRow(line shared.RequestEventDto) bool {
+	return callMockup("appendRow", map[string]any{
+		"id":            line.ID,
+		"method":        line.Method,
+		"scheme":        line.Scheme,
+		"host":          line.Host,
+		"path":          line.Path,
+		"version":       line.Version,
+		"tls":           line.Tls,
+		"decrypted":     line.Decrypted,
+		"correlationId": line.CorrelationID,
+	})
+}
+
+// updateRow completes an existing row when its response arrives.
+func (m *StateModel) updateRow(resp shared.ResponseEventDto) {
+	callMockup("updateRow", map[string]any{
+		"correlationId": resp.CorrelationID,
+		"status":        resp.Status,
+		"statusText":    resp.StatusText,
+		"mime":          resp.ContentType,
+		"size":          resp.Size,
+		"ms":            resp.DurationMs,
+		"stream":        resp.Stream,
+		"bodyAvailable": resp.BodyAvailable,
+		"bodySkipped":   resp.BodySkipped,
+	})
+}
+
+// callMockup invokes window.HttpStackLensMockup[method](args...) when the v2 UI
+// is loaded. Returns false when the API (or that method) isn't available.
+func callMockup(method string, args ...any) bool {
+	api := js.Global().Get("HttpStackLensMockup")
+	if api.IsUndefined() || api.IsNull() {
+		return false
+	}
+	fn := api.Get(method)
+	if fn.Type() != js.TypeFunction {
+		return false
+	}
+	fn.Invoke(args...)
+	return true
+}
+
+// ── Detail / body / capture bridges ─────────────────────────────────────────
+
+// registerBridges exposes the functions the JS render layer calls back into:
+// lazy detail/body fetches and capture control.
+func (m *StateModel) registerBridges() {
+	js.Global().Set("hslLoadDetail", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			m.loadDetail(args[0].String())
+		}
+		return nil
+	}))
+	js.Global().Set("hslLoadBody", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 2 {
+			m.loadBody(args[0].String(), args[1].String())
+		}
+		return nil
+	}))
+	js.Global().Set("hslCapture", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			capture(args[0].String())
+		}
+		return nil
+	}))
+}
+
+func headersToJS(headers []shared.HeaderDto) []any {
+	arr := make([]any, len(headers))
+	for i, h := range headers {
+		arr[i] = []any{h.Name, h.Value}
+	}
+	return arr
+}
+
+func detailToJS(d shared.RequestDetailDto) map[string]any {
+	out := map[string]any{"createdAt": d.CreatedAt}
+	if d.Request != nil {
+		out["request"] = map[string]any{
+			"method":        d.Request.Method,
+			"url":           d.Request.URL,
+			"httpVersion":   d.Request.HttpVersion,
+			"headers":       headersToJS(d.Request.Headers),
+			"bodyAvailable": d.Request.BodyAvailable,
+			"bodySkipped":   d.Request.BodySkipped,
+			"bodySize":      d.Request.BodySize,
+		}
+	}
+	if d.Response != nil {
+		out["response"] = map[string]any{
+			"status":        d.Response.Status,
+			"statusText":    d.Response.StatusText,
+			"httpVersion":   d.Response.HttpVersion,
+			"headers":       headersToJS(d.Response.Headers),
+			"bodyAvailable": d.Response.BodyAvailable,
+			"bodySkipped":   d.Response.BodySkipped,
+			"bodySize":      d.Response.BodySize,
+		}
+	}
+	if d.Timing != nil {
+		out["timing"] = map[string]any{
+			"dnsMs":      d.Timing.DnsMs,
+			"connectMs":  d.Timing.ConnectMs,
+			"tlsMs":      d.Timing.TlsMs,
+			"ttfbMs":     d.Timing.TtfbMs,
+			"downloadMs": d.Timing.DownloadMs,
+			"totalMs":    d.Timing.TotalMs,
+		}
+	}
+	return out
+}
+
+func (m *StateModel) loadDetail(correlationID string) {
+	if correlationID == "" {
+		return
+	}
+	fetchText("/api/requests/"+correlationID, js.FuncOf(func(this js.Value, args []js.Value) any {
+		var d shared.RequestDetailDto
+		if err := json.Unmarshal([]byte(args[0].String()), &d); err != nil {
+			callMockup("setDetail", correlationID, map[string]any{"error": "Could not load request detail."})
+			return nil
+		}
+		callMockup("setDetail", correlationID, detailToJS(d))
+		return nil
+	}))
+}
+
+func (m *StateModel) loadBody(correlationID, side string) {
+	if correlationID == "" {
+		callMockup("setBody", correlationID, side, map[string]any{"available": false, "error": "No correlation id."})
+		return
+	}
+	url := "/api/requests/" + correlationID + "/body?side=" + side
+	js.Global().Call("fetch", url).
+		Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+			res := args[0]
+			status := res.Get("status").Int()
+			if status == 413 { // body was captured-skipped
+				callMockup("setBody", correlationID, side, map[string]any{"available": false, "skipped": true})
+				return nil
+			}
+			if status < 200 || status >= 300 {
+				callMockup("setBody", correlationID, side, map[string]any{"available": false})
+				return nil
+			}
+			contentType := ""
+			if ct := res.Get("headers").Call("get", "content-type"); ct.Type() == js.TypeString {
+				contentType = ct.String()
+			}
+			res.Call("text").Call("then", js.FuncOf(func(this js.Value, targs []js.Value) any {
+				callMockup("setBody", correlationID, side, map[string]any{
+					"available":   true,
+					"text":        targs[0].String(),
+					"contentType": contentType,
+				})
+				return nil
+			}))
+			return nil
+		})).
+		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+			callMockup("setBody", correlationID, side, map[string]any{"available": false, "error": "Could not fetch body."})
+			return nil
+		}))
+}
+
+func capture(action string) {
+	var path string
+	switch action {
+	case "pause":
+		path = "/api/capture/pause"
+	case "resume":
+		path = "/api/capture/resume"
+	case "clear":
+		path = "/api/capture/clear"
+	default:
+		return
+	}
+	js.Global().Call("fetch", path, map[string]any{"method": "POST"}).
+		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+			consoleLog("capture " + action + " failed: " + args[0].String())
+			return nil
+		}))
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────
 
 func dismissLoader() {
@@ -275,6 +507,7 @@ func main() {
 	js.Global().Set("DisplayCertificates", js.FuncOf(DisplayCertificates))
 
 	model := &StateModel{}
+	model.registerBridges()
 	model.connectSSE()
 
 	dismissLoader()

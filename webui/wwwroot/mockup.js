@@ -37,126 +37,21 @@
     return C.dim;
   }
 
-  // ─── mock data ───────────────────────────────────────────
-  const HOSTS = [
-    ['api.github.com', 'https'], ['raw.githubusercontent.com', 'https'],
-    ['registry.npmjs.org', 'https'], ['auth.corp.local', 'https'],
-    ['metrics.internal', 'http'], ['cdn.jsdelivr.net', 'https'],
-    ['telemetry.ingest.sentry.io', 'https'], ['fonts.googleapis.com', 'https'],
-    ['s3.eu-west-3.amazonaws.com', 'https'], ['proxy-egress.corp.local', 'http'],
-  ];
-  const PATHS = {
-    'api.github.com': ['/repos/anthropics/claude-cli/pulls?state=open', '/user', '/repos/golang/go/issues/68412/comments', '/search/code?q=ReverseProxy'],
-    'raw.githubusercontent.com': ['/golang/go/master/src/net/http/server.go', '/anthropics/anthropic-sdk-go/main/client.go'],
-    'registry.npmjs.org': ['/react', '/vite', '/@tanstack/react-query', '/esbuild'],
-    'auth.corp.local': ['/oauth2/token', '/.well-known/jwks.json', '/me'],
-    'metrics.internal': ['/v1/ingest', '/v1/timeseries/query'],
-    'cdn.jsdelivr.net': ['/npm/react@18.3.1/umd/react.production.min.js'],
-    'telemetry.ingest.sentry.io': ['/api/42/envelope/'],
-    'fonts.googleapis.com': ['/css2?family=JetBrains+Mono&display=swap'],
-    's3.eu-west-3.amazonaws.com': ['/artifacts-prod/build-9182/bundle.tar.zst', '/avatars/u_88122.jpg'],
-    'proxy-egress.corp.local': ['/'],
-  };
-  const MIMES = [
-    ['application/json', 'json'], ['text/html', 'html'], ['text/css', 'css'],
-    ['application/javascript', 'js'], ['image/png', 'img'], ['image/jpeg', 'img'],
-    ['font/woff2', 'font'], ['text/event-stream', 'stream'], ['application/octet-stream', 'bin'],
-  ];
-  const METHODS = ['GET', 'GET', 'GET', 'POST', 'POST', 'PUT', 'DELETE', 'PATCH'];
-  const PROCS = ['chrome.exe', 'node.exe', 'curl.exe', 'code.exe', 'msedge.exe'];
-  const CLIENTS = ['127.0.0.1', '192.168.1.42', '10.0.0.17'];
-
-  function rnd(a) { return a[Math.floor(Math.random() * a.length)]; }
-  function mockReq(id) {
-    const [host, scheme] = rnd(HOSTS);
-    const path = rnd(PATHS[host] || ['/']);
-    const method = rnd(METHODS);
-    const [mime, mimeColor] = rnd(MIMES);
-    const roll = Math.random();
-    let status;
-    if (roll < 0.68) status = 200;
-    else if (roll < 0.78) status = rnd([201, 204, 206]);
-    else if (roll < 0.86) status = rnd([301, 302, 304]);
-    else if (roll < 0.96) status = rnd([400, 401, 403, 404, 429]);
-    else status = rnd([500, 502, 503, 504]);
-    const tls = scheme === 'https';
-    return {
-      id, ts: Date.now(), method, scheme, host, path, status, mime, mimeColor,
-      size: Math.floor(Math.random() * 900000) + 120,
-      ms: Math.floor(Math.random() * 1400) + 8,
-      tls, decrypted: tls && state.decryption,
-      clientIp: rnd(CLIENTS), process: rnd(PROCS),
-    };
-  }
-
-  const BODIES = {
-    json: `{
-  "login": "octocat",
-  "id": 583231,
-  "type": "User",
-  "site_admin": false,
-  "name": "The Octocat",
-  "company": "@github",
-  "public_repos": 8,
-  "followers": 14832,
-  "created_at": "2011-01-25T18:44:36Z"
-}`,
-    html: `<!doctype html>
-<html lang="en">
-  <head><meta charset="utf-8"><title>Index of /artifacts</title></head>
-  <body>
-    <h1>Index of /artifacts-prod/build-9182</h1>
-    <ul><li><a href="bundle.tar.zst">bundle.tar.zst</a></li></ul>
-  </body>
-</html>`,
-    stream: `event: tick
-data: {"t":1732038291,"cpu":0.41}
-
-event: tick
-data: {"t":1732038292,"cpu":0.43}
-
-[… body not captured · text/event-stream · streaming …]`,
-    img: `[binary · image/png · 44.2 KB]
-  89 50 4E 47 0D 0A 1A 0A 00 00 00 0D 49 48 44 52
-  00 00 01 80 00 00 01 80 08 06 00 00 00 E0 77 3D
-  [… preview only · body not captured …]`,
-    bin: `[binary · application/octet-stream · 812 KB]
-  1F 8B 08 00 00 00 00 00 00 03 ED 5A 4B 6F E3 46
-  [… body not captured · exceeds 2 MB threshold …]`,
-    js: `(function () {
-  'use strict';
-  var r = Object.freeze({ version: '18.3.1' });
-  /* React production build — minified · truncated 89.4 KB */
-})();`,
-    css: `@font-face {
-  font-family: 'JetBrains Mono';
-  font-weight: 400;
-  src: url(https://fonts.gstatic.com/s/jetbrainsmono/v20/…woff2) format('woff2');
-}`,
-    font: `[binary · font/woff2 · 26.1 KB]
-  77 4F 46 32 00 01 00 00 00 00 66 A4 00 0B 00 00 […]`,
-  };
-  function bodyFor(r) { return BODIES[r.mimeColor] || `[body not captured · ${r.mime}]`; }
-
-  function reqHeaders(r) {
-    return [
-      [':authority', r.host], [':method', r.method], [':path', r.path], [':scheme', r.scheme],
-      ['accept', r.mime.startsWith('image') ? 'image/avif,image/webp,*/*' : 'application/json, */*'],
-      ['accept-encoding', 'gzip, deflate, br, zstd'],
-      ['authorization', 'Bearer ey…truncated…xA'],
-      ['user-agent', 'HttpStackLens/0.8 (+go1.23)'],
-      ['x-request-id', '01JDT4' + (r.id * 7).toString(36).toUpperCase().padStart(8, '0')],
-    ];
-  }
-  function resHeaders(r) {
-    return [
-      [':status', String(r.status)],
-      ['content-type', r.mime + (r.mime.startsWith('text') ? '; charset=utf-8' : '')],
-      ['content-length', String(r.size)],
-      ['cache-control', r.mime.startsWith('image') ? 'public, max-age=31536000' : 'private, no-cache'],
-      ['server', 'nginx/1.25.3'], ['x-cache', ['MISS', 'HIT', '—'][r.id % 3]],
-      ['date', new Date(r.ts).toUTCString()],
-    ];
+  // ─── content-type → colour category ─────────────────────
+  // Maps a response Content-Type onto the palette bucket used for the "Type"
+  // column and the body pane. Kept in the JS layer with the row templates.
+  function mimeCategory(mime, stream) {
+    if (stream) return 'stream';
+    const m = (mime || '').toLowerCase().split(';')[0].trim();
+    if (!m) return 'bin';
+    if (m === 'text/event-stream') return 'stream';
+    if (m === 'application/json' || m.endsWith('+json')) return 'json';
+    if (m === 'text/html' || m === 'application/xhtml+xml') return 'html';
+    if (m === 'text/css') return 'css';
+    if (m.includes('javascript') || m.endsWith('+javascript') || m === 'application/ecmascript') return 'js';
+    if (m.startsWith('image/')) return 'img';
+    if (m.startsWith('font/') || m.includes('woff') || m === 'application/font-sfnt') return 'font';
+    return 'bin';
   }
 
   // ─── format helpers ──────────────────────────────────────
@@ -166,7 +61,7 @@ data: {"t":1732038292,"cpu":0.43}
     if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
     return (b / 1048576).toFixed(2) + ' MB';
   }
-  function fmtMs(ms) { return ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : ms + 'ms'; }
+  function fmtMs(ms) { if (ms == null) return '—'; return ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : ms + 'ms'; }
   function fmtTime(ts) {
     const d = new Date(ts), p = (n) => String(n).padStart(2, '0');
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
@@ -224,7 +119,7 @@ data: {"t":1732038292,"cpu":0.43}
     const sb = state.sidebar;
     if (sb !== 'all') {
       rows = rows.filter((r) => {
-        if (sb === '2xx') return r.status < 300;
+        if (sb === '2xx') return r.status != null && r.status < 300;
         if (sb === '4xx') return r.status >= 400 && r.status < 500;
         if (sb === '5xx') return r.status >= 500;
         if (sb === 'tls') return r.tls;
@@ -234,21 +129,20 @@ data: {"t":1732038292,"cpu":0.43}
     const q = state.filter.trim().toLowerCase();
     if (q) rows = rows.filter((r) =>
       r.host.toLowerCase().includes(q) || r.path.toLowerCase().includes(q) ||
-      String(r.status).includes(q) || r.method.toLowerCase().includes(q));
+      (r.status != null && String(r.status).includes(q)) || r.method.toLowerCase().includes(q));
     return rows;
   }
 
   function rowHTML(r) {
     const sel = r.id === state.selId;
-    const stream = r.mimeColor === 'stream';
-    const tooLarge = r.size > 512000 && !stream;
+    const stream = r.mimeColor === 'stream' || r.stream;
     return `<div data-row="${r.id}" class="grid items-center gap-[12px] cursor-pointer select-none" style="${GRID};height:${rowHeight()}px;padding:0 16px;background:${sel ? C.bg3 : 'transparent'};border-left:3px solid ${sel ? statusColor(r.status) : 'transparent'};border-bottom:1px solid ${C.lineSoft};font-family:Inter;font-size:12.5px;color:${C.ink}">
       <span style="color:${C.faint};text-align:right;font-variant-numeric:tabular-nums">${String(r.id).padStart(3, '0')}</span>
       ${methodTag(r.method, true)}
       <span title="${r.tls ? (r.decrypted ? 'decrypted' : 'encrypted') : 'cleartext'}">${r.tls ? lock(true, !r.decrypted) : `<span style="color:${C.faint};font-size:11px">◌</span>`}</span>
       ${statusPill(r.status, true)}
       <span class="truncate" style="color:${C.dim}">${r.host}</span>
-      <span class="truncate" style="color:${C.ink}">${esc(r.path)}${stream ? `<span style="color:${C.warn};margin-left:8px;font-size:11px">· stream</span>` : ''}${tooLarge ? `<span style="color:${C.faint};margin-left:8px;font-size:11px">· body skipped</span>` : ''}</span>
+      <span class="truncate" style="color:${C.ink}">${esc(r.path)}${stream ? `<span style="color:${C.warn};margin-left:8px;font-size:11px">· stream</span>` : ''}${r.bodySkipped ? `<span style="color:${C.faint};margin-left:8px;font-size:11px">· body skipped</span>` : ''}</span>
       <span class="truncate" style="color:${C.faint}">${r.mime}</span>
       <span style="color:${C.dim};text-align:right;font-variant-numeric:tabular-nums">${fmtBytes(r.size)}</span>
       <span style="color:${C.faint};text-align:right;font-variant-numeric:tabular-nums">${fmtTime(r.ts)}</span>
@@ -283,6 +177,77 @@ data: {"t":1732038292,"cpu":0.43}
     renderWaterfall(); renderSidebarCounts(); renderStatusBar();
   }
 
+  // A row starts life from a `request_occurred` event (no response yet, so
+  // status / size / duration are null) and is later completed in place by
+  // updateExternalRow when the matching `response_occurred` arrives.
+  function normalizeExternalRow(r) {
+    return {
+      id: Number(r.id || 0),
+      ts: r.ts ? Number(r.ts) : Date.now(),
+      method: r.method || 'GET',
+      scheme: r.scheme || (r.tls ? 'https' : 'http'),
+      host: r.host || '',
+      path: r.path || '/',
+      version: r.version || '',
+      status: null,
+      statusText: '',
+      mime: '',
+      mimeColor: 'bin',
+      size: null,
+      ms: null,
+      stream: false,
+      bodyAvailable: false,
+      bodySkipped: false,
+      tls: !!r.tls,
+      decrypted: !!r.decrypted,
+      correlationId: r.correlationId || '',
+      detail: null,   // lazily fetched from /api/requests/{id}
+      bodies: {},     // side → { text, skipped, available, contentType, loading }
+    };
+  }
+
+  function appendExternalRow(r) {
+    const row = normalizeExternalRow(r);
+    state.rows.push(row);
+    if (state.rows.length > 220) {
+      const dropped = state.rows.shift();
+      if (dropped && dropped.id === state.selId) { state.selId = null; renderDetail(); }
+    }
+    appendRow(row);
+    return row.id;
+  }
+
+  // Completes a row when its response is streamed in. Keyed by correlationId
+  // (falls back to id) since the response event carries no sequence number.
+  function updateExternalRow(r) {
+    const cid = r.correlationId || '';
+    const row = state.rows.find((x) => (cid && x.correlationId === cid) || (r.id != null && x.id === Number(r.id)));
+    if (!row) return -1;
+    if (r.status != null) row.status = Number(r.status);
+    if (r.statusText != null) row.statusText = r.statusText;
+    if (r.mime != null) row.mime = r.mime;
+    row.stream = !!r.stream;
+    row.mimeColor = mimeCategory(row.mime, row.stream);
+    if (r.size != null) row.size = Number(r.size);
+    if (r.ms != null) row.ms = Number(r.ms);
+    row.bodyAvailable = !!r.bodyAvailable;
+    row.bodySkipped = !!r.bodySkipped;
+    // Re-render just this row in the list (cheapest correct option is a
+    // targeted DOM swap; fall back to a full list render when it isn't visible).
+    const el = document.querySelector(`#list [data-row="${row.id}"]`);
+    if (el) el.outerHTML = rowHTML(row);
+    else renderList();
+    renderWaterfall(); renderSidebarCounts(); renderStatusBar();
+    if (row.id === state.selId) {
+      // Detail was possibly fetched while the response was still pending —
+      // drop the cache so headers / timing / body reload now they exist.
+      row.detail = null;
+      row.bodies = {};
+      renderDetail();
+    }
+    return row.id;
+  }
+
   // ─── waterfall ───────────────────────────────────────────
   function renderWaterfall() {
     const wf = $('#waterfall');
@@ -299,9 +264,11 @@ data: {"t":1732038292,"cpu":0.43}
     const rows = state.rows;
     const c = { all: rows.length, '2xx': 0, '4xx': 0, '5xx': 0, tls: 0 };
     for (const r of rows) {
-      if (r.status < 300) c['2xx']++;
-      else if (r.status >= 500) c['5xx']++;
-      else if (r.status >= 400) c['4xx']++;
+      if (r.status != null) {
+        if (r.status < 300) c['2xx']++;
+        else if (r.status >= 500) c['5xx']++;
+        else if (r.status >= 400) c['4xx']++;
+      }
       if (r.tls) c.tls++;
     }
     $$('[data-side]').forEach((el) => {
@@ -322,7 +289,32 @@ data: {"t":1732038292,"cpu":0.43}
   }
 
   // ─── detail pane ─────────────────────────────────────────
+  // The detail metadata (headers + timing) is fetched lazily from
+  // /api/requests/{correlationId} through WASM; bodies come from the same id's
+  // /body endpoint. renderDetail kicks the fetch and re-renders on arrival.
+  function ensureDetail(r) {
+    if (!r || r.detail) return; // already loaded / loading / errored
+    if (!r.correlationId) { r.detail = { error: 'No correlation id for this request.' }; return; }
+    r.detail = { loading: true };
+    const fn = window.hslLoadDetail;
+    if (typeof fn === 'function') fn(r.correlationId);
+    else r.detail = { error: 'Detail view is not available.' };
+  }
+  function ensureBody(r, side) {
+    const cur = r.bodies[side];
+    if (cur && (cur.loading || cur.loaded)) return;
+    r.bodies[side] = { loading: true };
+    const fn = window.hslLoadBody;
+    if (typeof fn === 'function') fn(r.correlationId, side);
+    else r.bodies[side] = { loaded: true, available: false, error: 'Body fetch is not available.' };
+  }
+
+  function detailNote(msg) {
+    return `<div style="padding:22px 16px;color:${C.faint};font-size:12px;font-family:Inter">${esc(msg)}</div>`;
+  }
+
   function headersTable(rows) {
+    if (!rows || !rows.length) return detailNote('No headers.');
     return `<div style="font-family:'JetBrains Mono';font-size:11.5px;line-height:1.6">` + rows.map(([k, v]) =>
       `<div class="grid gap-4" style="grid-template-columns:200px 1fr;padding:3px 14px;border-bottom:1px solid ${C.lineSoft}">
         <span style="color:${k.startsWith(':') ? C.pink : C.info}">${esc(k)}</span>
@@ -355,30 +347,47 @@ data: {"t":1732038292,"cpu":0.43}
   }
 
   function bodyPane(r) {
-    const body = bodyFor(r);
     const mode = state.bodyMode;
     const tab = (id, label) => `<button data-bodymode="${id}" style="background:transparent;border:none;cursor:pointer;padding:8px 12px 7px;font-size:11.5px;font-family:Inter;font-weight:500;color:${mode === id ? C.ink : C.dim};border-bottom:2px solid ${mode === id ? C.mint : 'transparent'};margin-bottom:-1px">${label}</button>`;
+
     let content;
-    if (mode === 'pretty' && r.mimeColor === 'json') content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(body)}</pre>`;
-    else if (mode === 'hex') content = hexDump(body);
-    else content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all;overflow:auto">${esc(body)}</pre>`;
+    if (r.stream) content = detailNote('Streaming response — the body is never captured, only frame metadata.');
+    else if (r.bodySkipped) content = detailNote('Body skipped — it exceeded the capture size limit for this content type.');
+    else if (r.status != null && !r.bodyAvailable) content = detailNote('No response body was captured.');
+    else {
+      ensureBody(r, 'response');
+      const b = r.bodies.response;
+      if (!b || b.loading) content = detailNote('Loading body…');
+      else if (b.error) content = detailNote(b.error);
+      else if (!b.available) content = detailNote('No response body was captured.');
+      else {
+        const body = b.text || '';
+        if (mode === 'pretty' && r.mimeColor === 'json') content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(body)}</pre>`;
+        else if (mode === 'hex') content = hexDump(body);
+        else content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all;overflow:auto">${esc(body)}</pre>`;
+      }
+    }
     return `<div class="flex flex-col h-full min-h-0">
       <div class="flex" style="border-bottom:1px solid ${C.line};background:${C.bg1};padding-left:6px;flex-shrink:0">${tab('pretty', 'Pretty')}${tab('raw', 'Raw')}${tab('hex', 'Hex')}</div>
       <div class="flex-1 min-h-0 overflow-auto hsl-scroll" style="background:${C.bg1}">${content}</div></div>`;
   }
 
+  // Real per-phase timing from the backend (TimingDto, milliseconds). Present
+  // only for decrypted HTTPS traffic; otherwise we say so.
   function timingBar(r) {
+    const t = r.detail && r.detail.timing;
+    if (!t) return detailNote('Per-phase timing is available only for decrypted HTTPS traffic.');
     const segs = [
-      ['dns', Math.floor(r.ms * 0.06), C.pink], ['connect', Math.floor(r.ms * 0.12), C.info],
-      ['tls', r.tls ? Math.floor(r.ms * 0.18) : 0, C.mint], ['send', Math.floor(r.ms * 0.04), C.warn],
-      ['wait', Math.floor(r.ms * 0.48), C.dim], ['recv', Math.floor(r.ms * 0.12), C.ink],
+      ['dns', t.dnsMs || 0, C.pink], ['connect', t.connectMs || 0, C.info],
+      ['tls', t.tlsMs || 0, C.mint], ['wait', t.ttfbMs || 0, C.dim], ['download', t.downloadMs || 0, C.ink],
     ];
     const total = segs.reduce((s, x) => s + x[1], 0) || 1;
     return `<div style="padding:10px 14px;border-bottom:1px solid ${C.lineSoft}">
       <div class="flex" style="height:8px;border-radius:2px;overflow:hidden;background:${C.bg2}">
         ${segs.map(([l, ms, c]) => ms > 0 ? `<div title="${l}: ${ms}ms" style="flex:${ms / total};background:${c};opacity:.85"></div>` : '').join('')}</div>
       <div class="flex flex-wrap gap-[14px]" style="margin-top:8px;font-family:'JetBrains Mono';font-size:10.5px;color:${C.dim}">
-        ${segs.map(([l, ms, c]) => ms > 0 ? `<span class="inline-flex items-center gap-1"><span style="width:6px;height:6px;background:${c};border-radius:1px"></span>${l} <span style="color:${C.ink}">${ms}ms</span></span>` : '').join('')}</div></div>`;
+        ${segs.map(([l, ms, c]) => ms > 0 ? `<span class="inline-flex items-center gap-1"><span style="width:6px;height:6px;background:${c};border-radius:1px"></span>${l} <span style="color:${C.ink}">${ms}ms</span></span>` : '').join('')}
+        <span class="inline-flex items-center gap-1" style="margin-left:auto">total <span style="color:${C.ink}">${fmtMs(t.totalMs || total)}</span></span></div></div>`;
   }
 
   function kv(k, v, color) {
@@ -394,6 +403,13 @@ data: {"t":1732038292,"cpu":0.43}
     wrap.style.display = 'flex';
     $('#list-region').style.flex = '0.55';
 
+    ensureDetail(r);
+    const d = r.detail || {};
+    const reqH = (d.request && d.request.headers) || [];
+    const resH = (d.response && d.response.headers) || [];
+    const headerCount = d.loading ? null : reqH.length + resH.length;
+    const proto = (d.response && d.response.httpVersion) || (d.request && d.request.httpVersion) || r.version || '—';
+
     const tab = (id, label, count) => `<button data-tab="${id}" style="background:transparent;border:none;cursor:pointer;padding:8px 12px 7px;font-size:11.5px;font-family:Inter;font-weight:500;color:${state.detailTab === id ? C.ink : C.dim};border-bottom:2px solid ${state.detailTab === id ? C.mint : 'transparent'};margin-bottom:-1px" class="inline-flex items-center gap-[6px]">${label}${count != null ? `<span style="color:${C.faint};font-family:'JetBrains Mono';font-size:10px">${count}</span>` : ''}</button>`;
 
     let body = '';
@@ -402,20 +418,28 @@ data: {"t":1732038292,"cpu":0.43}
       body = `<div style="padding:12px 16px">
         <div class="grid gap-6" style="grid-template-columns:1fr 1fr">
           <div><div style="font-size:10.5px;color:${C.faint};text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">General</div>
-            ${kv('URL', `${r.scheme}://${r.host}${r.path}`)}${kv('Method', r.method)}${kv('Status', String(r.status), statusColor(r.status))}${kv('Protocol', r.tls ? 'HTTP/2 over TLS 1.3' : 'HTTP/1.1')}${kv('Client', `${r.clientIp} · ${r.process}`)}</div>
+            ${kv('URL', `${r.scheme}://${r.host}${r.path}`)}${kv('Method', r.method)}${kv('Status', r.status != null ? `${r.status}${r.statusText ? ' ' + r.statusText : ''}` : 'pending…', r.status != null ? statusColor(r.status) : C.faint)}${kv('Protocol', proto)}</div>
           <div><div style="font-size:10.5px;color:${C.faint};text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Transfer</div>
-            ${kv('Content-Type', r.mime)}${kv('Size', fmtBytes(r.size))}${kv('Duration', fmtMs(r.ms))}${kv('TLS', r.tls ? (r.decrypted ? 'decrypted · HSL root CA' : 'passthrough · no key') : '—', r.tls ? (r.decrypted ? C.mint : C.warn) : C.faint)}${kv('Cache', r.id % 3 === 1 ? 'HIT' : 'MISS')}</div>
+            ${kv('Content-Type', r.mime || '—')}${kv('Size', fmtBytes(r.size))}${kv('Duration', fmtMs(r.ms))}${kv('TLS', r.tls ? (r.decrypted ? 'decrypted · HSL root CA' : 'passthrough · not decrypted') : 'cleartext', r.tls ? (r.decrypted ? C.mint : C.warn) : C.faint)}</div>
         </div>
         <div style="margin-top:18px"><div style="font-size:10.5px;color:${C.faint};text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px">Timing</div>${timingBar(r)}</div></div>`;
     } else if (t === 'headers') {
-      const sectionHead = (l, n) => `<div style="padding:6px 14px;font-size:10.5px;color:${C.faint};text-transform:uppercase;letter-spacing:.7px;font-weight:600;background:${C.bg2};border-bottom:1px solid ${C.line}">${l} headers · ${n}</div>`;
-      body = sectionHead('Request', reqHeaders(r).length) + headersTable(reqHeaders(r)) + sectionHead('Response', resHeaders(r).length) + headersTable(resHeaders(r));
+      if (d.loading) body = detailNote('Loading headers…');
+      else if (d.error) body = detailNote(d.error);
+      else {
+        const sectionHead = (l, n) => `<div style="padding:6px 14px;font-size:10.5px;color:${C.faint};text-transform:uppercase;letter-spacing:.7px;font-weight:600;background:${C.bg2};border-bottom:1px solid ${C.line}">${l} headers · ${n}</div>`;
+        body = sectionHead('Request', reqH.length) + headersTable(reqH) + sectionHead('Response', resH.length) + headersTable(resH);
+      }
     } else if (t === 'body') {
       body = bodyPane(r);
     } else if (t === 'timing') {
       body = timingBar(r);
     } else if (t === 'raw') {
-      body = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">${esc(`${r.method} ${r.path} HTTP/2\nhost: ${r.host}\n\n` + bodyFor(r))}</pre>`;
+      const reqLine = `${r.method} ${r.path} ${(d.request && d.request.httpVersion) || r.version || 'HTTP/1.1'}`;
+      const hdrs = reqH.map(([k, v]) => `${k}: ${v}`).join('\n');
+      const rb = r.bodies.response;
+      const bodyText = rb && rb.available ? rb.text : '';
+      body = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">${esc(`${reqLine}\nhost: ${r.host}\n${hdrs}\n\n${bodyText}`)}</pre>`;
     }
 
     wrap.innerHTML = `
@@ -423,22 +447,21 @@ data: {"t":1732038292,"cpu":0.43}
         ${methodTag(r.method)}${statusPill(r.status)}
         <div class="flex-1 overflow-hidden">
           <div class="truncate" style="font-family:'JetBrains Mono';font-size:12px;color:${C.ink}"><span style="color:${C.faint}">${r.scheme}://</span><span style="color:${C.dim}">${r.host}</span>${esc(r.path)}</div>
-          <div style="font-size:11px;color:${C.faint};margin-top:2px;font-family:'JetBrains Mono'">#${String(r.id).padStart(3, '0')} · ${r.mime} · ${fmtBytes(r.size)} · ${fmtMs(r.ms)} · ${r.tls ? (r.decrypted ? 'TLS · decrypted' : 'TLS · passthrough') : 'cleartext'}</div>
+          <div style="font-size:11px;color:${C.faint};margin-top:2px;font-family:'JetBrains Mono'">#${String(r.id).padStart(3, '0')} · ${r.mime || '—'} · ${fmtBytes(r.size)} · ${fmtMs(r.ms)} · ${r.tls ? (r.decrypted ? 'TLS · decrypted' : 'TLS · passthrough') : 'cleartext'}</div>
         </div>
-        <button data-action="replay" class="hsl-btn">⟲ Replay</button>
-        <button data-action="edit" class="hsl-btn">Edit &amp; send…</button>
         <button data-action="close-detail" style="background:transparent;border:none;color:${C.faint};cursor:pointer;font-size:18px;padding:4px 6px">×</button>
       </div>
       <div class="flex" style="border-bottom:1px solid ${C.line};background:${C.bg1};padding-left:6px;flex-shrink:0">
-        ${tab('overview', 'Overview')}${tab('headers', 'Headers', reqHeaders(r).length + resHeaders(r).length)}${tab('body', 'Body')}${tab('timing', 'Timing')}${tab('raw', 'Raw')}</div>
+        ${tab('overview', 'Overview')}${tab('headers', 'Headers', headerCount)}${tab('body', 'Body')}${tab('timing', 'Timing')}${tab('raw', 'Raw')}</div>
       <div class="flex-1 min-h-0 overflow-auto hsl-scroll">${body}</div>`;
   }
 
   // ─── status bar ──────────────────────────────────────────
   function renderStatusBar() {
     const rows = state.rows;
-    const totalBytes = rows.reduce((s, r) => s + r.size, 0);
-    const avg = rows.length ? Math.round(rows.reduce((s, r) => s + r.ms, 0) / rows.length) : 0;
+    const totalBytes = rows.reduce((s, r) => s + (r.size || 0), 0);
+    const timed = rows.filter((r) => r.ms != null);
+    const avg = timed.length ? Math.round(timed.reduce((s, r) => s + r.ms, 0) / timed.length) : 0;
     const err = rows.filter((r) => r.status >= 400).length;
     $('#statusbar').innerHTML = `
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px 0 14px;color:${state.capturing ? C.mint : C.faint}"><span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'capturing' : 'paused'}</span>
@@ -620,20 +643,14 @@ data: {"t":1732038292,"cpu":0.43}
       <div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono';padding:8px 10px;background:${C.bg2};border-radius:3px;border:1px solid ${C.line}">listening on <span style="color:${C.mint}">0.0.0.0:8823</span> · <span style="color:${C.ink}">${a.mode}</span></div></div>`;
   }
 
-  // ─── live traffic ────────────────────────────────────────
-  let liveTimer = null;
-  function scheduleNext() {
-    if (!state.capturing) return;
-    liveTimer = setTimeout(() => {
-      const r = mockReq((state.rows[state.rows.length - 1]?.id || 0) + 1);
-      state.rows.push(r);
-      if (state.rows.length > 220) state.rows.shift();
-      appendRow(r);
-      scheduleNext();
-    }, 700 + Math.random() * 900);
+  // ─── capture control ─────────────────────────────────────
+  // Real requests arrive over SSE (pushed in by WASM). The toolbar just relays
+  // pause / resume / clear to the backend through WASM; the authoritative
+  // capturing flag comes back via the capture_state event → setCaptureState.
+  function captureAction(action) {
+    const fn = window.hslCapture;
+    if (typeof fn === 'function') fn(action);
   }
-  function startLive() { clearTimeout(liveTimer); scheduleNext(); }
-  function stopLive() { clearTimeout(liveTimer); }
 
   // ─── event delegation ────────────────────────────────────
   function wire() {
@@ -702,11 +719,15 @@ data: {"t":1732038292,"cpu":0.43}
   function handleAction(a) {
     switch (a) {
       case 'toggle-capture':
+        // Optimistic flip; the capture_state event will confirm/correct it.
+        captureAction(state.capturing ? 'pause' : 'resume');
         state.capturing = !state.capturing;
-        if (state.capturing) startLive(); else stopLive();
         renderToolbar(); renderStatusBar();
         break;
-      case 'clear': state.rows = []; state.selId = null; renderList(); renderDetail(); break;
+      case 'clear':
+        captureAction('clear');
+        state.rows = []; state.selId = null; renderList(); renderDetail();
+        break;
       case 'toggle-decrypt':
         if (state.decryption) { state.decryption = false; renderToolbar(); renderStatusBar(); }
         else openCert();
@@ -751,17 +772,51 @@ data: {"t":1732038292,"cpu":0.43}
     else if (modalKind === 'cert') renderCert();
   }
 
+  // ─── capture state (from SSE capture_state, via WASM) ────
+  function setCaptureState(s) {
+    if (s && typeof s.capturing === 'boolean') {
+      state.capturing = s.capturing;
+      renderToolbar();
+      renderStatusBar();
+    }
+  }
+
+  // ─── detail / body results (from /api/..., via WASM) ─────
+  function setDetail(correlationId, detail) {
+    const row = state.rows.find((x) => x.correlationId === correlationId);
+    if (!row) return;
+    row.detail = detail || { error: 'Detail not found.' };
+    if (row.id === state.selId) renderDetail();
+  }
+  function setBody(correlationId, side, body) {
+    const row = state.rows.find((x) => x.correlationId === correlationId);
+    if (!row) return;
+    row.bodies[side] = Object.assign({ loaded: true, loading: false }, body || {});
+    if (row.id === state.selId && state.detailTab === 'body' && side === 'response') renderDetail();
+  }
+
   // ─── boot ────────────────────────────────────────────────
   function boot() {
-    for (let i = 1; i <= 36; i++) state.rows.push(mockReq(i));
     document.documentElement.dataset.theme = themeName;
     $('#btn-theme').innerHTML = themeIcon();
     wire();
     renderToolbar();
     renderList();
     renderDetail();
-    startLive();
   }
+
+  // Contract with the WASM layer: WASM pushes data in through these; the row
+  // templates and all rendering stay here in JS (easier to maintain).
+  window.HttpStackLensMockup = {
+    appendRow: appendExternalRow,       // request_occurred → new row
+    updateRow: updateExternalRow,       // response_occurred → complete the row
+    setDetail: setDetail,               // /api/requests/{id} result
+    setBody: setBody,                   // /api/requests/{id}/body result
+    setCaptureState: setCaptureState,   // capture_state event
+    clear: () => { state.rows = []; state.selId = null; renderList(); renderDetail(); },
+    rowHTML: (r) => rowHTML(normalizeExternalRow(r)),
+  };
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
