@@ -75,17 +75,8 @@
     density: 'normal',
     upstream: { on: true, ntlm: true, host: 'http://proxy.corp.local:8080', domain: 'CORP' },
     access: { mode: 'loopback', cidrs: ['192.168.1.0/24'] },
-    bodyRules: [
-      { id: 'json', label: 'JSON', mimes: 'application/json · application/*+json', on: true, max: 2097152 },
-      { id: 'html', label: 'HTML', mimes: 'text/html · application/xhtml+xml', on: true, max: 1048576 },
-      { id: 'text', label: 'Plain text / XML / CSS / JS', mimes: 'text/plain · text/css · application/xml', on: true, max: 1048576 },
-      { id: 'form', label: 'Form data', mimes: 'x-www-form-urlencoded · multipart/form-data', on: true, max: 4194304 },
-      { id: 'images', label: 'Images', mimes: 'image/*', on: false, max: 262144 },
-      { id: 'fonts', label: 'Fonts', mimes: 'font/*', on: false, max: 262144 },
-      { id: 'binary', label: 'Binary / octet-stream', mimes: 'application/octet-stream · zip · gzip', on: false, max: 0 },
-      { id: 'sse', label: 'Server-Sent Events', mimes: 'text/event-stream', on: false, max: 0, locked: true, note: 'Streaming — body never captured, frame log only' },
-      { id: 'ws', label: 'WebSocket frames', mimes: 'upgrade: websocket', on: false, max: 0, locked: true, note: 'Streaming — frame metadata only' },
-    ],
+    // Real body-capture settings (B5.1), fed by WASM from /api/settings/body-capture.
+    bodyCapture: { loaded: false, loading: false, defaultMaxBytes: null, mimeTypes: [], error: null, saving: false, saved: false, dirty: false },
   };
 
   // ─── tiny DOM helpers ────────────────────────────────────
@@ -604,15 +595,43 @@
   }
 
   function sizeLabel(b) { return b === 0 ? 'off' : b < 1048576 ? (b / 1024) + ' KB' : (b / 1048576) + ' MB'; }
+  // Size options offered per rule (bytes). `null` is a sentinel whose meaning
+  // (use-default vs. no-limit) depends on the caller, passed via nullLabel.
+  const BODY_SIZE_OPTS = [null, 0, 65536, 262144, 524288, 1048576, 2097152, 8388608];
+  function sizeSelect(dataAttr, current, nullLabel) {
+    const opts = BODY_SIZE_OPTS
+      .map((b) => `<option value="${b === null ? '' : b}" ${b === current ? 'selected' : ''}>${b === null ? nullLabel : sizeLabel(b)}</option>`).join('');
+    return `<select ${dataAttr} style="background:${C.bg2};color:${C.ink};border:1px solid ${C.line};border-radius:3px;padding:4px 6px;font-family:'JetBrains Mono';font-size:11.5px">${opts}</select>`;
+  }
   function bodyRulesPanel() {
-    const head = `<div class="grid" style="grid-template-columns:32px 1fr 140px 120px;padding:8px 12px;background:${C.bg2};border-bottom:1px solid ${C.line};font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:${C.faint};font-family:Inter"><span></span><span>Category / MIME</span><span>Max per body</span><span style="text-align:right">Captured</span></div>`;
-    const rows = state.bodyRules.map((r, i) => `<div class="grid items-center gap-2" style="grid-template-columns:32px 1fr 140px 120px;padding:10px 12px;border-bottom:${i === state.bodyRules.length - 1 ? 'none' : `1px solid ${C.lineSoft}`};background:${r.on ? 'transparent' : C.bg1};opacity:${r.locked ? .7 : 1}">
-      ${toggle(r.on, `rule-toggle:${r.id}`, true, r.locked)}
-      <div><div style="font-size:12px;color:${C.ink};font-family:Inter;font-weight:500">${r.label}${r.locked ? `<span style="color:${C.warn};font-size:10px;margin-left:8px">streaming</span>` : ''}</div><div style="font-size:11px;color:${C.faint};font-family:'JetBrains Mono';margin-top:2px">${r.mimes}</div>${r.note ? `<div style="font-size:10.5px;color:${C.warn};margin-top:3px">${r.note}</div>` : ''}</div>
-      <select ${!r.on || r.locked ? 'disabled' : ''} data-rulemax="${r.id}" style="background:${C.bg2};color:${C.ink};border:1px solid ${C.line};border-radius:3px;padding:4px 6px;font-family:'JetBrains Mono';font-size:11.5px">${[0, 65536, 262144, 524288, 1048576, 2097152, 8388608].map((b) => `<option value="${b}" ${b === r.max ? 'selected' : ''}>${sizeLabel(b)}</option>`).join('')}</select>
-      <div style="text-align:right;font-family:'JetBrains Mono';font-size:11px;color:${C.dim}">${r.on && !r.locked ? `${(r.id.charCodeAt(0) * 3) % 120 + 4} bodies` : '—'}</div></div>`).join('');
-    return `<div style="font-size:12px;color:${C.dim};margin-bottom:12px;line-height:1.6">Pick which response bodies get captured and kept in memory. Streaming types (SSE, WebSocket) are always metadata-only — the frame log stays, the body doesn't.</div>
-      <div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${head}${rows}</div>`;
+    const bc = state.bodyCapture;
+    // Never show the editor until the current settings loaded — otherwise a save
+    // could overwrite real config with an empty form.
+    if (!bc.loaded) {
+      if (bc.error) {
+        return `<div style="font-size:12px;color:${C.danger};margin-bottom:12px">${bc.error}</div>${btn('Retry', 'body-reload', 'ghost')}`;
+      }
+      // Deferred so the fetch never re-enters the render that kicked it off.
+      if (!bc.loading && typeof window.hslLoadBodyCapture === 'function') { bc.loading = true; setTimeout(() => window.hslLoadBodyCapture(), 0); }
+      return `<div style="font-size:12px;color:${C.dim};padding:20px 2px">Loading body capture settings…</div>`;
+    }
+    const head = `<div class="grid" style="grid-template-columns:1fr 150px 40px;padding:8px 12px;background:${C.bg2};border-bottom:1px solid ${C.line};font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:${C.faint};font-family:Inter"><span>MIME type / wildcard</span><span>Max per body</span><span></span></div>`;
+    const rows = bc.mimeTypes.length
+      ? bc.mimeTypes.map((r, i) => `<div class="grid items-center gap-2" style="grid-template-columns:1fr 150px 40px;padding:8px 12px;border-bottom:${i === bc.mimeTypes.length - 1 ? 'none' : `1px solid ${C.lineSoft}`}">
+        <input data-bc-name="${i}" value="${(r.name || '').replace(/"/g, '&quot;')}" placeholder="application/json" style="background:${C.bg2};color:${C.ink};border:1px solid ${C.line};border-radius:3px;padding:5px 8px;font-family:'JetBrains Mono';font-size:11.5px;width:100%;outline:none">
+        ${sizeSelect(`data-bc-max="${i}"`, typeof r.maxSizeBytes === 'number' ? r.maxSizeBytes : null, 'Use default')}
+        <button data-action="body-remove-rule:${i}" title="Remove" style="background:transparent;border:1px solid ${C.line};color:${C.dim};border-radius:3px;cursor:pointer;height:26px;font-size:13px">×</button></div>`).join('')
+      : `<div style="padding:14px 12px;font-size:11.5px;color:${C.faint}">No per-type rules — every body uses the default cap below.</div>`;
+    const status = bc.error
+      ? `<span style="color:${C.danger};font-size:11.5px">${bc.error}</span>`
+      : bc.saving ? `<span style="color:${C.dim};font-size:11.5px">Saving…</span>`
+      : bc.dirty ? `<span style="color:${C.warn};font-size:11.5px">Unsaved changes</span>`
+      : bc.saved ? `<span style="color:${C.mint};font-size:11.5px">Saved ✓</span>` : '';
+    return `<div style="font-size:12px;color:${C.dim};margin-bottom:12px;line-height:1.6">Choose how much of each response body is captured and kept in memory. Bodies larger than the cap are skipped (metadata only). Per-type rules override the default; a rule set to <b>off</b> skips that type entirely.</div>
+      <div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden;margin-bottom:12px">${head}${rows}</div>
+      <div style="margin-bottom:14px">${btn('+ Add MIME rule', 'body-add-rule', 'ghost')}</div>
+      ${field('Default cap', 'Applied to types without a rule', sizeSelect('data-bc-default', typeof bc.defaultMaxBytes === 'number' ? bc.defaultMaxBytes : null, 'No limit'))}
+      <div class="flex items-center gap-3" style="margin-top:16px">${btn('Save changes', 'body-save', 'primary')}${status}</div>`;
   }
 
   function field(label, hint, control) {
@@ -657,6 +676,32 @@
     if (typeof fn === 'function') fn(action);
   }
 
+  // ─── body capture settings (B5.1) ────────────────────────
+  // Serializes the editor state into the /api/settings/body-capture contract and
+  // hands it to WASM. Validates locally first so obvious mistakes get a friendly
+  // message instead of a round-trip 400.
+  function saveBodyCapture() {
+    const bc = state.bodyCapture;
+    for (const r of bc.mimeTypes) {
+      const name = (r.name || '').trim();
+      if (!name) { bc.error = 'Every rule needs a MIME type (e.g. application/json).'; bc.saved = false; renderSettings(); return; }
+      if (!name.includes('/')) { bc.error = `"${name}" is not a MIME type — use a "type/subtype" form or a wildcard like image/*.`; bc.saved = false; renderSettings(); return; }
+    }
+    const dto = {
+      mime_types: bc.mimeTypes.map((r) => {
+        const rule = { name: r.name.trim() };
+        if (typeof r.maxSizeBytes === 'number') rule.max_size_bytes = r.maxSizeBytes;
+        return rule;
+      }),
+    };
+    if (typeof bc.defaultMaxBytes === 'number') dto.default_max_bytes = bc.defaultMaxBytes;
+    bc.saving = true; bc.error = null; bc.saved = false;
+    renderSettings();
+    const fn = window.hslSaveBodyCapture;
+    if (typeof fn === 'function') fn(JSON.stringify(dto));
+    else { bc.saving = false; bc.error = 'Backend bridge unavailable.'; renderSettings(); }
+  }
+
   // ─── event delegation ────────────────────────────────────
   function wire() {
     document.addEventListener('click', (e) => {
@@ -681,19 +726,26 @@
       const acc = e.target.closest('[data-access]');
       if (acc) { state.access.mode = acc.dataset.access; renderSettings(); renderToolbar(); renderStatusBar(); return; }
 
-      const ruleT = e.target.closest('[data-action^="rule-toggle:"]');
-      if (ruleT) { const id = ruleT.dataset.action.split(':')[1]; const r = state.bodyRules.find((x) => x.id === id); if (r && !r.locked) r.on = !r.on; renderSettings(); return; }
-
       const act = e.target.closest('[data-action]');
       if (act) { handleAction(act.dataset.action); return; }
 
       if (e.target.closest('.modal-backdrop') && !e.target.closest('.modal-card')) closeModal();
     });
 
-    // selects inside modals
+    // live edits inside the body-capture panel (B5.1). Selects and name inputs
+    // mutate state without a re-render so focus/caret survive; add/remove/save
+    // re-render explicitly. `input` covers typing, `change` covers select menus.
+    const bcMarkDirty = () => { state.bodyCapture.dirty = true; state.bodyCapture.saved = false; state.bodyCapture.error = null; };
+    const bcSize = (v) => (v === '' ? null : Number(v));
     document.addEventListener('change', (e) => {
-      const rm = e.target.closest('[data-rulemax]');
-      if (rm) { const r = state.bodyRules.find((x) => x.id === rm.dataset.rulemax); if (r) r.max = Number(rm.value); }
+      const max = e.target.closest('[data-bc-max]');
+      if (max) { const r = state.bodyCapture.mimeTypes[Number(max.dataset.bcMax)]; if (r) { r.maxSizeBytes = bcSize(max.value); bcMarkDirty(); } return; }
+      const def = e.target.closest('[data-bc-default]');
+      if (def) { state.bodyCapture.defaultMaxBytes = bcSize(def.value); bcMarkDirty(); return; }
+    });
+    document.addEventListener('input', (e) => {
+      const name = e.target.closest('[data-bc-name]');
+      if (name) { const r = state.bodyCapture.mimeTypes[Number(name.dataset.bcName)]; if (r) { r.name = name.value; bcMarkDirty(); } }
     });
 
     $('#filter').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); });
@@ -722,7 +774,26 @@
   }
 
   function handleAction(a) {
+    if (a.startsWith('body-remove-rule:')) {
+      const i = Number(a.split(':')[1]);
+      state.bodyCapture.mimeTypes.splice(i, 1);
+      state.bodyCapture.dirty = true; state.bodyCapture.saved = false; state.bodyCapture.error = null;
+      renderSettings();
+      return;
+    }
     switch (a) {
+      case 'body-add-rule':
+        state.bodyCapture.mimeTypes.push({ name: '', maxSizeBytes: null });
+        state.bodyCapture.dirty = true; state.bodyCapture.saved = false; state.bodyCapture.error = null;
+        renderSettings();
+        break;
+      case 'body-save':
+        saveBodyCapture();
+        break;
+      case 'body-reload':
+        state.bodyCapture.error = null;
+        renderSettings();
+        break;
       case 'toggle-capture':
         // Optimistic flip; the capture_state event will confirm/correct it.
         captureAction(state.capturing ? 'pause' : 'resume');
@@ -793,6 +864,27 @@
     renderStatusBar();
   }
 
+  // ─── body capture settings result (from /api/settings/body-capture) ────
+  function setBodyCapture(s) {
+    const bc = state.bodyCapture;
+    bc.saving = false;
+    bc.loading = false;
+    if (!s) return;
+    if (s.error) { bc.error = s.error; bc.saved = false; if (modalKind === 'settings' && settingsTab === 'body') renderSettings(); return; }
+    // A load/save result replaces the editor state with the server's normalized view.
+    if (s.loaded || 'mimeTypes' in s) {
+      bc.loaded = true;
+      bc.error = null;
+      bc.defaultMaxBytes = (typeof s.defaultMaxBytes === 'number') ? s.defaultMaxBytes : null;
+      bc.mimeTypes = Array.isArray(s.mimeTypes)
+        ? s.mimeTypes.map((r) => ({ name: r.name || '', maxSizeBytes: (typeof r.maxSizeBytes === 'number') ? r.maxSizeBytes : null }))
+        : [];
+      bc.dirty = false;
+    }
+    bc.saved = !!s.saved;
+    if (modalKind === 'settings' && settingsTab === 'body') renderSettings();
+  }
+
   // ─── detail / body results (from /api/..., via WASM) ─────
   function setDetail(correlationId, detail) {
     const row = state.rows.find((x) => x.correlationId === correlationId);
@@ -825,6 +917,7 @@
     setDetail: setDetail,               // /api/requests/{id} result
     setBody: setBody,                   // /api/requests/{id}/body result
     setCaptureState: setCaptureState,   // capture_state event
+    setBodyCapture: setBodyCapture,     // /api/settings/body-capture result
     clear: () => { state.rows = []; state.selId = null; renderList(); renderDetail(); },
     rowHTML: (r) => rowHTML(normalizeExternalRow(r)),
   };

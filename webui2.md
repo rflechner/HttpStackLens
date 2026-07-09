@@ -293,7 +293,13 @@ server and WASM.
       mutation. `throughput` is left out — it depends on **B8 (deferred)**.
 
 ### EPIC F4 — Modals
-- [ ] F4.1 "Body capture" settings ↔ B5.1.
+- [x] F4.1 "Body capture" settings ↔ B5.1.
+      Rebuilt the Body-capture panel as a real editor over the B5.1 contract
+      (`GET`/`PUT /api/settings/body-capture`): a default cap + a list of
+      `{mime, max}` rules (add/remove/edit), replacing the mockup's fake
+      category toggles. WASM `hslLoadBodyCapture`/`hslSaveBodyCapture` bridge the
+      JSON; the panel loads lazily on open, validates locally (name required +
+      must be a MIME/wildcard), and shows saving/saved/error status.
 - [ ] F4.2 "Upstream" settings ↔ B5.2.
 - [ ] F4.3 "Access control" settings ↔ B5.3.
 - [ ] F4.4 Certificate wizard ↔ B6 (replace the simulated progress in `renderCert`).

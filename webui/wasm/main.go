@@ -395,6 +395,16 @@ func (m *StateModel) registerBridges() {
 		}
 		return nil
 	}))
+	js.Global().Set("hslLoadBodyCapture", js.FuncOf(func(this js.Value, args []js.Value) any {
+		m.loadBodyCapture()
+		return nil
+	}))
+	js.Global().Set("hslSaveBodyCapture", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			m.saveBodyCapture(args[0].String())
+		}
+		return nil
+	}))
 }
 
 func headersToJS(headers []shared.HeaderDto) []any {
@@ -491,6 +501,82 @@ func (m *StateModel) loadBody(correlationID, side string) {
 		})).
 		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
 			callMockup("setBody", correlationID, side, map[string]any{"available": false, "error": "Could not fetch body."})
+			return nil
+		}))
+}
+
+// bodyCaptureToJS flattens the body-capture DTO into the shape the JS settings
+// panel consumes. Kb/Mb limits are normalized to bytes so the editor works in a
+// single unit; the default cap is omitted when unset.
+func bodyCaptureToJS(dto shared.BodyCaptureSettingsDto) map[string]any {
+	rules := make([]any, 0, len(dto.MimeTypes))
+	for _, r := range dto.MimeTypes {
+		rule := map[string]any{"name": r.Name}
+		switch {
+		case r.MaxSizeBytes != nil:
+			rule["maxSizeBytes"] = float64(*r.MaxSizeBytes)
+		case r.MaxSizeKb != nil:
+			rule["maxSizeBytes"] = *r.MaxSizeKb * 1024
+		case r.MaxSizeMb != nil:
+			rule["maxSizeBytes"] = *r.MaxSizeMb * 1024 * 1024
+		}
+		rules = append(rules, rule)
+	}
+	out := map[string]any{"loaded": true, "mimeTypes": rules}
+	if dto.DefaultMaxBytes != nil {
+		out["defaultMaxBytes"] = float64(*dto.DefaultMaxBytes)
+	}
+	return out
+}
+
+func (m *StateModel) loadBodyCapture() {
+	fetchText("/api/settings/body-capture", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var dto shared.BodyCaptureSettingsDto
+		if err := json.Unmarshal([]byte(args[0].String()), &dto); err != nil {
+			callMockup("setBodyCapture", map[string]any{"error": "Could not load body capture settings."})
+			return nil
+		}
+		callMockup("setBodyCapture", bodyCaptureToJS(dto))
+		return nil
+	}))
+}
+
+// saveBodyCapture PUTs the JSON payload built by the JS panel and echoes the
+// server's normalized result back (with a saved flag), or surfaces the error.
+func (m *StateModel) saveBodyCapture(payload string) {
+	opts := map[string]any{
+		"method":  "PUT",
+		"headers": map[string]any{"Content-Type": "application/json"},
+		"body":    payload,
+	}
+	js.Global().Call("fetch", "/api/settings/body-capture", opts).
+		Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+			res := args[0]
+			status := res.Get("status").Int()
+			res.Call("text").Call("then", js.FuncOf(func(this js.Value, targs []js.Value) any {
+				text := targs[0].String()
+				if status < 200 || status >= 300 {
+					msg := text
+					if msg == "" {
+						msg = "Could not save body capture settings."
+					}
+					callMockup("setBodyCapture", map[string]any{"error": msg})
+					return nil
+				}
+				var dto shared.BodyCaptureSettingsDto
+				if err := json.Unmarshal([]byte(text), &dto); err != nil {
+					callMockup("setBodyCapture", map[string]any{"saved": true})
+					return nil
+				}
+				out := bodyCaptureToJS(dto)
+				out["saved"] = true
+				callMockup("setBodyCapture", out)
+				return nil
+			}))
+			return nil
+		})).
+		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+			callMockup("setBodyCapture", map[string]any{"error": "Could not save body capture settings."})
 			return nil
 		}))
 }
