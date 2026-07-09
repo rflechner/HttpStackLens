@@ -272,11 +272,11 @@ server and WASM.
       to be rewired onto the real model).
 
 ### EPIC F2 — Detail pane
-- [ ] F2.1 Overview wired to `/api/requests/{id}`.
-- [ ] F2.2 Real req+resp headers.
-- [ ] F2.3 Body (Pretty/Raw/Hex) via `/api/requests/{id}/body` (+ `bodySkipped` /
+- [x] F2.1 Overview wired to `/api/requests/{id}`.
+- [x] F2.2 Real req+resp headers.
+- [x] F2.3 Body (Pretty/Raw/Hex) via `/api/requests/{id}/body` (+ `bodySkipped` /
       `stream` states already visually designed in the mockup).
-- [ ] F2.4 Real timing (depends on B4; otherwise hide / "total only").
+- [x] F2.4 Real timing (depends on B4; otherwise hide / "total only").
 - [ ] F2.5 Replay / Edit & send buttons (depends on B7).
 
 ### EPIC F3 — Toolbar & status bar
