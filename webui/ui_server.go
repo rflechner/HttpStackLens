@@ -218,18 +218,25 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 	})
 
 	hub := newHub()
+	// captureState is the single source of truth for the capture_state SSE event
+	// and the /api/capture/state endpoint. It bundles the capture flag with the
+	// live decrypt/upstream/access states so the status bar (F3.2) stays in sync.
+	captureState := func() shared.CaptureStateDto {
+		return captureStateDto(captureCtl, requestStore, decryptHttpsSettings, upstreamSettings, accessControlSettings)
+	}
+	broadcastCaptureState := func() { publishCaptureState(hub, captureState()) }
 	mux.HandleFunc("/events", sseHandler(hub))
 	mux.HandleFunc("/api/requests/", requestsAPIHandler(requestStore))
-	mux.HandleFunc("/api/capture/state", captureStateHandler(captureCtl, requestStore))
-	mux.HandleFunc("/api/capture/pause", capturePauseHandler(hub, captureCtl, requestStore, persistStorageEnabled))
-	mux.HandleFunc("/api/capture/resume", captureResumeHandler(hub, captureCtl, requestStore, persistStorageEnabled))
-	mux.HandleFunc("/api/capture/clear", captureClearHandler(hub, captureCtl, requestStore))
+	mux.HandleFunc("/api/capture/state", captureStateHandler(captureState))
+	mux.HandleFunc("/api/capture/pause", capturePauseHandler(hub, captureCtl, persistStorageEnabled, captureState))
+	mux.HandleFunc("/api/capture/resume", captureResumeHandler(hub, captureCtl, persistStorageEnabled, captureState))
+	mux.HandleFunc("/api/capture/clear", captureClearHandler(hub, requestStore, captureState))
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
-	mux.HandleFunc("/api/settings/decrypt-https", decryptHttpsToggleHandler(decryptHttpsSettings, updateDecryptHttps))
-	mux.HandleFunc("/api/settings/upstream", upstreamSettingsHandler(upstreamSettings, persistUpstreamSettings))
-	mux.HandleFunc("/api/settings/access-control", accessControlSettingsHandler(accessControlSettings, persistAccessControlSettings))
+	mux.HandleFunc("/api/settings/decrypt-https", decryptHttpsToggleHandler(decryptHttpsSettings, updateDecryptHttps, broadcastCaptureState))
+	mux.HandleFunc("/api/settings/upstream", upstreamSettingsHandler(upstreamSettings, persistUpstreamSettings, broadcastCaptureState))
+	mux.HandleFunc("/api/settings/access-control", accessControlSettingsHandler(accessControlSettings, persistAccessControlSettings, broadcastCaptureState))
 
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -299,18 +306,18 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 	return hub
 }
 
-func captureStateHandler(captureCtl *storage.CaptureController, store *storage.RequestStore) http.HandlerFunc {
+func captureStateHandler(stateFn func() shared.CaptureStateDto) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, captureStateDto(captureCtl, store))
+		writeJSON(w, stateFn())
 	}
 }
 
-func capturePauseHandler(hub *Hub, captureCtl *storage.CaptureController, store *storage.RequestStore, persistStorageEnabled storageEnabledPersister) http.HandlerFunc {
+func capturePauseHandler(hub *Hub, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -325,13 +332,13 @@ func capturePauseHandler(hub *Hub, captureCtl *storage.CaptureController, store 
 		if captureCtl != nil {
 			captureCtl.Pause()
 		}
-		state := captureStateDto(captureCtl, store)
+		state := stateFn()
 		publishCaptureState(hub, state)
 		writeJSON(w, state)
 	}
 }
 
-func captureResumeHandler(hub *Hub, captureCtl *storage.CaptureController, store *storage.RequestStore, persistStorageEnabled storageEnabledPersister) http.HandlerFunc {
+func captureResumeHandler(hub *Hub, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -346,7 +353,7 @@ func captureResumeHandler(hub *Hub, captureCtl *storage.CaptureController, store
 		if captureCtl != nil {
 			captureCtl.Resume()
 		}
-		state := captureStateDto(captureCtl, store)
+		state := stateFn()
 		publishCaptureState(hub, state)
 		writeJSON(w, state)
 	}
@@ -359,7 +366,7 @@ func persistCaptureSetting(persistStorageEnabled storageEnabledPersister, enable
 	return persistStorageEnabled(enabled)
 }
 
-func captureClearHandler(hub *Hub, captureCtl *storage.CaptureController, store *storage.RequestStore) http.HandlerFunc {
+func captureClearHandler(hub *Hub, store *storage.RequestStore, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
@@ -369,13 +376,13 @@ func captureClearHandler(hub *Hub, captureCtl *storage.CaptureController, store 
 		if store != nil {
 			store.Clear()
 		}
-		state := captureStateDto(captureCtl, store)
+		state := stateFn()
 		publishCaptureState(hub, state)
 		writeJSON(w, state)
 	}
 }
 
-func captureStateDto(captureCtl *storage.CaptureController, store *storage.RequestStore) shared.CaptureStateDto {
+func captureStateDto(captureCtl *storage.CaptureController, store *storage.RequestStore, decryptSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessSettings *configuration.AccessControlSettingsStore) shared.CaptureStateDto {
 	size := 0
 	if store != nil {
 		size = store.Len()
@@ -384,7 +391,19 @@ func captureStateDto(captureCtl *storage.CaptureController, store *storage.Reque
 	if captureCtl != nil {
 		capturing = captureCtl.IsCapturing()
 	}
-	return shared.CaptureStateDto{Capturing: capturing, BufferSize: size}
+	dto := shared.CaptureStateDto{Capturing: capturing, BufferSize: size}
+	if decryptSettings != nil {
+		dto.Decrypt.Enabled = decryptSettings.Get().Enabled
+	}
+	if upstreamSettings != nil {
+		up := upstreamSettings.Get()
+		dto.Upstream.Enabled = strings.TrimSpace(up.OutputProxyUri) != ""
+		dto.Upstream.Ntlm = up.AddWindowsAuthentication
+	}
+	if accessSettings != nil {
+		dto.Access.Mode = string(accessSettings.Get().Proxy.Mode)
+	}
+	return dto
 }
 
 func publishCaptureState(hub *Hub, state shared.CaptureStateDto) {
@@ -628,7 +647,7 @@ func bodyCaptureSettingsHandler(settings *configuration.DecryptHttpsConfigStore,
 	}
 }
 
-func decryptHttpsToggleHandler(settings *configuration.DecryptHttpsConfigStore, update decryptHttpsToggleUpdater) http.HandlerFunc {
+func decryptHttpsToggleHandler(settings *configuration.DecryptHttpsConfigStore, update decryptHttpsToggleUpdater, broadcast func()) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if settings == nil {
 			http.Error(w, "HTTPS decryption settings are unavailable", http.StatusServiceUnavailable)
@@ -656,6 +675,9 @@ func decryptHttpsToggleHandler(settings *configuration.DecryptHttpsConfigStore, 
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			if broadcast != nil {
+				broadcast()
+			}
 			writeJSON(w, decryptHttpsToggleSettingsDto(updated))
 		default:
 			w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
@@ -664,7 +686,7 @@ func decryptHttpsToggleHandler(settings *configuration.DecryptHttpsConfigStore, 
 	}
 }
 
-func accessControlSettingsHandler(settings *configuration.AccessControlSettingsStore, persist accessControlSettingsPersister) http.HandlerFunc {
+func accessControlSettingsHandler(settings *configuration.AccessControlSettingsStore, persist accessControlSettingsPersister, broadcast func()) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if settings == nil {
 			http.Error(w, "access control settings are unavailable", http.StatusServiceUnavailable)
@@ -695,6 +717,9 @@ func accessControlSettingsHandler(settings *configuration.AccessControlSettingsS
 				}
 			}
 			updated := settings.Update(next)
+			if broadcast != nil {
+				broadcast()
+			}
 			writeJSON(w, accessControlSettingsDto(updated))
 		default:
 			w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))
@@ -740,7 +765,7 @@ func accessControlConfigFromDto(name string, dto shared.AccessControlConfigDto) 
 	return config, nil
 }
 
-func upstreamSettingsHandler(settings *configuration.UpstreamSettingsStore, persist upstreamSettingsPersister) http.HandlerFunc {
+func upstreamSettingsHandler(settings *configuration.UpstreamSettingsStore, persist upstreamSettingsPersister, broadcast func()) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if settings == nil {
 			http.Error(w, "upstream settings are unavailable", http.StatusServiceUnavailable)
@@ -771,6 +796,9 @@ func upstreamSettingsHandler(settings *configuration.UpstreamSettingsStore, pers
 				}
 			}
 			updated := settings.Update(next)
+			if broadcast != nil {
+				broadcast()
+			}
 			writeJSON(w, upstreamSettingsDto(updated))
 		default:
 			w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPut}, ", "))

@@ -154,8 +154,30 @@ type CaptureResponseRecordDto struct {
 }
 
 type CaptureStateDto struct {
-	Capturing  bool `json:"capturing"`
-	BufferSize int  `json:"buffer_size"`
+	Capturing  bool                    `json:"capturing"`
+	BufferSize int                     `json:"buffer_size"`
+	Decrypt    CaptureDecryptStateDto  `json:"decrypt"`
+	Upstream   CaptureUpstreamStateDto `json:"upstream"`
+	Access     CaptureAccessStateDto   `json:"access"`
+}
+
+// CaptureDecryptStateDto reports whether HTTPS decryption (MITM) is currently on,
+// so the status bar can show "decrypted" vs "passthrough".
+type CaptureDecryptStateDto struct {
+	Enabled bool `json:"enabled"`
+}
+
+// CaptureUpstreamStateDto summarizes the outbound proxy state for the status bar:
+// Enabled when an upstream proxy URL is configured, Ntlm when Windows auth is on.
+type CaptureUpstreamStateDto struct {
+	Enabled bool `json:"enabled"`
+	Ntlm    bool `json:"ntlm"`
+}
+
+// CaptureAccessStateDto reports the proxy access-control mode
+// (loopback/lan/allowlist/open) for the status bar.
+type CaptureAccessStateDto struct {
+	Mode string `json:"mode"`
 }
 
 type CertificatesInfosDto struct {

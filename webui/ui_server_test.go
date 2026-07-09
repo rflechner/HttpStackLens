@@ -322,7 +322,7 @@ func TestCaptureStateHandlerReturnsState(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/capture/state", nil)
 	rr := httptest.NewRecorder()
-	captureStateHandler(ctl, store).ServeHTTP(rr, req)
+	captureStateHandler(func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -333,6 +333,41 @@ func TestCaptureStateHandlerReturnsState(t *testing.T) {
 	}
 	if !got.Capturing || got.BufferSize != 1 {
 		t.Fatalf("state = %+v, want capturing true and buffer size 1", got)
+	}
+}
+
+func TestCaptureStateDtoReportsPipelineStates(t *testing.T) {
+	ctl := storage.NewCaptureController(true)
+	store := storage.NewRequestStore(10)
+	decrypt := configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{Enabled: true})
+	upstream := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{
+		OutputProxyUri:           "http://proxy.corp.local:8080",
+		AddWindowsAuthentication: true,
+	})
+	access := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
+		Proxy: configuration.AccessControlConfig{Mode: configuration.AccessControlLan},
+	})
+
+	got := captureStateDto(ctl, store, decrypt, upstream, access)
+
+	if !got.Decrypt.Enabled {
+		t.Fatalf("decrypt = %+v, want enabled", got.Decrypt)
+	}
+	if !got.Upstream.Enabled || !got.Upstream.Ntlm {
+		t.Fatalf("upstream = %+v, want enabled and ntlm", got.Upstream)
+	}
+	if got.Access.Mode != string(configuration.AccessControlLan) {
+		t.Fatalf("access mode = %q, want %q", got.Access.Mode, configuration.AccessControlLan)
+	}
+}
+
+func TestCaptureStateDtoUpstreamDisabledWhenNoProxyUri(t *testing.T) {
+	upstream := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{OutputProxyUri: "  "})
+
+	got := captureStateDto(nil, nil, nil, upstream, nil)
+
+	if got.Upstream.Enabled {
+		t.Fatalf("upstream = %+v, want disabled for blank proxy uri", got.Upstream)
 	}
 }
 
@@ -349,7 +384,7 @@ func TestCapturePauseResumeHandlersToggleState(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/capture/pause", nil)
 	rr := httptest.NewRecorder()
-	capturePauseHandler(hub, ctl, store, persist).ServeHTTP(rr, req)
+	capturePauseHandler(hub, ctl, persist, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("pause status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
 	}
@@ -370,7 +405,7 @@ func TestCapturePauseResumeHandlersToggleState(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodPost, "/api/capture/resume", nil)
 	rr = httptest.NewRecorder()
-	captureResumeHandler(hub, ctl, store, persist).ServeHTTP(rr, req)
+	captureResumeHandler(hub, ctl, persist, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("resume status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
 	}
@@ -388,9 +423,10 @@ func TestCapturePauseHandlerDoesNotChangeStateWhenPersistenceFails(t *testing.T)
 	req := httptest.NewRequest(http.MethodPost, "/api/capture/pause", nil)
 	rr := httptest.NewRecorder()
 
-	capturePauseHandler(nil, ctl, storage.NewRequestStore(10), func(bool) error {
+	store := storage.NewRequestStore(10)
+	capturePauseHandler(nil, ctl, func(bool) error {
 		return persistErr
-	}).ServeHTTP(rr, req)
+	}, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
@@ -409,7 +445,7 @@ func TestCaptureClearHandlerClearsServerBuffer(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/capture/clear", nil)
 	rr := httptest.NewRecorder()
-	captureClearHandler(hub, ctl, store).ServeHTTP(rr, req)
+	captureClearHandler(hub, store, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -429,7 +465,7 @@ func TestCaptureClearHandlerClearsServerBuffer(t *testing.T) {
 func TestCapturePauseHandlerRejectsNonPost(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/capture/pause", nil)
 	rr := httptest.NewRecorder()
-	capturePauseHandler(nil, storage.NewCaptureController(true), storage.NewRequestStore(10), nil).ServeHTTP(rr, req)
+	capturePauseHandler(nil, storage.NewCaptureController(true), nil, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
@@ -813,7 +849,7 @@ func TestDecryptHttpsToggleHandlerReturnsSettings(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/settings/decrypt-https", nil)
 	rr := httptest.NewRecorder()
-	decryptHttpsToggleHandler(settings, nil).ServeHTTP(rr, req)
+	decryptHttpsToggleHandler(settings, nil, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -837,7 +873,7 @@ func TestDecryptHttpsToggleHandlerUpdatesRuntime(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/decrypt-https", strings.NewReader(`{"enabled":true}`))
 	rr := httptest.NewRecorder()
-	decryptHttpsToggleHandler(settings, update).ServeHTTP(rr, req)
+	decryptHttpsToggleHandler(settings, update, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -865,7 +901,7 @@ func TestDecryptHttpsToggleHandlerDoesNotUpdateRuntimeWhenCallbackFails(t *testi
 
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/decrypt-https", strings.NewReader(`{"enabled":true}`))
 	rr := httptest.NewRecorder()
-	decryptHttpsToggleHandler(settings, update).ServeHTTP(rr, req)
+	decryptHttpsToggleHandler(settings, update, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
@@ -883,7 +919,7 @@ func TestAccessControlSettingsHandlerReturnsSettings(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/settings/access-control", nil)
 	rr := httptest.NewRecorder()
-	accessControlSettingsHandler(settings, nil).ServeHTTP(rr, req)
+	accessControlSettingsHandler(settings, nil, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -911,7 +947,7 @@ func TestAccessControlSettingsHandlerUpdatesRuntimeAndPersists(t *testing.T) {
 	body := []byte(`{"proxy":{"mode":"lan","networks":[]},"web_ui":{"mode":"allowlist","networks":["10.0.0.0/8"]}}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/access-control", bytes.NewReader(body))
 	rr := httptest.NewRecorder()
-	accessControlSettingsHandler(settings, persist).ServeHTTP(rr, req)
+	accessControlSettingsHandler(settings, persist, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -931,7 +967,7 @@ func TestAccessControlSettingsHandlerRejectsInvalidNetwork(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/access-control", bytes.NewReader(body))
 	rr := httptest.NewRecorder()
 
-	accessControlSettingsHandler(settings, nil).ServeHTTP(rr, req)
+	accessControlSettingsHandler(settings, nil, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusBadRequest, rr.Body.String())
@@ -988,7 +1024,7 @@ func TestUpstreamSettingsHandlerReturnsSettings(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/settings/upstream", nil)
 	rr := httptest.NewRecorder()
-	upstreamSettingsHandler(settings, nil).ServeHTTP(rr, req)
+	upstreamSettingsHandler(settings, nil, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -1016,7 +1052,7 @@ func TestUpstreamSettingsHandlerUpdatesRuntimeAndPersists(t *testing.T) {
 	body := []byte(`{"output_proxy_uri":"http://proxy:3129","no_proxy":["example.com"," ","host.docker.internal"],"add_windows_authentication":true}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/upstream", bytes.NewReader(body))
 	rr := httptest.NewRecorder()
-	upstreamSettingsHandler(settings, persist).ServeHTTP(rr, req)
+	upstreamSettingsHandler(settings, persist, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -1042,7 +1078,7 @@ func TestUpstreamSettingsHandlerDoesNotUpdateRuntimeWhenPersistenceFails(t *test
 	rr := httptest.NewRecorder()
 	upstreamSettingsHandler(settings, func(configuration.UpstreamSettings) error {
 		return errors.New("disk full")
-	}).ServeHTTP(rr, req)
+	}, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
@@ -1058,7 +1094,7 @@ func TestUpstreamSettingsHandlerRejectsInvalidUri(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/upstream", bytes.NewReader(body))
 	rr := httptest.NewRecorder()
 
-	upstreamSettingsHandler(settings, nil).ServeHTTP(rr, req)
+	upstreamSettingsHandler(settings, nil, nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusBadRequest, rr.Body.String())

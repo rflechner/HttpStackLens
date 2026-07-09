@@ -779,11 +779,18 @@
 
   // ─── capture state (from SSE capture_state, via WASM) ────
   function setCaptureState(s) {
-    if (s && typeof s.capturing === 'boolean') {
-      state.capturing = s.capturing;
-      renderToolbar();
-      renderStatusBar();
+    if (!s) return;
+    if (typeof s.capturing === 'boolean') state.capturing = s.capturing;
+    // decrypt / upstream / access come from the backend (F3.2); the status bar
+    // and toolbar reflect the real pipeline state rather than local toggles.
+    if (s.decrypt && typeof s.decrypt.enabled === 'boolean') state.decryption = s.decrypt.enabled;
+    if (s.upstream) {
+      if (typeof s.upstream.enabled === 'boolean') state.upstream.on = s.upstream.enabled;
+      if (typeof s.upstream.ntlm === 'boolean') state.upstream.ntlm = s.upstream.ntlm;
     }
+    if (s.access && s.access.mode) state.access.mode = s.access.mode;
+    renderToolbar();
+    renderStatusBar();
   }
 
   // ─── detail / body results (from /api/..., via WASM) ─────

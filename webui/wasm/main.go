@@ -227,10 +227,32 @@ func (m *StateModel) connectSSE() {
 		if err := json.Unmarshal([]byte(data), &st); err != nil {
 			return nil
 		}
-		callMockup("setCaptureState", map[string]any{
-			"capturing":  st.Capturing,
-			"bufferSize": st.BufferSize,
-		})
+		callMockup("setCaptureState", captureStateToJS(st))
+		return nil
+	}))
+}
+
+// captureStateToJS flattens the capture_state DTO into the shape the JS status
+// bar consumes (capturing + live decrypt/upstream/access states).
+func captureStateToJS(st shared.CaptureStateDto) map[string]any {
+	return map[string]any{
+		"capturing":  st.Capturing,
+		"bufferSize": st.BufferSize,
+		"decrypt":    map[string]any{"enabled": st.Decrypt.Enabled},
+		"upstream":   map[string]any{"enabled": st.Upstream.Enabled, "ntlm": st.Upstream.Ntlm},
+		"access":     map[string]any{"mode": st.Access.Mode},
+	}
+}
+
+// loadCaptureState fetches the current capture state once at boot so the status
+// bar reflects the real backend state immediately, before any mutation event.
+func (m *StateModel) loadCaptureState() {
+	fetchText("/api/capture/state", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var st shared.CaptureStateDto
+		if err := json.Unmarshal([]byte(args[0].String()), &st); err != nil {
+			return nil
+		}
+		callMockup("setCaptureState", captureStateToJS(st))
 		return nil
 	}))
 }
@@ -509,6 +531,7 @@ func main() {
 	model := &StateModel{}
 	model.registerBridges()
 	model.connectSSE()
+	model.loadCaptureState()
 
 	dismissLoader()
 

@@ -280,9 +280,17 @@ server and WASM.
 - [ ] F2.5 Replay / Edit & send buttons (depends on B7).
 
 ### EPIC F3 — Toolbar & status bar
-- [ ] F3.1 Pause/Resume, Clear wired to B3.
-- [ ] F3.2 Status bar: req/errors/avg/total (front) + throughput (B8) +
+- [x] F3.1 Pause/Resume, Clear wired to B3.
+      Toolbar + Space/⌘L relay through WASM `hslCapture` to
+      `POST /api/capture/{pause,resume,clear}`; the authoritative `capturing`
+      flag comes back via the `capture_state` SSE event → `setCaptureState`.
+- [x] F3.2 Status bar: req/errors/avg/total (front) +
       decrypt/upstream/access states (via `capture_state`).
+      `CaptureStateDto` now carries the live decrypt (MITM), upstream (proxy +
+      NTLM) and access-control mode; `captureStateDto` reads the three settings
+      stores, the settings `PUT` handlers re-broadcast `capture_state`, and WASM
+      fetches `/api/capture/state` on boot so the bar is correct before any
+      mutation. `throughput` is left out — it depends on **B8 (deferred)**.
 
 ### EPIC F4 — Modals
 - [ ] F4.1 "Body capture" settings ↔ B5.1.

@@ -296,7 +296,7 @@ paths:
                 capture_state:
                   value: |
                     event: capture_state
-                    data: {"capturing":false,"buffer_size":0}
+                    data: {"capturing":false,"buffer_size":0,"decrypt":{"enabled":true},"upstream":{"enabled":false,"ntlm":false},"access":{"mode":"loopback"}}
   /api/requests/{id}:
     get:
       tags: [Requests]
@@ -699,7 +699,7 @@ components:
           type: integer
     CaptureState:
       type: object
-      required: [capturing, buffer_size]
+      required: [capturing, buffer_size, decrypt, upstream, access]
       properties:
         capturing:
           type: boolean
@@ -707,6 +707,32 @@ components:
         buffer_size:
           type: integer
           description: Number of exchanges currently kept in the in-memory request buffer.
+        decrypt:
+          type: object
+          required: [enabled]
+          description: Live HTTPS decryption (MITM) state, for the status bar.
+          properties:
+            enabled:
+              type: boolean
+        upstream:
+          type: object
+          required: [enabled, ntlm]
+          description: Live outbound (corporate) proxy state, for the status bar.
+          properties:
+            enabled:
+              type: boolean
+              description: True when an upstream proxy URL is configured.
+            ntlm:
+              type: boolean
+              description: True when Windows (NTLM/Negotiate) authentication is enabled.
+        access:
+          type: object
+          required: [mode]
+          description: Live proxy access-control mode, for the status bar.
+          properties:
+            mode:
+              type: string
+              enum: [loopback, lan, allowlist, open]
     CaptureFile:
       type: object
       required: [name, size, modified_at]
