@@ -642,14 +642,21 @@
   }
   function upstreamPanel() {
     const u = state.upstream;
-    return `<div class="grid gap-[14px]">
-      <div style="font-size:12px;color:${C.dim};line-height:1.6">Route outgoing traffic through a corporate proxy. HttpStackLens can handle NTLM / Negotiate auth on your behalf so apps that can't speak it still reach the outside world.</div>
+    return `
+<div class="grid gap-[14px]">
+    <div style="font-size:12px;color:${C.dim};line-height:1.6">Route outgoing traffic through a corporate proxy. HttpStackLens can handle NTLM / Negotiate auth on your behalf so apps that can't speak it still reach the outside world.</div>
       ${field('Upstream proxy', 'Leave empty to connect directly', `<div class="flex gap-[6px]">${input(u.host, 'http://proxy.corp.local:8080', true)}${toggle(u.on, 'upstream-toggle')}</div>`)}
       ${field('Bypass hosts', 'Comma-separated · globs allowed', input('*.corp.local, 10.*, localhost', '', true))}
       <div style="padding:14px;background:${C.bg2};border:1px solid ${C.line};border-radius:4px">
-        <div class="flex items-center gap-[10px]" style="margin-bottom:10px"><span style="font-size:16px">⊞</span><div class="flex-1"><div style="font-size:12.5px;color:${C.ink};font-weight:600">NTLM / Negotiate auth</div><div style="font-size:11px;color:${C.dim};margin-top:2px">Windows only · use current Windows session to authenticate</div></div>${toggle(u.ntlm, 'ntlm-toggle', false, !u.on)}</div>
-        <div class="grid gap-[10px]" style="grid-template-columns:1fr 1fr;opacity:${u.ntlm ? 1 : .5}">${field('Domain', '', input(u.domain, 'CORP', false, !u.ntlm))}${field('Username override', '', input('', '(current session)', false, !u.ntlm))}</div></div>
-      ${field('PAC script', 'Optional — overrides the settings above when matched', input('', 'http://wpad/wpad.dat', true))}</div>`;
+        <div class="flex items-center gap-[10px]" style="margin-bottom:10px">
+            <span style="font-size:16px">⊞</span>
+            <div class="flex-1">
+                <div style="font-size:12.5px;color:${C.ink};font-weight:600">NTLM / Negotiate auth</div>
+                <div style="font-size:11px;color:${C.dim};margin-top:2px">Windows only · use current Windows session to authenticate</div>
+            </div>
+            ${toggle(u.ntlm, 'ntlm-toggle', false, !u.on)}</div>
+        </div>
+</div>`;
   }
   function accessPanel() {
     const a = state.access;
