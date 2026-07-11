@@ -435,6 +435,18 @@ func (m *StateModel) registerBridges() {
 		}
 		return nil
 	}))
+
+	js.Global().Set("hslSetAccessMode", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			var payload shared.AccessControlConfigDto
+			if err := json.Unmarshal([]byte(args[0].String()), &payload); err != nil {
+				consoleLog("Invalid access control settings: " + err.Error())
+				return nil
+			}
+			m.saveAccessMode(payload)
+		}
+		return nil
+	}))
 }
 
 func headersToJS(headers []shared.HeaderDto) []any {
@@ -602,6 +614,19 @@ func (m *StateModel) saveBodyCapture(payload shared.BodyCaptureSettingsDto) {
 		}))
 	if err != nil {
 		callMockup("setBodyCapture", map[string]any{"error": "Could not serialize body capture settings."})
+	}
+}
+
+func (m *StateModel) saveAccessMode(accessMode shared.AccessControlConfigDto) {
+	payload := shared.AccessControlSettingsDto{
+		Proxy: accessMode,
+		WebUi: accessMode,
+	}
+	if err := sendAjaxRequest("/api/settings/access-control", "PUT", payload,
+		js.FuncOf(func(this js.Value, args []js.Value) any {
+			return nil
+		})); err != nil {
+		consoleLog("Could not serialize AccessControlConfigDto: " + err.Error())
 	}
 }
 
