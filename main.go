@@ -53,6 +53,8 @@ func main() {
 	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
 	upstreamSettings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettingsFromProxyConfig(config.Proxy))
 	accessControlSettings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettingsFromConfig(config))
+	runtimeConfig := newRuntimeConfigState(config)
+	runtimeCommands := make(chan webui.RuntimeCommand, 16)
 	basePipeline := appContext.pipeline
 	activePipeline := middlewares.NewSwitchableMiddleware(basePipeline)
 	appContext.pipeline = activePipeline
@@ -64,29 +66,47 @@ func main() {
 		defer func() { _ = captureWriter.Close() }()
 	}
 
-	var decryptRuntime *decryptHttpsRuntime
-	updateDecryptHttps := func(enabled bool) (configuration.DecryptHttpsConfig, error) {
-		if decryptRuntime == nil {
-			return decryptHttpsSettings.Get(), fmt.Errorf("HTTPS decryption runtime is not ready")
-		}
-		return decryptRuntime.SetEnabled(enabled)
-	}
-
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config, decryptHttpsSettings, upstreamSettings, accessControlSettings, requestStore, captureCtl, configuration.PersistStorageEnabled, configuration.PersistDecryptHttpsCaptureRules, configuration.PersistUpstreamSettings, configuration.PersistAccessControlSettings, updateDecryptHttps)
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
+		InitialConfig:         config,
+		CurrentConfig:         runtimeConfig.Snapshot,
+		DecryptHTTPSSettings:  decryptHttpsSettings,
+		UpstreamSettings:      upstreamSettings,
+		AccessControlSettings: accessControlSettings,
+		Requests:              requestStore,
+		Capture:               captureCtl,
+		Commands:              runtimeCommands,
+	})
 
 	// Streams request/response events to the Web UI over SSE. Created before the
 	// pipeline so the HTTPS interceptor can surface the decrypted requests and
 	// responses it sees (they are otherwise only written to the capture file).
 	logger := logging.CreateWebUiEventLogger(hub)
 
-	decryptRuntime = newDecryptHttpsRuntime(config, basePipeline, activePipeline, decryptHttpsSettings, captureWriter, logger, requestStore, captureCtl, configuration.PersistDecryptHttpsEnabled)
+	decryptRuntime := newDecryptHttpsRuntime(config, basePipeline, activePipeline, decryptHttpsSettings, captureWriter, logger, requestStore, captureCtl, configuration.PersistDecryptHttpsEnabled)
 	if err := decryptRuntime.ApplyInitial(); err != nil {
 		log.Fatal(err)
 	}
 
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, accessControlSettings, captureWriter, requestStore, captureCtl)
+	proxyServer, err := CreateProxyServer(appContext, logger, config.Proxy, accessControlSettings, captureWriter, requestStore, captureCtl)
+	if err != nil {
+		log.Fatal(err)
+	}
+	supervisor := &runtimeSupervisor{
+		config:        runtimeConfig,
+		appContext:    appContext,
+		proxy:         proxyServer,
+		eventLogger:   logger,
+		decrypt:       decryptRuntime,
+		decryptStore:  decryptHttpsSettings,
+		upstreamStore: upstreamSettings,
+		accessStore:   accessControlSettings,
+		capture:       captureWriter,
+		requests:      requestStore,
+		captureCtl:    captureCtl,
+	}
 
 	go proxyServer.Run()
+	go supervisor.Run(runtimeCommands, stopChan)
 
 	keyboard := bufio.NewReader(os.Stdin)
 

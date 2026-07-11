@@ -36,6 +36,44 @@ type upstreamSettingsPersister func(configuration.UpstreamSettings) error
 type accessControlSettingsPersister func(configuration.AccessControlSettings) error
 type decryptHttpsToggleUpdater func(bool) (configuration.DecryptHttpsConfig, error)
 
+type RuntimeCommandKind int
+
+const (
+	SetStorageEnabled RuntimeCommandKind = iota
+	SetBodyCapture
+	SetDecryptHTTPS
+	SetUpstream
+	SetAccessControl
+)
+
+// RuntimeCommand is emitted by the HTTP adapter and handled by the application
+// supervisor. Reply is buffered so the supervisor never remains blocked if the
+// originating HTTP request is cancelled while a command is being applied.
+type RuntimeCommand struct {
+	Kind          RuntimeCommandKind
+	Enabled       bool
+	DecryptHTTPS  configuration.DecryptHttpsConfig
+	Upstream      configuration.UpstreamSettings
+	AccessControl configuration.AccessControlSettings
+	Reply         chan RuntimeCommandResult
+}
+
+type RuntimeCommandResult struct {
+	DecryptHTTPS configuration.DecryptHttpsConfig
+	Err          error
+}
+
+type Dependencies struct {
+	InitialConfig         configuration.AppConfig
+	CurrentConfig         func() configuration.AppConfig
+	DecryptHTTPSSettings  *configuration.DecryptHttpsConfigStore
+	UpstreamSettings      *configuration.UpstreamSettingsStore
+	AccessControlSettings *configuration.AccessControlSettingsStore
+	Requests              *storage.RequestStore
+	Capture               *storage.CaptureController
+	Commands              chan<- RuntimeCommand
+}
+
 type Hub struct {
 	clients  map[chan string]struct{}
 	mu       sync.Mutex
@@ -138,7 +176,38 @@ func sseHandler(hub *Hub) http.HandlerFunc {
 	}
 }
 
-func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decryptHttpsSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessControlSettings *configuration.AccessControlSettingsStore, requestStore *storage.RequestStore, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, persistBodyCaptureSettings bodyCaptureSettingsPersister, persistUpstreamSettings upstreamSettingsPersister, persistAccessControlSettings accessControlSettingsPersister, updateDecryptHttps decryptHttpsToggleUpdater) *Hub {
+func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
+	config := deps.InitialConfig
+	decryptHttpsSettings := deps.DecryptHTTPSSettings
+	upstreamSettings := deps.UpstreamSettings
+	accessControlSettings := deps.AccessControlSettings
+	requestStore := deps.Requests
+	captureCtl := deps.Capture
+
+	send := func(command RuntimeCommand) RuntimeCommandResult {
+		if deps.Commands == nil {
+			return RuntimeCommandResult{Err: errors.New("runtime configuration is unavailable")}
+		}
+		command.Reply = make(chan RuntimeCommandResult, 1)
+		deps.Commands <- command
+		return <-command.Reply
+	}
+	persistStorageEnabled := func(enabled bool) error {
+		return send(RuntimeCommand{Kind: SetStorageEnabled, Enabled: enabled}).Err
+	}
+	persistBodyCaptureSettings := func(settings configuration.DecryptHttpsConfig) error {
+		return send(RuntimeCommand{Kind: SetBodyCapture, DecryptHTTPS: settings}).Err
+	}
+	persistUpstreamSettings := func(settings configuration.UpstreamSettings) error {
+		return send(RuntimeCommand{Kind: SetUpstream, Upstream: settings}).Err
+	}
+	persistAccessControlSettings := func(settings configuration.AccessControlSettings) error {
+		return send(RuntimeCommand{Kind: SetAccessControl, AccessControl: settings}).Err
+	}
+	updateDecryptHttps := func(enabled bool) (configuration.DecryptHttpsConfig, error) {
+		result := send(RuntimeCommand{Kind: SetDecryptHTTPS, Enabled: enabled})
+		return result.DecryptHTTPS, result.Err
+	}
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -241,6 +310,9 @@ func ServeWebUi(port int, stop <-chan bool, config configuration.AppConfig, decr
 	mux.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		dtoConfig := config
+		if deps.CurrentConfig != nil {
+			dtoConfig = deps.CurrentConfig()
+		}
 		if decryptHttpsSettings != nil {
 			dtoConfig.DecryptHttps = decryptHttpsSettings.Get()
 		}

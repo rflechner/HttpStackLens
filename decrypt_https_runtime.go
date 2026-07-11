@@ -90,6 +90,27 @@ func (r *decryptHttpsRuntime) SetEnabled(enabled bool) (configuration.DecryptHtt
 	return updated, nil
 }
 
+// ReplaceBase swaps the forwarding pipeline used for new requests while
+// preserving the current HTTPS decryption mode.
+func (r *decryptHttpsRuntime) ReplaceBase(base middlewares.Middleware) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	oldBase := r.base
+	r.base = base
+	if !r.settings.Get().Enabled {
+		r.active.SetDecrypting(base, false)
+		return nil
+	}
+	interceptor, err := r.newInterceptor()
+	if err != nil {
+		r.base = oldBase
+		return err
+	}
+	r.active.SetDecrypting(interceptor, true)
+	return nil
+}
+
 func (r *decryptHttpsRuntime) newInterceptor() (*middlewares.HttpsInterceptor, error) {
 	caCert, caKey, err := certManager.GetHttpsDebugRootCertificates(r.config)
 	if err != nil {

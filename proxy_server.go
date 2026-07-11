@@ -9,7 +9,6 @@ import (
 	"httpStackLens/storage"
 	"log"
 	"net"
-	"os"
 	"sync"
 )
 
@@ -18,6 +17,7 @@ type ProxyServer struct {
 	appContext  AppContext
 	mu          sync.Mutex
 	closed      bool
+	connections map[net.Conn]struct{}
 	EventLogger ProxyEventLogger
 	// capture, when non-nil, persists top-level requests (HTTP and CONNECT) to
 	// the capture file. Decrypted bodies are recorded by the HTTPS interceptor.
@@ -38,7 +38,7 @@ type pipelineSnapshotter interface {
 	Snapshot() (middlewares.Middleware, bool)
 }
 
-func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, accessControl *configuration.AccessControlSettingsStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) ProxyServer {
+func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, accessControl *configuration.AccessControlSettingsStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) (*ProxyServer, error) {
 	log.Printf("Socket server started on port %v\n", appContext.port)
 	access := configuration.NormalizeAccessControl(config.AccessControl, config.EnableRemoteConnection)
 	if accessControl != nil {
@@ -53,27 +53,35 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Println("Error starting server:", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("start proxy server on %s: %w", addr, err)
 	}
 
-	return ProxyServer{
+	return &ProxyServer{
 		listener:      listener,
 		appContext:    appContext,
+		connections:   make(map[net.Conn]struct{}),
 		EventLogger:   eventLogger,
 		capture:       capture,
 		store:         store,
 		captureCtl:    captureCtl,
 		accessControl: accessControl,
-	}
+	}, nil
 }
 
 func (s *ProxyServer) Close() {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	s.closed = true
-	err := s.listener.Close()
-	if err != nil {
+	if err := s.listener.Close(); err != nil {
 		log.Printf("Warning when closing browser connection: %v\n", err.Error())
+	}
+	for connection := range s.connections {
+		if err := connection.Close(); err != nil {
+			log.Printf("Warning when closing active proxy connection: %v\n", err)
+		}
 	}
 	s.mu.Unlock()
 }
@@ -94,10 +102,36 @@ func (s *ProxyServer) Run() {
 			_ = browser.Close()
 			continue
 		}
+		if !s.trackConnection(browser) {
+			_ = browser.Close()
+			return
+		}
 		fmt.Printf("New connection from %s\n", browser.RemoteAddr().String())
 		requestId++
-		go s.handleRequest(browser, requestId)(s.appContext.pipeline)
+		go func(connection net.Conn, id int) {
+			defer s.untrackConnection(connection)
+			s.handleRequest(connection, id)(s.appContext.pipeline)
+		}(browser, requestId)
 	}
+}
+
+func (s *ProxyServer) trackConnection(connection net.Conn) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	if s.connections == nil {
+		s.connections = make(map[net.Conn]struct{})
+	}
+	s.connections[connection] = struct{}{}
+	return true
+}
+
+func (s *ProxyServer) untrackConnection(connection net.Conn) {
+	s.mu.Lock()
+	delete(s.connections, connection)
+	s.mu.Unlock()
 }
 
 func (s *ProxyServer) allowsClient(addr net.Addr) bool {
