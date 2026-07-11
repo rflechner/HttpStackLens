@@ -1,11 +1,11 @@
 # WebUI v2 — Task breakdown (implementing the Claude Design mockup)
 
 > Planning document. Goal: turn the static mockup
-> (`webui/wwwroot/mockup.html` + `mockup.js`, fake data) into a real UI wired to
+> (`webui/wwwroot/mockup.html` + `ui.js`, fake data) into a real UI wired to
 > the proxy.
 >
 > Reference files:
-> - Mockup: [`webui/wwwroot/mockup.html`](webui/wwwroot/mockup.html), [`webui/wwwroot/mockup.js`](webui/wwwroot/mockup.js)
+> - Mockup: [`webui/wwwroot/mockup.html`](webui/wwwroot/index.html), [`webui/wwwroot/ui.js`](webui/wwwroot/ui.js)
 > - Current UI (WASM): [`webui/wasm/main.go`](webui/wasm/main.go), [`webui/wwwroot/index.html`](webui/wwwroot/index.html)
 > - UI server: [`webui/ui_server.go`](webui/ui_server.go)
 > - Shared back/front contract: [`webui/wasm/shared/dto.go`](webui/wasm/shared/dto.go)
@@ -63,21 +63,21 @@ API what capture already knows, plus correlate and measure it.**
 
 ## 2. Architecture decision: **WASM** (settled)
 
-The mockup is written in **vanilla JS** (`mockup.js` manipulates the DOM
+The mockup is written in **vanilla JS** (`ui.js` manipulates the DOM
 directly), but the v2 UI **stays in Go/WASM** (`webui/wasm/main.go`), consistent
 with the existing code and the AGENTS.md direction. The mockup serves as a
 **visual and behavioral specification**; its rendering logic is **ported into
 WASM**.
 
 Consequences for the front end:
-- The `mockup.js` logic (list rendering, detail, modals, waterfall, format
+- The `ui.js` logic (list rendering, detail, modals, waterfall, format
   helpers) is rewritten in Go under `webui/wasm/` — more verbose
   (`js.Global()...`), but a single language and **typed shared DTOs** via
   `shared/`.
-- `mockup.js` and `mockup.html` stay as **reference** during the port (do not
+- `ui.js` and `mockup.html` stay as **reference** during the port (do not
   serve them in prod). The HTML/CSS (Tailwind, palette, shell structure) can be
   reused almost as-is in `index.html`; only the engine `<script>` changes (WASM
-  instead of `mockup.js`).
+  instead of `ui.js`).
 - WASM caveat: generating large DOM blocks via HTML strings is easy to port
   (`innerHTML`), but the mockup's event delegation (a single `addEventListener`
   on `document`) must be replicated on the Go side to avoid multiplying

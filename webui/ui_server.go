@@ -242,18 +242,8 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(data)
 	})
-	mux.HandleFunc("/mockup", func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(rootFS, "wwwroot/mockup.html")
-		if err != nil {
-			log.Printf("Request to %s failed: %v\n", r.URL, err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(data)
-	})
-	mux.HandleFunc("/mockup.js", func(w http.ResponseWriter, r *http.Request) {
-		data, err := fs.ReadFile(rootFS, "wwwroot/mockup.js")
+	mux.HandleFunc("/ui.js", func(w http.ResponseWriter, r *http.Request) {
+		data, err := fs.ReadFile(rootFS, "wwwroot/ui.js")
 		if err != nil {
 			log.Printf("Request to %s failed: %v\n", r.URL, err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
