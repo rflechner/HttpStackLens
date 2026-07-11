@@ -105,6 +105,25 @@ func fetchText(url string, callback js.Func) {
 		}))
 }
 
+func sendAjaxRequest[T any](url string, method string, payload T, callback js.Func) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("serialize request payload: %w", err)
+	}
+	opts := map[string]any{
+		"method":  method,
+		"headers": map[string]any{"Content-Type": "application/json"},
+		"body":    string(body),
+	}
+	js.Global().Call("fetch", url, opts).
+		Call("then", callback).
+		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+			consoleLog(method + " " + url + " failed: " + args[0].String())
+			return nil
+		}))
+	return nil
+}
+
 func DisplayConfig(this js.Value, args []js.Value) any {
 	fetchText("/config", js.FuncOf(func(this js.Value, args []js.Value) any {
 		var config shared.AppConfigDto
@@ -395,13 +414,24 @@ func (m *StateModel) registerBridges() {
 		}
 		return nil
 	}))
+	js.Global().Set("hslDecryptHttps", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 && args[0].Type() == js.TypeBoolean {
+			m.decryptHttps(args[0].Bool())
+		}
+		return nil
+	}))
 	js.Global().Set("hslLoadBodyCapture", js.FuncOf(func(this js.Value, args []js.Value) any {
 		m.loadBodyCapture()
 		return nil
 	}))
 	js.Global().Set("hslSaveBodyCapture", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) >= 1 {
-			m.saveBodyCapture(args[0].String())
+			var payload shared.BodyCaptureSettingsDto
+			if err := json.Unmarshal([]byte(args[0].String()), &payload); err != nil {
+				callMockup("setBodyCapture", map[string]any{"error": "Invalid body capture settings."})
+				return nil
+			}
+			m.saveBodyCapture(payload)
 		}
 		return nil
 	}))
@@ -543,14 +573,9 @@ func (m *StateModel) loadBodyCapture() {
 
 // saveBodyCapture PUTs the JSON payload built by the JS panel and echoes the
 // server's normalized result back (with a saved flag), or surfaces the error.
-func (m *StateModel) saveBodyCapture(payload string) {
-	opts := map[string]any{
-		"method":  "PUT",
-		"headers": map[string]any{"Content-Type": "application/json"},
-		"body":    payload,
-	}
-	js.Global().Call("fetch", "/api/settings/body-capture", opts).
-		Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+func (m *StateModel) saveBodyCapture(payload shared.BodyCaptureSettingsDto) {
+	err := sendAjaxRequest("/api/settings/body-capture", "PUT", payload,
+		js.FuncOf(func(this js.Value, args []js.Value) any {
 			res := args[0]
 			status := res.Get("status").Int()
 			res.Call("text").Call("then", js.FuncOf(func(this js.Value, targs []js.Value) any {
@@ -574,11 +599,10 @@ func (m *StateModel) saveBodyCapture(payload string) {
 				return nil
 			}))
 			return nil
-		})).
-		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
-			callMockup("setBodyCapture", map[string]any{"error": "Could not save body capture settings."})
-			return nil
 		}))
+	if err != nil {
+		callMockup("setBodyCapture", map[string]any{"error": "Could not serialize body capture settings."})
+	}
 }
 
 func capture(action string) {
@@ -598,6 +622,16 @@ func capture(action string) {
 			consoleLog("capture " + action + " failed: " + args[0].String())
 			return nil
 		}))
+}
+
+func (m *StateModel) decryptHttps(enabled bool) {
+	payload := shared.DecryptHttpsToggleSettingsDto{Enabled: enabled}
+	if err := sendAjaxRequest("/api/settings/decrypt-https", "PUT", payload,
+		js.FuncOf(func(this js.Value, args []js.Value) any {
+			return nil
+		})); err != nil {
+		consoleLog("Could not serialize HTTPS decryption settings: " + err.Error())
+	}
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────

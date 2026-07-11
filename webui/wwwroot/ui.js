@@ -683,6 +683,11 @@
     if (typeof fn === 'function') fn(action);
   }
 
+  function decryptHttps(enabled) {
+    const fn = window.hslDecryptHttps;
+    if (typeof fn === 'function') fn(enabled);
+  }
+
   // ─── body capture settings (B5.1) ────────────────────────
   // Serializes the editor state into the /api/settings/body-capture contract and
   // hands it to WASM. Validates locally first so obvious mistakes get a friendly
@@ -812,7 +817,7 @@
         state.rows = []; state.selId = null; renderList(); renderDetail();
         break;
       case 'toggle-decrypt':
-        if (state.decryption) { state.decryption = false; renderToolbar(); renderStatusBar(); }
+        if (state.decryption) decryptHttps(false);
         else openCert();
         break;
       case 'open-upstream': openSettings('upstream'); break;
@@ -829,7 +834,7 @@
           renderCert();
         }, 90);
         break;
-      case 'cert-done': state.decryption = true; closeModal(); renderToolbar(); renderStatusBar(); break;
+      case 'cert-done': decryptHttps(true); closeModal(); break;
       case 'upstream-toggle': state.upstream.on = !state.upstream.on; renderSettings(); renderToolbar(); renderStatusBar(); break;
       case 'ntlm-toggle': if (state.upstream.on) { state.upstream.ntlm = !state.upstream.ntlm; renderSettings(); renderToolbar(); renderStatusBar(); } break;
       default: break;
