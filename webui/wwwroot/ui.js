@@ -328,13 +328,42 @@
       .replace(/: (-?\d+\.?\d*)/g, `: <span style="color:${C.info}">$1</span>`);
   }
 
+  function bodyBytes(body) {
+    if (!body || !body.bodyBase64) return null;
+    try {
+      const binary = atob(body.bodyBase64);
+      return Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    } catch (e) { return null; }
+  }
+
+  function bodyText(body) {
+    const bytes = bodyBytes(body);
+    if (!bytes) return body && body.text ? body.text : '';
+    try { return new TextDecoder('utf-8').decode(bytes); }
+    catch (e) { return Array.from(bytes).map((b) => String.fromCharCode(b)).join(''); }
+  }
+
+  function imageContentType(contentType) {
+    const mime = (contentType || '').split(';')[0].trim().toLowerCase();
+    return /^image\/[a-z0-9.+-]+$/.test(mime) ? mime : '';
+  }
+
+  function imagePreview(body) {
+    const mime = imageContentType(body.contentType);
+    if (!mime || !body.bodyBase64) return '';
+    return `<div class="flex items-center justify-center" style="min-height:100%;padding:18px;background:${C.bg2}">
+      <img src="data:${mime};base64,${body.bodyBase64}" alt="Captured response image" style="display:block;max-width:100%;max-height:100%;object-fit:contain;border:1px solid ${C.line};background:${C.bg1};box-shadow:0 4px 16px rgba(0,0,0,.08)">
+    </div>`;
+  }
+
   function hexDump(body) {
-    const src = body.slice(0, 512);
+    const bytes = bodyBytes(body);
+    const src = bytes ? bytes.slice(0, 512) : Uint8Array.from(bodyText(body).slice(0, 512), (ch) => ch.charCodeAt(0));
     let out = '';
     for (let i = 0; i < src.length; i += 16) {
       const chunk = src.slice(i, i + 16);
-      const hex = Array.from(chunk).map((ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
-      const ascii = Array.from(chunk).map((ch) => { const c = ch.charCodeAt(0); return c >= 32 && c < 127 ? ch : '.'; }).join('');
+      const hex = Array.from(chunk).map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
+      const ascii = Array.from(chunk).map((byte) => byte >= 32 && byte < 127 ? String.fromCharCode(byte) : '.').join('');
       out += `<div class="grid gap-3" style="grid-template-columns:80px 380px 1fr">
         <span style="color:${C.faint}">${i.toString(16).padStart(8, '0')}</span>
         <span style="color:${C.info}">${hex}</span>
@@ -358,10 +387,11 @@
       else if (b.error) content = detailNote(b.error);
       else if (!b.available) content = detailNote('No response body was captured.');
       else {
-        const body = b.text || '';
-        if (mode === 'pretty' && r.mimeColor === 'json') content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(body)}</pre>`;
-        else if (mode === 'hex') content = hexDump(body);
-        else content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all;overflow:auto">${esc(body)}</pre>`;
+        const text = bodyText(b);
+        if (mode === 'pretty' && imageContentType(b.contentType)) content = imagePreview(b);
+        else if (mode === 'pretty' && r.mimeColor === 'json') content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(text)}</pre>`;
+        else if (mode === 'hex') content = hexDump(b);
+        else content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all;overflow:auto">${esc(text)}</pre>`;
       }
     }
     return `<div class="flex flex-col h-full min-h-0">

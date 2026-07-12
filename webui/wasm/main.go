@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"httpStackLens/webui/wasm/shared"
@@ -537,10 +538,12 @@ func (m *StateModel) loadBody(correlationID, side string) {
 			if ct := res.Get("headers").Call("get", "content-type"); ct.Type() == js.TypeString {
 				contentType = ct.String()
 			}
-			res.Call("text").Call("then", js.FuncOf(func(this js.Value, targs []js.Value) any {
+			res.Call("arrayBuffer").Call("then", js.FuncOf(func(this js.Value, targs []js.Value) any {
+				bytes := make([]byte, targs[0].Get("byteLength").Int())
+				js.CopyBytesToGo(bytes, js.Global().Get("Uint8Array").New(targs[0]))
 				callMockup("setBody", correlationID, side, map[string]any{
 					"available":   true,
-					"text":        targs[0].String(),
+					"bodyBase64":  base64.StdEncoding.EncodeToString(bytes),
 					"contentType": contentType,
 				})
 				return nil
