@@ -75,6 +75,7 @@
     density: 'normal',
     upstream: { on: true, ntlm: true, host: 'http://proxy.corp.local:8080', domain: 'CORP' },
     access: { mode: 'loopback', networks: ['192.168.1.0/24'] },
+    certificate: { loaded: false, loading: false, busy: false, action: '', status: null, error: null },
     // Real body-capture settings (B5.1), fed by WASM from /api/settings/body-capture.
     bodyCapture: { loaded: false, loading: false, defaultMaxBytes: null, mimeTypes: [], error: null, saving: false, saved: false, dirty: false },
   };
@@ -526,8 +527,29 @@
   }
 
   // cert wizard
-  const cert = { step: 0, progress: 0, timer: null };
-  function openCert() { modalKind = 'cert'; cert.step = 0; cert.progress = 0; renderCert(); }
+  const cert = { step: 0 };
+  function loadCertificateStatus(force) {
+    const ca = state.certificate;
+    if (ca.loading || (!force && ca.loaded)) return;
+    ca.loading = true; ca.error = null;
+    const fn = window.hslCertificateAction;
+    if (typeof fn === 'function') setTimeout(() => fn('status'), 0);
+    else { ca.loading = false; ca.error = 'Backend bridge unavailable.'; }
+  }
+  function certificateAction(action) {
+    const ca = state.certificate;
+    if (ca.busy) return;
+    if (action === 'regenerate' && !window.confirm('Regenerate the root CA? Existing trust and previously issued site certificates will stop working.')) return;
+    ca.busy = true; ca.action = action; ca.error = null;
+    if (modalKind === 'cert') renderCert(); else renderSettings();
+    const fn = window.hslCertificateAction;
+    if (typeof fn === 'function') fn(action);
+    else { ca.busy = false; ca.error = 'Backend bridge unavailable.'; if (modalKind === 'cert') renderCert(); else renderSettings(); }
+  }
+  function openCert() {
+    modalKind = 'cert'; cert.step = state.certificate.status && state.certificate.status.available ? 2 : 0;
+    loadCertificateStatus(false); renderCert();
+  }
   function renderCert() {
     const stepper = ['Review', 'Generate', 'Trust'].map((s, i) => {
       const on = i === cert.step, done = i < cert.step;
@@ -539,19 +561,21 @@
       inner = `<div style="font-size:12.5px;line-height:1.65;color:${C.dim}">
         <p style="margin:0 0 10px">To decrypt HTTPS, HttpStackLens generates a self-signed root CA and signs a leaf certificate for every host you visit — acting as a man-in-the-middle on your own traffic, only on this machine.</p>
         <div style="background:${C.bg2};border:1px solid ${C.line};border-radius:4px;padding:10px 12px;font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};margin:12px 0"><div style="color:${C.faint};font-size:10.5px;margin-bottom:4px">will be created</div>CN=HttpStackLens Root CA · RSA 3072 · SHA-256 · valid 1825 days</div>
-        <div style="background:${C.warn}12;border:1px solid ${C.warn}40;border-radius:4px;padding:10px 12px;color:${C.warn};font-size:11.5px;display:flex;gap:10px"><span style="font-size:14px;line-height:1">⚠</span><div style="color:${C.ink}">The root key lets anyone impersonate any site to this user. It is stored at <code style="color:${C.warn};font-family:'JetBrains Mono'">%APPDATA%\\HttpStackLens\\root.pfx</code> — never share it.</div></div></div>`;
+        <div style="background:${C.warn}12;border:1px solid ${C.warn}40;border-radius:4px;padding:10px 12px;color:${C.warn};font-size:11.5px;display:flex;gap:10px"><span style="font-size:14px;line-height:1">⚠</span><div style="color:${C.ink}">The root key can impersonate sites for this user. It stays in the configured local key file and must never be shared.</div></div>
+        ${state.certificate.error ? `<div style="color:${C.danger};font-size:11.5px;margin-top:12px">${esc(state.certificate.error)}</div>` : ''}</div>`;
     } else if (cert.step === 1) {
       inner = `<div style="text-align:center;padding:24px 20px">
         <div class="spin" style="margin:0 auto 16px;width:40px;height:40px;border-radius:20px;border:2px solid ${C.bg2};border-top-color:${C.mint}"></div>
-        <div style="font-size:12.5px;color:${C.ink};margin-bottom:4px">Generating keypair…</div>
-        <div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono'">${Math.min(100, Math.floor(cert.progress))}%</div>
-        <div style="width:70%;margin:14px auto 0;height:3px;border-radius:2px;background:${C.bg2};overflow:hidden"><div style="width:${Math.min(100, cert.progress)}%;height:100%;background:${C.mint};transition:width .1s"></div></div></div>`;
+        <div style="font-size:12.5px;color:${C.ink};margin-bottom:4px">Generating the local CA…</div>
+        <div style="font-size:11px;color:${C.dim}">This usually takes only a moment.</div></div>`;
     } else {
+      const ca = state.certificate, s = ca.status || {};
+      const trust = s.installed ? 'Trusted by the operating system.' : s.install_supported ? 'Not yet trusted by the operating system.' : 'Automatic installation is unavailable on this operating system.';
       inner = `<div>
-        <div style="background:${C.mint}10;border:1px solid ${C.mint}40;border-radius:4px;padding:10px 12px;color:${C.mint};font-size:11.5px;margin-bottom:14px;display:flex;gap:10px"><span>✓</span><div style="color:${C.ink}">Certificate generated. <span style="color:${C.dim}">Fingerprint:</span> <span style="font-family:'JetBrains Mono'">74:3F:2C:9A:…:B1</span></div></div>
-        <div style="font-size:12.5px;color:${C.dim};margin-bottom:10px">Install it into the OS trust store so browsers and tools accept it:</div>
-        <div class="grid gap-2">${[['⊞', 'Windows — Current User', 'Trusted Root Certification Authorities', 'Install'], ['', 'Firefox trust store', 'Firefox uses its own NSS store', 'Install'], ['⏍', 'Export PFX', 'Copy to %APPDATA% or USB drive', 'Export…']].map(([ic, n, h, a]) =>
-          `<div class="flex items-center gap-3" style="padding:10px 12px;background:${C.bg2};border:1px solid ${C.line};border-radius:4px"><span style="font-size:16px;color:${C.dim};width:20px;text-align:center">${ic}</span><div class="flex-1"><div style="font-size:12px;color:${C.ink}">${n}</div><div style="font-size:11px;color:${C.faint}">${h}</div></div>${btn(a, 'noop')}</div>`).join('')}</div></div>`;
+        <div style="background:${C.mint}10;border:1px solid ${C.mint}40;border-radius:4px;padding:10px 12px;font-size:11.5px;margin-bottom:14px;display:flex;gap:10px"><span style="color:${C.mint}">✓</span><div style="color:${C.ink}">Local CA ready. <span style="color:${C.dim}">Fingerprint:</span> <span style="font-family:'JetBrains Mono';word-break:break-all">${esc(s.fingerprint_sha256 || '—')}</span></div></div>
+        <div style="font-size:12.5px;color:${C.dim};margin-bottom:10px">${trust}</div>
+        <div class="flex gap-2">${s.install_supported ? btn(s.installed ? 'Reinstall in OS trust store' : 'Install in OS trust store', 'cert-install', 'default') : ''}${btn('Export public certificate', 'cert-export', 'ghost')}</div>
+        ${ca.error ? `<div style="color:${C.danger};font-size:11.5px;margin-top:12px">${esc(ca.error)}</div>` : ''}</div>`;
     }
 
     let footer;
@@ -578,11 +602,21 @@
   }
   function settingsBody() {
     if (settingsTab === 'cert') {
+      const ca = state.certificate;
+      if (!ca.loaded) {
+        if (!ca.error) loadCertificateStatus(false);
+        return `<div style="font-size:12px;color:${ca.error ? C.danger : C.dim};padding:20px 2px">${esc(ca.error || 'Loading certificate status…')}${ca.error ? `<div style="margin-top:10px">${btn('Retry', 'cert-refresh', 'ghost')}</div>` : ''}</div>`;
+      }
+      const s = ca.status || {}, available = !!s.available;
+      const expires = s.not_after ? new Date(s.not_after).toLocaleDateString() : '—';
+      const title = !available ? 'No usable local CA' : s.expired ? 'Root CA expired' : s.installed ? 'Root CA installed' : 'Root CA generated';
+      const color = available && !s.expired ? (s.installed ? C.mint : C.warn) : C.danger;
       return `<div style="font-size:12px;color:${C.dim};line-height:1.7">
         <div style="padding:12px;background:${C.bg2};border:1px solid ${C.line};border-radius:4px;margin-bottom:12px">
-          <div class="flex items-center gap-[10px]" style="margin-bottom:8px"><span style="color:${C.mint};font-size:16px">●</span><div class="flex-1"><div style="font-size:12.5px;color:${C.ink};font-weight:600">Root CA installed</div><div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono'">74:3F:2C:9A:…:B1 · expires 2029-11-14</div></div></div>
-          <div class="flex gap-[6px]">${btn('Export PFX', 'noop')}${btn('Reinstall', 'noop')}${btn('Regenerate root', 'noop', 'danger')}</div></div>
-        <p>Tools with their own trust store (Firefox, Node without NODE_EXTRA_CA_CERTS, the JVM) need the cert installed separately.</p></div>`;
+          <div class="flex items-center gap-[10px]" style="margin-bottom:8px"><span style="color:${color};font-size:16px">●</span><div class="flex-1"><div style="font-size:12.5px;color:${C.ink};font-weight:600">${title}</div><div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono';word-break:break-all">${esc(s.ca_cert_subject || s.error || 'Generate a CA to inspect HTTPS traffic')} ${available ? `· ${esc(s.fingerprint_sha256 || '—')} · expires ${expires}` : ''}</div></div></div>
+          <div class="flex gap-[6px] flex-wrap">${available ? btn('Export public certificate', 'cert-export') : btn('Generate root CA', 'cert-generate', 'primary')}${available && s.install_supported ? btn(s.installed ? 'Reinstall' : 'Install', 'cert-install') : ''}${available ? btn('Regenerate root', 'cert-regenerate', 'danger') : ''}${btn('Refresh', 'cert-refresh', 'ghost')}</div>
+          ${ca.busy ? `<div style="color:${C.dim};margin-top:10px">Working…</div>` : ''}${ca.error ? `<div style="color:${C.danger};margin-top:10px">${esc(ca.error)}</div>` : ''}</div>
+        <p>Only the public certificate is exported. Tools with their own trust store (Firefox, Node.js, the JVM) may need it installed separately.</p></div>`;
     }
     if (settingsTab === 'body') return bodyRulesPanel();
     if (settingsTab === 'upstream') return upstreamPanel();
@@ -843,13 +877,12 @@
       case 'close-modal': closeModal(); break;
       case 'close-detail': state.selId = null; renderList(); renderDetail(); break;
       case 'cert-generate':
-        cert.step = 1; cert.progress = 0; renderCert();
-        cert.timer = setInterval(() => {
-          cert.progress += 4 + Math.random() * 8;
-          if (cert.progress >= 100) { clearInterval(cert.timer); cert.step = 2; }
-          renderCert();
-        }, 90);
+        cert.step = 1; renderCert(); certificateAction('generate');
         break;
+      case 'cert-regenerate': certificateAction('regenerate'); break;
+      case 'cert-install': certificateAction('install'); break;
+      case 'cert-refresh': loadCertificateStatus(true); renderSettings(); break;
+      case 'cert-export': window.location.assign('/api/certificates/ca/export'); break;
       case 'cert-done': decryptHttps(true); closeModal(); break;
       case 'upstream-toggle': state.upstream.on = !state.upstream.on; renderSettings(); renderToolbar(); renderStatusBar(); break;
       case 'ntlm-toggle': if (state.upstream.on) { state.upstream.ntlm = !state.upstream.ntlm; renderSettings(); renderToolbar(); renderStatusBar(); } break;
@@ -913,6 +946,16 @@
     if (modalKind === 'settings' && settingsTab === 'body') renderSettings();
   }
 
+  function setCertificate(s) {
+    const ca = state.certificate;
+    ca.loading = false; ca.busy = false; ca.action = '';
+    if (!s) return;
+    if (s.requestError) { ca.error = s.requestError; if (modalKind === 'cert') cert.step = 0; }
+    else { ca.loaded = true; ca.status = s; ca.error = null; if (s.available && modalKind === 'cert') cert.step = 2; }
+    if (modalKind === 'cert') renderCert();
+    else if (modalKind === 'settings' && settingsTab === 'cert') renderSettings();
+  }
+
   // ─── detail / body results (from /api/..., via WASM) ─────
   function setDetail(correlationId, detail) {
     const row = state.rows.find((x) => x.correlationId === correlationId);
@@ -946,6 +989,7 @@
     setBody: setBody,                   // /api/requests/{id}/body result
     setCaptureState: setCaptureState,   // capture_state event
     setBodyCapture: setBodyCapture,     // /api/settings/body-capture result
+    setCertificate: setCertificate,     // B6 CA status/actions
     clear: () => { state.rows = []; state.selId = null; renderList(); renderDetail(); },
     rowHTML: (r) => rowHTML(normalizeExternalRow(r)),
   };

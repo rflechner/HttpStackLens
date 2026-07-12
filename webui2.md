@@ -302,7 +302,10 @@ server and WASM.
       must be a MIME/wildcard), and shows saving/saved/error status.
 - [x] F4.2 "Upstream" settings ↔ B5.2.
 - [x] F4.3 "Access control" settings ↔ B5.3.
-- [ ] F4.4 Certificate wizard ↔ B6 (replace the simulated progress in `renderCert`).
+- [x] F4.4 Certificate wizard ↔ B6 (replace the simulated progress in `renderCert`).
+      The wizard and TLS settings tab now use the real B6 status/generate/install/
+      export endpoints. Key generation shows an honest busy state rather than a
+      simulated percentage; regeneration requires explicit confirmation.
 - [ ] F4.5 Shortcuts tab (static, OK as-is).
 
 ### EPIC F5 — Polish

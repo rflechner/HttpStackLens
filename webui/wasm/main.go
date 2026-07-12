@@ -435,6 +435,12 @@ func (m *StateModel) registerBridges() {
 		}
 		return nil
 	}))
+	js.Global().Set("hslCertificateAction", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			m.certificateAction(args[0].String())
+		}
+		return nil
+	}))
 
 	js.Global().Set("hslSetAccessMode", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) >= 1 {
@@ -571,6 +577,23 @@ func bodyCaptureToJS(dto shared.BodyCaptureSettingsDto) map[string]any {
 	return out
 }
 
+func certificateInfosToJS(dto shared.CertificatesInfosDto) map[string]any {
+	return map[string]any{
+		"available":             dto.Available,
+		"ca_cert_subject":       dto.CaCertSubject,
+		"ca_cert_issuer":        dto.CaCertIssuer,
+		"ca_cert_serial_number": dto.CaCertSerialNumber,
+		"fingerprint_sha256":    dto.FingerprintSha256,
+		"not_before":            dto.NotBefore,
+		"not_after":             dto.NotAfter,
+		"expired":               dto.Expired,
+		"install_supported":     dto.InstallSupported,
+		"installed":             dto.Installed,
+		"install_check_error":   dto.InstallCheckError,
+		"error":                 dto.Error,
+	}
+}
+
 func (m *StateModel) loadBodyCapture() {
 	fetchText("/api/settings/body-capture", js.FuncOf(func(this js.Value, args []js.Value) any {
 		var dto shared.BodyCaptureSettingsDto
@@ -657,6 +680,75 @@ func (m *StateModel) decryptHttps(enabled bool) {
 		})); err != nil {
 		consoleLog("Could not serialize HTTPS decryption settings: " + err.Error())
 	}
+}
+
+// certificateAction connects the TLS settings UI to the B6 certificate API.
+// Key generation is a single synchronous server operation, so the UI exposes a
+// simple busy state instead of pretending that byte-level progress is known.
+func (m *StateModel) certificateAction(action string) {
+	url := "/certificates-infos"
+	method := "GET"
+	var options any
+
+	switch action {
+	case "status":
+		options = js.Undefined()
+	case "generate", "regenerate":
+		url = "/api/certificates/ca/generate"
+		method = "POST"
+		payload, err := json.Marshal(shared.CertificateGenerateRequestDto{Replace: action == "regenerate"})
+		if err != nil {
+			callMockup("setCertificate", map[string]any{"requestError": "Could not prepare certificate generation."})
+			return
+		}
+		options = map[string]any{
+			"method":  method,
+			"headers": map[string]any{"Content-Type": "application/json"},
+			"body":    string(payload),
+		}
+	case "install":
+		url = "/api/certificates/ca/install"
+		method = "POST"
+		options = map[string]any{"method": method}
+	default:
+		callMockup("setCertificate", map[string]any{"requestError": "Unknown certificate action."})
+		return
+	}
+
+	var request js.Value
+	if action == "status" {
+		request = js.Global().Call("fetch", url)
+	} else {
+		request = js.Global().Call("fetch", url, options)
+	}
+	request.Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+		response := args[0]
+		status := response.Get("status").Int()
+		return response.Call("text").Call("then", js.FuncOf(func(this js.Value, textArgs []js.Value) any {
+			body := textArgs[0].String()
+			if status < 200 || status >= 300 {
+				if body == "" {
+					body = fmt.Sprintf("Certificate request failed (HTTP %d).", status)
+				}
+				callMockup("setCertificate", map[string]any{"requestError": body})
+				return nil
+			}
+			var dto shared.CertificatesInfosDto
+			if err := json.Unmarshal([]byte(body), &dto); err != nil {
+				callMockup("setCertificate", map[string]any{"requestError": "Could not read certificate status."})
+				return nil
+			}
+			callMockup("setCertificate", certificateInfosToJS(dto))
+			return nil
+		}))
+	})).Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+		message := "Certificate request failed."
+		if len(args) > 0 {
+			message += " " + args[0].String()
+		}
+		callMockup("setCertificate", map[string]any{"requestError": message})
+		return nil
+	}))
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────
