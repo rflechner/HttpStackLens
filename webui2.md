@@ -301,7 +301,7 @@ server and WASM.
       JSON; the panel loads lazily on open, validates locally (name required +
       must be a MIME/wildcard), and shows saving/saved/error status.
 - [x] F4.2 "Upstream" settings ↔ B5.2.
-- [ ] F4.3 "Access control" settings ↔ B5.3.
+- [x] F4.3 "Access control" settings ↔ B5.3.
 - [ ] F4.4 Certificate wizard ↔ B6 (replace the simulated progress in `renderCert`).
 - [ ] F4.5 Shortcuts tab (static, OK as-is).
 
