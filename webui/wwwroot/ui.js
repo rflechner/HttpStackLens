@@ -29,6 +29,11 @@
   let themeName = (function () { try { return localStorage.getItem('hsl-theme') === 'dark' ? 'dark' : 'light'; } catch (e) { return 'light'; } })();
   let C = PALETTES[themeName];
   let METHOD_COLOR = METHODS_BY_THEME[themeName];
+  let savedDetailHeight = null;
+  try {
+    const stored = Number(localStorage.getItem('hsl-detail-height'));
+    if (Number.isFinite(stored) && stored > 0) savedDetailHeight = stored;
+  } catch (e) {}
   function statusColor(s) {
     if (s >= 500) return C.danger;
     if (s >= 400) return C.warn;
@@ -73,6 +78,7 @@
     rows: [], selId: null, capturing: true, decryption: true,
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
+    detailHeight: savedDetailHeight,
     upstream: { on: true, ntlm: true, host: 'http://proxy.corp.local:8080', domain: 'CORP' },
     access: { mode: 'loopback', networks: ['192.168.1.0/24'] },
     certificate: { loaded: false, loading: false, busy: false, action: '', status: null, error: null },
@@ -428,7 +434,13 @@
     const r = state.rows.find((x) => x.id === state.selId);
     if (!r) { wrap.style.display = 'none'; $('#list-region').style.flex = '1'; return; }
     wrap.style.display = 'flex';
-    $('#list-region').style.flex = '0.55';
+    if (state.detailHeight) {
+      wrap.style.flex = `0 0 ${state.detailHeight}px`;
+      $('#list-region').style.flex = '1 1 auto';
+    } else {
+      wrap.style.flex = '0.45 1 0%';
+      $('#list-region').style.flex = '0.55 1 0%';
+    }
 
     ensureDetail(r);
     const d = r.detail || {};
@@ -470,6 +482,9 @@
     }
 
     wrap.innerHTML = `
+      <div data-detail-resizer title="Drag to resize · double-click to reset" style="height:7px;margin-top:-4px;flex-shrink:0;cursor:row-resize;touch-action:none;position:relative;z-index:2">
+        <div style="position:absolute;left:50%;top:3px;width:42px;height:2px;transform:translateX(-50%);border-radius:2px;background:${C.line}"></div>
+      </div>
       <div style="padding:10px 14px;border-bottom:1px solid ${C.line};background:${C.bg1};display:flex;align-items:center;gap:10px;flex-shrink:0">
         ${methodTag(r.method)}${statusPill(r.status)}
         <div class="flex-1 overflow-hidden">
@@ -788,6 +803,45 @@
 
   // ─── event delegation ────────────────────────────────────
   function wire() {
+    document.addEventListener('pointerdown', (e) => {
+      const handle = e.target.closest('[data-detail-resizer]');
+      if (!handle) return;
+      e.preventDefault();
+      const wrap = $('#detail-wrap');
+      const parent = wrap.parentElement;
+      const startY = e.clientY;
+      const startHeight = wrap.getBoundingClientRect().height;
+      const minHeight = 140;
+      const maxHeight = Math.max(minHeight, parent.clientHeight - 150);
+      handle.setPointerCapture(e.pointerId);
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+
+      const move = (event) => {
+        state.detailHeight = Math.round(Math.min(maxHeight, Math.max(minHeight, startHeight - (event.clientY - startY))));
+        wrap.style.flex = `0 0 ${state.detailHeight}px`;
+        $('#list-region').style.flex = '1 1 auto';
+      };
+      const stop = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', stop);
+        handle.removeEventListener('pointercancel', stop);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        try { localStorage.setItem('hsl-detail-height', String(state.detailHeight)); } catch (err) {}
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', stop);
+      handle.addEventListener('pointercancel', stop);
+    });
+
+    document.addEventListener('dblclick', (e) => {
+      if (!e.target.closest('[data-detail-resizer]')) return;
+      state.detailHeight = null;
+      try { localStorage.removeItem('hsl-detail-height'); } catch (err) {}
+      renderDetail();
+    });
+
     document.addEventListener('click', (e) => {
       const row = e.target.closest('[data-row]');
       if (row) { const id = Number(row.dataset.row); state.selId = state.selId === id ? null : id; renderList(); renderDetail(); return; }
