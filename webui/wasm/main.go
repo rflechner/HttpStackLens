@@ -436,6 +436,21 @@ func (m *StateModel) registerBridges() {
 		}
 		return nil
 	}))
+	js.Global().Set("hslLoadUpstream", js.FuncOf(func(this js.Value, args []js.Value) any {
+		m.loadUpstream()
+		return nil
+	}))
+	js.Global().Set("hslSaveUpstream", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			var payload shared.UpstreamSettingsDto
+			if err := json.Unmarshal([]byte(args[0].String()), &payload); err != nil {
+				callMockup("setUpstream", map[string]any{"error": "Invalid upstream proxy settings."})
+				return nil
+			}
+			m.saveUpstream(payload)
+		}
+		return nil
+	}))
 	js.Global().Set("hslCertificateAction", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) >= 1 {
 			m.certificateAction(args[0].String())
@@ -678,6 +693,60 @@ func (m *StateModel) saveAccessMode(accessMode shared.AccessControlConfigDto) {
 			return nil
 		})); err != nil {
 		callMockup("setAccessControl", map[string]any{"error": "Could not serialize access control settings."})
+	}
+}
+
+func upstreamToJS(dto shared.UpstreamSettingsDto) map[string]any {
+	noProxy := make([]any, len(dto.NoProxy))
+	for i, host := range dto.NoProxy {
+		noProxy[i] = host
+	}
+	return map[string]any{
+		"outputProxyUri": dto.OutputProxyUri,
+		"noProxy":        noProxy,
+		"ntlm":           dto.AddWindowsAuthentication,
+	}
+}
+
+func (m *StateModel) loadUpstream() {
+	fetchText("/api/settings/upstream", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var dto shared.UpstreamSettingsDto
+		if err := json.Unmarshal([]byte(args[0].String()), &dto); err != nil {
+			callMockup("setUpstream", map[string]any{"error": "Could not load upstream proxy settings."})
+			return nil
+		}
+		callMockup("setUpstream", upstreamToJS(dto))
+		return nil
+	}))
+}
+
+func (m *StateModel) saveUpstream(payload shared.UpstreamSettingsDto) {
+	if err := sendAjaxRequest("/api/settings/upstream", "PUT", payload,
+		js.FuncOf(func(this js.Value, args []js.Value) any {
+			res := args[0]
+			status := res.Get("status").Int()
+			res.Call("text").Call("then", js.FuncOf(func(this js.Value, textArgs []js.Value) any {
+				body := textArgs[0].String()
+				if status < 200 || status >= 300 {
+					if body == "" {
+						body = "Could not save upstream proxy settings."
+					}
+					callMockup("setUpstream", map[string]any{"error": body})
+					return nil
+				}
+				var dto shared.UpstreamSettingsDto
+				if err := json.Unmarshal([]byte(body), &dto); err != nil {
+					callMockup("setUpstream", map[string]any{"error": "Could not read saved upstream proxy settings."})
+					return nil
+				}
+				out := upstreamToJS(dto)
+				out["saved"] = true
+				callMockup("setUpstream", out)
+				return nil
+			}))
+			return nil
+		})); err != nil {
+		callMockup("setUpstream", map[string]any{"error": "Could not serialize upstream proxy settings."})
 	}
 }
 

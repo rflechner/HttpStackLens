@@ -79,7 +79,7 @@
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
     detailHeight: savedDetailHeight,
-    upstream: { on: true, ntlm: true, host: 'http://proxy.corp.local:8080', domain: 'CORP' },
+    upstream: { on: false, ntlm: false, host: '', noProxy: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
     access: { mode: 'loopback', networks: [], appliedMode: 'loopback', appliedNetworks: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
     certificate: { loaded: false, loading: false, busy: false, action: '', status: null, error: null },
     // Real body-capture settings (B5.1), fed by WASM from /api/settings/body-capture.
@@ -721,11 +721,21 @@
   }
   function upstreamPanel() {
     const u = state.upstream;
-    return `
-<div class="grid gap-[14px]">
+    if (!u.loaded) {
+      if (!u.error && !u.loading) {
+        u.loading = true;
+        if (typeof window.hslLoadUpstream === 'function') setTimeout(() => window.hslLoadUpstream(), 0);
+        else { u.loading = false; u.error = 'Backend bridge unavailable.'; }
+      }
+      return `<div style="font-size:12px;color:${u.error ? C.danger : C.dim};padding:20px 2px">${esc(u.error || 'Loading upstream proxy settings…')}${u.error ? `<div style="margin-top:10px">${btn('Retry', 'upstream-reload', 'ghost')}</div>` : ''}</div>`;
+    }
+    const uri = String(u.host || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const bypass = String((u.noProxy || []).join(', ')).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const status = u.error ? `<span style="color:${C.danger}">${esc(u.error)}</span>` : u.saving ? '<span>Applying…</span>' : u.dirty ? `<span style="color:${C.warn}">Not applied yet</span>` : u.saved ? `<span style="color:${C.mint}">Saved ✓</span>` : '';
+    return `<div class="grid gap-[14px]">
     <div style="font-size:12px;color:${C.dim};line-height:1.6">Route outgoing traffic through a corporate proxy. HttpStackLens can handle NTLM / Negotiate auth on your behalf so apps that can't speak it still reach the outside world.</div>
-      ${field('Upstream proxy', 'Leave empty to connect directly', `<div class="flex gap-[6px]">${input(u.host, 'http://proxy.corp.local:8080', true)}${toggle(u.on, 'upstream-toggle')}</div>`)}
-      ${field('Bypass hosts', 'Comma-separated · globs allowed', input('*.corp.local, 10.*, localhost', '', true))}
+      ${field('Upstream proxy', 'Include scheme and port, for example http://proxy:8080', `<div class="flex gap-[6px]"><input data-upstream-uri value="${uri}" placeholder="http://proxy.corp.local:8080" style="background:${C.bg2};color:${C.ink};border:1px solid ${C.line};border-radius:3px;padding:6px 8px;font-family:'JetBrains Mono';font-size:11.5px;width:100%;outline:none" ${u.on ? '' : 'disabled'}>${toggle(u.on, 'upstream-toggle')}</div>`)}
+      ${field('Bypass hosts', 'Comma-separated hosts, IPs or suffixes', `<input data-upstream-no-proxy value="${bypass}" placeholder="localhost, .corp.local, 10.0.0.1" style="background:${C.bg2};color:${C.ink};border:1px solid ${C.line};border-radius:3px;padding:6px 8px;font-family:'JetBrains Mono';font-size:11.5px;width:100%;outline:none">`)}
       <div style="padding:14px;background:${C.bg2};border:1px solid ${C.line};border-radius:4px">
         <div class="flex items-center gap-[10px]" style="margin-bottom:10px">
             <span style="font-size:16px">⊞</span>
@@ -735,6 +745,8 @@
             </div>
             ${toggle(u.ntlm, 'ntlm-toggle', false, !u.on)}</div>
         </div>
+      ${u.dirty ? `<div style="padding:9px 11px;background:${C.warn}12;border:1px solid ${C.warn}40;border-radius:4px;color:${C.ink};font-size:11.5px">These settings are a draft. Applying persists them to <code>config.yaml</code>; restart HttpStackLens to update the active proxy pipeline.</div>` : ''}
+      <div class="flex items-center gap-2">${btn('Apply', 'upstream-apply', 'primary')}<span style="font-size:11.5px;margin-left:4px">${status}</span></div>
 </div>`;
   }
   function accessPanel() {
@@ -787,6 +799,17 @@
       mode: accessMode.mode,
       networks: accessMode.networks || [],
     }));
+  }
+
+  function saveUpstream() {
+    const u = state.upstream;
+    const fn = window.hslSaveUpstream;
+    if (typeof fn === 'function') fn(JSON.stringify({
+      output_proxy_uri: u.on ? u.host.trim() : '',
+      no_proxy: (u.noProxy || []).map((v) => v.trim()).filter(Boolean),
+      add_windows_authentication: !!u.ntlm,
+    }));
+    else { u.saving = false; u.error = 'Backend bridge unavailable.'; renderSettings(); }
   }
 
   // ─── body capture settings (B5.1) ────────────────────────
@@ -903,6 +926,10 @@
         state.access.networks[Number(network.dataset.accessNetwork)] = network.value;
         state.access.dirty = true; state.access.saved = false; state.access.error = null;
       }
+      const upstreamUri = e.target.closest('[data-upstream-uri]');
+      if (upstreamUri) { state.upstream.host = upstreamUri.value; state.upstream.dirty = true; state.upstream.saved = false; state.upstream.error = null; }
+      const upstreamNoProxy = e.target.closest('[data-upstream-no-proxy]');
+      if (upstreamNoProxy) { state.upstream.noProxy = upstreamNoProxy.value.split(','); state.upstream.dirty = true; state.upstream.saved = false; state.upstream.error = null; }
     });
 
     $('#filter').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); });
@@ -1018,8 +1045,14 @@
       case 'cert-refresh': loadCertificateStatus(true); renderSettings(); break;
       case 'cert-export': window.location.assign('/api/certificates/ca/export'); break;
       case 'cert-done': decryptHttps(true); closeModal(); break;
-      case 'upstream-toggle': state.upstream.on = !state.upstream.on; renderSettings(); renderToolbar(); renderStatusBar(); break;
-      case 'ntlm-toggle': if (state.upstream.on) { state.upstream.ntlm = !state.upstream.ntlm; renderSettings(); renderToolbar(); renderStatusBar(); } break;
+      case 'upstream-toggle': state.upstream.on = !state.upstream.on; state.upstream.dirty = true; state.upstream.saved = false; state.upstream.error = null; renderSettings(); break;
+      case 'ntlm-toggle': if (state.upstream.on) { state.upstream.ntlm = !state.upstream.ntlm; state.upstream.dirty = true; state.upstream.saved = false; state.upstream.error = null; renderSettings(); } break;
+      case 'upstream-apply':
+        if (!state.upstream.dirty || state.upstream.saving) break;
+        if (state.upstream.on && !state.upstream.host.trim()) { state.upstream.error = 'Enter an upstream proxy URL before enabling it.'; renderSettings(); break; }
+        state.upstream.saving = true; state.upstream.error = null; state.upstream.saved = false; renderSettings(); saveUpstream();
+        break;
+      case 'upstream-reload': state.upstream.error = null; state.upstream.loaded = false; renderSettings(); break;
       default: break;
     }
   }
@@ -1050,7 +1083,7 @@
     // decrypt / upstream / access come from the backend (F3.2); the status bar
     // and toolbar reflect the real pipeline state rather than local toggles.
     if (s.decrypt && typeof s.decrypt.enabled === 'boolean') state.decryption = s.decrypt.enabled;
-    if (s.upstream) {
+    if (s.upstream && !state.upstream.dirty) {
       if (typeof s.upstream.enabled === 'boolean') state.upstream.on = s.upstream.enabled;
       if (typeof s.upstream.ntlm === 'boolean') state.upstream.ntlm = s.upstream.ntlm;
     }
@@ -1104,6 +1137,20 @@
     if (modalKind === 'settings' && settingsTab === 'access') renderSettings();
   }
 
+  function setUpstream(s) {
+    const u = state.upstream;
+    u.loading = false; u.saving = false;
+    if (!s) return;
+    if (s.error) u.error = s.error;
+    else {
+      u.loaded = true; u.error = null; u.host = s.outputProxyUri || '';
+      u.on = !!u.host; u.noProxy = Array.isArray(s.noProxy) ? s.noProxy.slice() : [];
+      u.ntlm = !!s.ntlm; u.dirty = false; u.saved = !!s.saved;
+    }
+    renderToolbar(); renderStatusBar();
+    if (modalKind === 'settings' && settingsTab === 'upstream') renderSettings();
+  }
+
   // ─── detail / body results (from /api/..., via WASM) ─────
   function setDetail(correlationId, detail) {
     const row = state.rows.find((x) => x.correlationId === correlationId);
@@ -1139,6 +1186,7 @@
     setBodyCapture: setBodyCapture,     // /api/settings/body-capture result
     setCertificate: setCertificate,     // B6 CA status/actions
     setAccessControl: setAccessControl, // B5.3 access settings
+    setUpstream: setUpstream,           // B5.2 upstream settings
     clear: () => { state.rows = []; state.selId = null; renderList(); renderDetail(); },
     rowHTML: (r) => rowHTML(normalizeExternalRow(r)),
   };
