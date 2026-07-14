@@ -108,7 +108,7 @@
     detailHeight: savedDetailHeight,
     upstream: { on: false, ntlm: false, host: '', noProxy: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
     access: { mode: 'loopback', networks: [], appliedMode: 'loopback', appliedNetworks: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
-    certificate: { loaded: false, loading: false, busy: false, action: '', status: null, error: null },
+    certificate: { loaded: false, loading: false, busy: false, action: '', status: null, error: null, cleanup: null },
     // Real body-capture settings (B5.1), fed by WASM from /api/settings/body-capture.
     bodyCapture: { loaded: false, loading: false, defaultMaxBytes: null, mimeTypes: [], error: null, saving: false, saved: false, dirty: false },
   };
@@ -941,6 +941,22 @@
     if (typeof fn === 'function') fn(action);
     else { ca.busy = false; ca.error = 'Backend bridge unavailable.'; if (modalKind === 'cert') renderCert(); else renderSettings(); }
   }
+  function certCleanupSummary(r) {
+    if (!r) return '';
+    const parts = [];
+    if (r.store_cleanup_supported) {
+      const roots = r.root_certs_removed || 0, sites = r.domain_certs_removed || 0;
+      parts.push(`Removed ${roots} root CA${roots === 1 ? '' : 's'} and ${sites} site certificate${sites === 1 ? '' : 's'} from the OS trust store.`);
+    } else {
+      parts.push('Automatic OS trust-store cleanup is unavailable on this platform — remove the root CA by hand if it was installed.');
+    }
+    if (r.domain_folder_removed) parts.push('Deleted the per-domain certificates folder.');
+    const files = Array.isArray(r.removed_files) ? r.removed_files : [];
+    if (files.length) parts.push(`Deleted ${files.length} CA file${files.length === 1 ? '' : 's'}.`);
+    const warnings = Array.isArray(r.warnings) ? r.warnings : [];
+    const warnHTML = warnings.length ? `<div style="color:${C.warn};margin-top:6px">${warnings.map(w => '⚠ ' + esc(w)).join('<br>')}</div>` : '';
+    return `<div style="margin-top:10px;padding:10px;background:${C.mint}10;border:1px solid ${C.mint}40;border-radius:4px;color:${C.ink};font-size:11.5px;line-height:1.6">${parts.map(esc).join('<br>')}${warnHTML}</div>`;
+  }
   function openCert() {
     modalKind = 'cert'; cert.step = state.certificate.status && state.certificate.status.available ? 2 : 0;
     loadCertificateStatus(false); renderCert();
@@ -1010,8 +1026,12 @@
         <div style="padding:12px;background:${C.bg2};border:1px solid ${C.line};border-radius:4px;margin-bottom:12px">
           <div class="flex items-center gap-[10px]" style="margin-bottom:8px"><span style="color:${color};font-size:16px">●</span><div class="flex-1"><div style="font-size:12.5px;color:${C.ink};font-weight:600">${title}</div><div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono';word-break:break-all">${esc(s.ca_cert_subject || s.error || 'Generate a CA to inspect HTTPS traffic')} ${available ? `· ${esc(s.fingerprint_sha256 || '—')} · expires ${expires}` : ''}</div></div></div>
           <div class="flex gap-[6px] flex-wrap">${available ? btn('Export public certificate', 'cert-export') : btn('Generate root CA', 'cert-generate', 'primary')}${available && s.install_supported ? btn(s.installed ? 'Reinstall' : 'Install', 'cert-install') : ''}${available ? btn('Regenerate root', 'cert-regenerate', 'danger') : ''}${btn('Refresh', 'cert-refresh', 'ghost')}</div>
-          ${ca.busy ? `<div style="color:${C.dim};margin-top:10px">Working…</div>` : ''}${ca.error ? `<div style="color:${C.danger};margin-top:10px">${esc(ca.error)}</div>` : ''}</div>
-        <p>Only the public certificate is exported. Tools with their own trust store (Firefox, Node.js, the JVM) may need it installed separately.</p></div>`;
+          ${ca.busy ? `<div style="color:${C.dim};margin-top:10px">Working…</div>` : ''}${ca.error ? `<div style="color:${C.danger};margin-top:10px">${esc(ca.error)}</div>` : ''}${certCleanupSummary(ca.cleanup)}</div>
+        <p>Only the public certificate is exported. Tools with their own trust store (Firefox, Node.js, the JVM) may need it installed separately.</p>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid ${C.line}">
+          <div style="font-size:12px;color:${C.ink};font-weight:600;margin-bottom:4px">Clean up polluted stores</div>
+          <p style="margin:0 0 8px">Remove every HttpStackLens certificate from the OS trust store (matched by the CA signature so unrelated certificates are left alone), then delete the local CA files and the per-domain certificates folder.</p>
+          ${btn('Clean up certificates', 'cert-cleanup', 'danger')}</div></div>`;
     }
     if (settingsTab === 'body') return bodyRulesPanel();
     if (settingsTab === 'upstream') return upstreamPanel();
@@ -1385,6 +1405,10 @@
         cert.step = 1; renderCert(); certificateAction('generate');
         break;
       case 'cert-regenerate': certificateAction('regenerate'); break;
+      case 'cert-cleanup':
+        if (!window.confirm('Remove all HttpStackLens certificates from the OS trust store and delete the local CA files and per-domain certificates folder? HTTPS decryption will need a fresh CA afterwards.')) break;
+        state.certificate.cleanup = null; certificateAction('cleanup');
+        break;
       case 'cert-install': certificateAction('install'); break;
       case 'cert-refresh': loadCertificateStatus(true); renderSettings(); break;
       case 'cert-export': window.location.assign('/api/certificates/ca/export'); break;
@@ -1485,6 +1509,11 @@
     else if (modalKind === 'settings' && settingsTab === 'cert') renderSettings();
   }
 
+  function setCertificateCleanup(s) {
+    state.certificate.cleanup = s || null;
+    if (modalKind === 'settings' && settingsTab === 'cert') renderSettings();
+  }
+
   function setAccessControl(s) {
     const a = state.access;
     a.loading = false; a.saving = false;
@@ -1554,6 +1583,7 @@
     setCaptureState: setCaptureState,   // capture_state event
     setBodyCapture: setBodyCapture,     // /api/settings/body-capture result
     setCertificate: setCertificate,     // B6 CA status/actions
+    setCertificateCleanup: setCertificateCleanup, // certificate cleanup summary
     setAccessControl: setAccessControl, // B5.3 access settings
     setUpstream: setUpstream,           // B5.2 upstream settings
     clear: () => {

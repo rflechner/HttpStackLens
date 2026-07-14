@@ -30,6 +30,9 @@ func (f fakeCertInstaller) IsSupported() bool              { return f.supported 
 func (f fakeCertInstaller) IsCACertInstalled(string) (bool, error) {
 	return f.installed, f.err
 }
+func (f fakeCertInstaller) CleanupStore(string) (int, int, bool, error) {
+	return 0, 0, f.supported, nil
+}
 
 type recordingCertInstaller struct {
 	supported     bool
@@ -47,6 +50,9 @@ func (f *recordingCertInstaller) InstallDomainCert(string) error { return nil }
 func (f *recordingCertInstaller) IsSupported() bool              { return f.supported }
 func (f *recordingCertInstaller) IsCACertInstalled(string) (bool, error) {
 	return f.installed, nil
+}
+func (f *recordingCertInstaller) CleanupStore(string) (int, int, bool, error) {
+	return 0, 0, f.supported, nil
 }
 
 func TestRequestDetailDtoIncludesMetadataAndHeaders(t *testing.T) {

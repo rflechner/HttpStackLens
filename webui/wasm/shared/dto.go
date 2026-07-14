@@ -239,6 +239,26 @@ type CertificateGenerateRequestDto struct {
 	Replace bool `json:"replace"`
 }
 
+// CertificatesCleanupResultDto is returned by POST /api/certificates/cleanup. It
+// reports how many app certificates were pruned from the OS trust store and
+// which on-disk artifacts were deleted, plus the refreshed CA status so the UI
+// can update in a single round-trip.
+type CertificatesCleanupResultDto struct {
+	// StoreCleanupSupported is false when automatic OS trust-store cleanup is not
+	// implemented for the current OS; on-disk cleanup still ran.
+	StoreCleanupSupported bool `json:"store_cleanup_supported"`
+	// RootCertsRemoved / DomainCertsRemoved count entries deleted from the OS
+	// trust store.
+	RootCertsRemoved    int      `json:"root_certs_removed"`
+	DomainCertsRemoved  int      `json:"domain_certs_removed"`
+	RemovedFiles        []string `json:"removed_files,omitempty"`
+	DomainFolderRemoved bool     `json:"domain_folder_removed"`
+	Warnings            []string `json:"warnings,omitempty"`
+	// Certificates is the CA status after cleanup (typically "unavailable" since
+	// the CA files were deleted).
+	Certificates CertificatesInfosDto `json:"certificates"`
+}
+
 // duplicate of AppConfig to avoid security issues
 
 type AppConfigDto struct {

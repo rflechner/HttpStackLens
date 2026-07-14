@@ -353,6 +353,7 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	mux.HandleFunc("/api/certificates/ca/generate", certificateGenerateHandler(config.DecryptHttps.CertManager, certInstaller))
 	mux.HandleFunc("/api/certificates/ca/install", certificateInstallHandler(config.DecryptHttps.CertManager, certInstaller))
 	mux.HandleFunc("/api/certificates/ca/export", certificateExportHandler(config.DecryptHttps.CertManager))
+	mux.HandleFunc("/api/certificates/cleanup", certificateCleanupHandler(config.DecryptHttps.CertManager, certInstaller))
 
 	access := configuration.NormalizeAccessControl(config.WebUi.AccessControl, config.WebUi.EnableRemoteConnection)
 	if accessControlSettings != nil {
@@ -619,6 +620,37 @@ func certificateInstallHandler(certConfig configuration.CertManagerConfig, insta
 			return
 		}
 		writeJSON(w, certificatesInfosDto(certConfig, installer))
+	}
+}
+
+// certificateCleanupHandler removes the app's certificates from the OS trust
+// store and deletes the local CA files and per-domain certificates folder. It is
+// deliberately destructive, so it only accepts POST.
+func certificateCleanupHandler(certConfig configuration.CertManagerConfig, installer certManager.CertInstaller) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		report, err := certManager.CleanupAppCertificates(certConfig, installer)
+		if err != nil {
+			log.Printf("Error cleaning up certificates: %v", err)
+			http.Error(w, "could not clean up certificates", http.StatusInternalServerError)
+			return
+		}
+		if len(report.Warnings) > 0 {
+			log.Printf("Certificate cleanup completed with warnings: %s", strings.Join(report.Warnings, "; "))
+		}
+		writeJSON(w, shared.CertificatesCleanupResultDto{
+			StoreCleanupSupported: report.StoreCleanupSupported,
+			RootCertsRemoved:      report.RootCertsRemoved,
+			DomainCertsRemoved:    report.DomainCertsRemoved,
+			RemovedFiles:          report.RemovedFiles,
+			DomainFolderRemoved:   report.DomainFolderRemoved,
+			Warnings:              report.Warnings,
+			Certificates:          certificatesInfosDto(certConfig, installer),
+		})
 	}
 }
 

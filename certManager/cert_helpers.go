@@ -83,7 +83,7 @@ func GenerateCA(certFile string, keyFile string) error {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			CommonName:   hostname + " - My Local CA for debugging HTTPS",
+			CommonName:   hostname + caCommonNameSuffix,
 			Organization: []string{hostname + "Debug HTTPS"},
 			Country:      []string{"Unknown"},
 		},

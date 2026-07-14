@@ -63,6 +63,14 @@ func (macOsCertInstaller) InstallDomainCert(domainCertFile string) error {
 	return nil
 }
 
+// CleanupStore is not yet implemented on macOS: automatic keychain removal is
+// left out to avoid deleting the wrong certificate. The CA can be removed by
+// hand from Keychain Access; per-domain leaves are never installed on macOS
+// (InstallDomainCert is a no-op). The caller still performs the on-disk cleanup.
+func (macOsCertInstaller) CleanupStore(marker string) (int, int, bool, error) {
+	return 0, 0, false, nil
+}
+
 func (macOsCertInstaller) IsCACertInstalled(caCertFile string) (bool, error) {
 	keychain, err := loginKeychainPath()
 	if err != nil {

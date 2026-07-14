@@ -3,8 +3,11 @@
 package certManager
 
 import (
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -20,7 +23,21 @@ var (
 	procCertCreateCertificateContext     = crypt32.NewProc("CertCreateCertificateContext")
 	procCertFindCertificateInStore       = crypt32.NewProc("CertFindCertificateInStore")
 	procCertFreeCertificateContext       = crypt32.NewProc("CertFreeCertificateContext")
+	procCertEnumCertificatesInStore      = crypt32.NewProc("CertEnumCertificatesInStore")
+	procCertDeleteCertificateFromStore   = crypt32.NewProc("CertDeleteCertificateFromStore")
 )
+
+// certContext mirrors the Win32 CERT_CONTEXT structure so we can read the
+// DER-encoded bytes of a certificate returned by CertEnumCertificatesInStore.
+// Field offsets match the C layout on both 386 and amd64 (the pointer fields are
+// naturally aligned, matching Go's own alignment rules).
+type certContext struct {
+	encodingType uint32
+	encoded      *byte
+	encodedLen   uint32
+	certInfo     uintptr
+	certStore    uintptr
+}
 
 const (
 	// CERT_STORE_PROV_SYSTEM_W: the store name is a wide string.
@@ -103,6 +120,123 @@ func (windowsCertInstaller) InstallDomainCert(domainCertFile string) error {
 	}
 	log.Printf("🔏 Domain certificate installed in the current user's personal store: %s\n", domainCertFile)
 	return nil
+}
+
+// CleanupStore removes every certificate this application added to the current
+// user's trust stores: the debug root CA(s) from "ROOT" (matched on the marker
+// in their Subject common name) and the per-domain leaf certificates from "MY"
+// (matched on the same marker in their Issuer common name — they are signed by
+// our CA). Certificates the app never created carry no such marker and are left
+// untouched.
+func (windowsCertInstaller) CleanupStore(marker string) (int, int, bool, error) {
+	rootRemoved, rootErr := cleanupStore("ROOT", func(c *x509.Certificate) bool {
+		return strings.Contains(c.Subject.CommonName, marker)
+	})
+	domainRemoved, myErr := cleanupStore("MY", func(c *x509.Certificate) bool {
+		return strings.Contains(c.Issuer.CommonName, marker)
+	})
+	return rootRemoved, domainRemoved, true, errors.Join(rootErr, myErr)
+}
+
+// cleanupStore deletes from the named current-user store every certificate for
+// which match returns true, and reports how many were removed.
+//
+// It works in two passes on purpose: deleting a certificate while enumerating
+// the store invalidates the enumeration cursor, so pass 1 only collects a copy
+// of the DER bytes of the matching certificates, and pass 2 re-finds each one
+// with a fresh context and deletes it.
+func cleanupStore(storeName string, match func(*x509.Certificate) bool) (int, error) {
+	store, err := openCurrentUserStore(storeName)
+	if err != nil {
+		return 0, err
+	}
+	defer procCertCloseStore.Call(store, 0)
+
+	// Pass 1: collect DER copies of the matching certificates.
+	var toDelete [][]byte
+	var prev uintptr
+	for {
+		ctxPtr, _, _ := procCertEnumCertificatesInStore.Call(store, prev)
+		if ctxPtr == 0 {
+			// CertEnumCertificatesInStore frees the last context it was given when
+			// it returns NULL, so there is nothing left to release here.
+			break
+		}
+		prev = ctxPtr
+
+		der := certContextDER(ctxPtr)
+		if len(der) == 0 {
+			continue
+		}
+		cert, parseErr := x509.ParseCertificate(der)
+		if parseErr != nil {
+			continue
+		}
+		if match(cert) {
+			cp := make([]byte, len(der))
+			copy(cp, der)
+			toDelete = append(toDelete, cp)
+		}
+	}
+
+	// Pass 2: re-find and delete each collected certificate.
+	var removed int
+	var errs []error
+	for _, der := range toDelete {
+		deleted, delErr := deleteCertFromStore(store, der)
+		if deleted {
+			removed++
+		}
+		if delErr != nil {
+			errs = append(errs, delErr)
+		}
+	}
+	return removed, errors.Join(errs...)
+}
+
+// certContextDER returns the DER bytes referenced by a CERT_CONTEXT. The slice
+// aliases memory owned by the certificate context, so callers must copy it
+// before the context is freed (the next CertEnumCertificatesInStore call).
+func certContextDER(ctxPtr uintptr) []byte {
+	ctx := (*certContext)(unsafe.Pointer(ctxPtr))
+	if ctx.encoded == nil || ctx.encodedLen == 0 {
+		return nil
+	}
+	return unsafe.Slice(ctx.encoded, ctx.encodedLen)
+}
+
+// deleteCertFromStore finds the certificate identical to der in the store and
+// deletes it, reporting whether a certificate was actually removed.
+func deleteCertFromStore(store uintptr, der []byte) (bool, error) {
+	ctx, _, callErr := procCertCreateCertificateContext.Call(
+		uintptr(certEncoding),
+		uintptr(unsafe.Pointer(&der[0])),
+		uintptr(len(der)),
+	)
+	if ctx == 0 {
+		return false, fmt.Errorf("CertCreateCertificateContext failed: %v", callErr)
+	}
+	defer procCertFreeCertificateContext.Call(ctx)
+
+	found, _, _ := procCertFindCertificateInStore.Call(
+		store,
+		uintptr(certEncoding),
+		0,
+		uintptr(certFindExisting),
+		ctx,
+		0,
+	)
+	if found == 0 {
+		return false, nil
+	}
+
+	// CertDeleteCertificateFromStore always frees the context it is given, so the
+	// found context must not be freed again afterwards.
+	ret, _, callErr := procCertDeleteCertificateFromStore.Call(found)
+	if ret == 0 {
+		return false, fmt.Errorf("CertDeleteCertificateFromStore failed: %v", callErr)
+	}
+	return true, nil
 }
 
 // openCurrentUserStore opens a named current-user system store (e.g. "ROOT" or
