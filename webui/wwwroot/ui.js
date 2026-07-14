@@ -68,6 +68,7 @@
   }
   function fmtMs(ms) { if (ms == null) return '—'; return ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : ms + 'ms'; }
   function fmtTime(ts) {
+    if (ts == null) return '—';
     const d = new Date(ts), p = (n) => String(n).padStart(2, '0');
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
   }
@@ -76,6 +77,9 @@
   // ─── state ───────────────────────────────────────────────
   const state = {
     rows: [], selId: null, capturing: true, proxyRunning: true, proxyAddress: '', decryption: true,
+    liveRows: [],
+    source: { kind: 'live', name: '', metadata: null },
+    captures: { files: [], loading: false, loaded: false, opening: false, error: null },
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
     detailHeight: savedDetailHeight,
@@ -106,6 +110,210 @@
     return `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" style="display:block">
       <rect x="1" y="5" width="8" height="6" rx="1" stroke="${c}" stroke-width="1"/>
       <path d="${on ? 'M3 5V3.5a2 2 0 014 0V5' : 'M3 5V3.5a2 2 0 013-1.7'}" stroke="${c}" stroke-width="1" stroke-linecap="round"/></svg>`;
+  }
+
+  // ─── live / saved capture sources ───────────────────────
+  function captureDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'unknown date';
+    const today = new Date();
+    const sameDay = date.toDateString() === today.toDateString();
+    return new Intl.DateTimeFormat(undefined, sameDay
+      ? { hour: '2-digit', minute: '2-digit' }
+      : { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date);
+  }
+
+  function renderCaptureSessions() {
+    const live = $('#live-session');
+    if (!live) return;
+    const isLive = state.source.kind === 'live';
+    live.style.background = isLive ? C.bg3 : 'transparent';
+    live.style.color = isLive ? C.ink : C.dim;
+    const dot = $('.rec-dot', live);
+    if (dot) dot.classList.toggle('on', state.capturing);
+    $('#live-session-count').textContent = state.liveRows.length;
+
+    const root = $('#capture-sessions');
+    const captures = state.captures;
+    if (captures.loading && !captures.loaded) {
+      root.innerHTML = `<div style="padding:8px 10px;color:${C.faint};font-size:11.5px">Loading captures…</div>`;
+      return;
+    }
+    const error = captures.error
+      ? `<div style="padding:8px 10px;color:${C.danger};font-size:11px;line-height:1.4">${esc(captures.error)}</div>`
+      : '';
+    if (!captures.files.length) {
+      root.innerHTML = error || `<div style="padding:8px 10px;color:${C.faint};font-size:11.5px">No saved captures</div>`;
+      return;
+    }
+    root.innerHTML = error + captures.files.map((file) => {
+      const active = state.source.kind === 'capture' && state.source.name === file.name;
+      const opening = captures.opening === file.name;
+      return `<button data-open-capture="${encodeURIComponent(file.name)}" class="flex items-center gap-[8px] w-full text-left rounded-[8px]" style="padding:7px 10px;border:none;cursor:pointer;background:${active ? C.bg3 : 'transparent'};color:${active ? C.ink : C.dim};font-family:Inter">
+        <span style="color:${active ? C.mint : C.faint};font-size:12px">${opening ? '◌' : '▣'}</span>
+        <span class="flex-1 min-w-0"><span class="block truncate" style="font-size:11.5px;font-weight:500">${esc(file.name.replace(/^capture-/, '').replace(/\.capture$/, ''))}</span><span class="block" style="font-size:10.5px;color:${C.faint};margin-top:2px">${captureDate(file.modified_at)} · ${fmtBytes(file.size)}</span></span>
+      </button>`;
+    }).join('');
+  }
+
+  function renderSourceBanner() {
+    const banner = $('#source-banner');
+    const waterfall = $('#waterfall');
+    const subtitle = $('#source-subtitle');
+    if (state.source.kind === 'live') {
+      if (subtitle) subtitle.textContent = 'Live session';
+      banner.style.display = 'none';
+      waterfall.style.display = 'flex';
+      return;
+    }
+    const metadata = state.source.metadata || {};
+    if (subtitle) subtitle.textContent = 'Saved capture';
+    banner.style.display = 'flex';
+    waterfall.style.display = 'none';
+    banner.style.cssText = `display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 16px;background:${C.bg2};border-bottom:1px solid ${C.line}`;
+    banner.innerHTML = `<span style="width:8px;height:8px;border-radius:4px;background:${C.info}"></span>
+      <div class="flex-1 min-w-0"><div class="truncate" style="font-size:12.5px;font-weight:600;color:${C.ink}">${esc(state.source.name)}</div>
+        <div style="font-size:11px;color:${C.dim};margin-top:2px">Read-only capture · ${state.rows.length} requests · ${fmtBytes(metadata.size)} · ${metadata.https_decrypted ? 'HTTPS decrypted' : 'HTTPS passthrough'} · timestamps unavailable</div></div>
+      <button data-action="back-to-live" style="display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:8px;border:1px solid ${C.mint};background:${C.mint};color:${C.onAccent};font-family:Inter;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 3px 10px ${C.mint}35">
+        <span aria-hidden="true" style="font-size:14px;line-height:1">●</span> Back to live
+      </button>`;
+  }
+
+  async function fetchJSON(url) {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      const message = (await response.text()).trim();
+      throw new Error(message || `HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async function loadCaptureFiles() {
+    if (state.captures.loading) return;
+    state.captures.loading = true; state.captures.error = null;
+    renderCaptureSessions();
+    try {
+      const files = await fetchJSON('/api/captures');
+      state.captures.files = Array.isArray(files) ? files : [];
+      state.captures.loaded = true;
+    } catch (error) {
+      state.captures.error = `Could not list captures: ${error.message}`;
+    } finally {
+      state.captures.loading = false;
+      renderCaptureSessions();
+    }
+  }
+
+  function captureHeaders(headers) {
+    return Array.isArray(headers) ? headers.map((header) => [header.name || '', header.value || '']) : [];
+  }
+
+  function captureHeader(headers, name) {
+    const match = (headers || []).find((header) => String(header.name || '').toLowerCase() === name.toLowerCase());
+    return match ? match.value : '';
+  }
+
+  function capturedBody(record, contentType) {
+    return {
+      loaded: true,
+      loading: false,
+      available: !!record.body_available,
+      skipped: !!record.body_skipped,
+      contentType: contentType || '',
+      bodyBase64: record.body_base64 || '',
+    };
+  }
+
+  function captureRequestLocation(request) {
+    const raw = request.url || '/';
+    const hostHeader = captureHeader(request.headers, 'host');
+    if (request.method === 'CONNECT') return { scheme: 'https', host: raw, path: raw };
+    try {
+      const parsed = new URL(raw);
+      return { scheme: parsed.protocol.replace(':', ''), host: parsed.host, path: parsed.pathname + parsed.search };
+    } catch (error) {
+      return { scheme: 'http', host: hostHeader, path: raw.startsWith('/') ? raw : '/' + raw };
+    }
+  }
+
+  function captureRows(records, metadata) {
+    const byRequestID = new Map();
+    const rows = [];
+    for (const item of records) {
+      if (item.type === 'request' && item.request) {
+        const request = item.request;
+        const location = captureRequestLocation(request);
+        const requestContentType = captureHeader(request.headers, 'content-type');
+        const row = {
+          id: rows.length + 1, ts: null, method: request.method || 'GET',
+          scheme: location.scheme, host: location.host, path: location.path,
+          version: request.http_version || '', status: null, statusText: '', mime: '', mimeColor: 'bin',
+          size: null, ms: null, stream: false, bodyAvailable: false, bodySkipped: false,
+          tls: location.scheme === 'https' || request.method === 'CONNECT', decrypted: !!metadata.https_decrypted,
+          correlationId: request.request_id || '',
+          detail: { request: { httpVersion: request.http_version || '', headers: captureHeaders(request.headers) }, response: null },
+          bodies: { request: capturedBody(request, requestContentType), response: { loaded: true, loading: false, available: false } },
+        };
+        rows.push(row);
+        byRequestID.set(request.request_id, row);
+      } else if (item.type === 'response' && item.response) {
+        const response = item.response;
+        const row = byRequestID.get(response.request_id);
+        if (!row) continue;
+        const contentType = captureHeader(response.headers, 'content-type');
+        row.status = Number(response.status || 0) || null;
+        row.statusText = response.status_text || '';
+        row.mime = contentType;
+        row.mimeColor = mimeCategory(contentType, contentType.toLowerCase().startsWith('text/event-stream'));
+        row.stream = row.mimeColor === 'stream';
+        row.size = Number(response.body_size || 0);
+        row.bodyAvailable = !!response.body_available;
+        row.bodySkipped = !!response.body_skipped;
+        row.detail.response = { httpVersion: response.http_version || '', headers: captureHeaders(response.headers) };
+        row.bodies.response = capturedBody(response, contentType);
+      }
+    }
+    return rows;
+  }
+
+  async function openCapture(name) {
+    const token = Symbol(name);
+    state.captures.openToken = token;
+    state.captures.opening = name; state.captures.error = null;
+    renderCaptureSessions();
+    try {
+      const encoded = encodeURIComponent(name);
+      const metadata = await fetchJSON(`/api/captures/${encoded}/metadata`);
+      const records = [];
+      let offset = 0;
+      do {
+        const page = await fetchJSON(`/api/captures/${encoded}/records?offset=${offset}&limit=500`);
+        records.push(...(page.records || []));
+        if (!page.has_more) break;
+        if (page.next_offset <= offset) throw new Error('Capture pagination did not advance.');
+        offset = page.next_offset;
+      } while (state.captures.openToken === token);
+      if (state.captures.openToken !== token) return;
+      state.source = { kind: 'capture', name, metadata };
+      state.rows = captureRows(records, metadata);
+      state.selId = null; state.sidebar = 'all';
+      renderToolbar(); renderList(); renderDetail(); renderSourceBanner();
+    } catch (error) {
+      if (state.captures.openToken === token) state.captures.error = `Could not open ${name}: ${error.message}`;
+    } finally {
+      if (state.captures.openToken === token) {
+        state.captures.opening = false;
+        renderCaptureSessions();
+      }
+    }
+  }
+
+  function backToLive() {
+    state.captures.openToken = null;
+    state.source = { kind: 'live', name: '', metadata: null };
+    state.rows = state.liveRows;
+    state.selId = null;
+    renderToolbar(); renderList(); renderDetail(); renderSourceBanner();
   }
 
   // ─── request list ────────────────────────────────────────
@@ -160,6 +368,8 @@
     renderWaterfall();
     renderSidebarCounts();
     renderStatusBar();
+    renderCaptureSessions();
+    renderSourceBanner();
   }
 
   function appendRow(r) {
@@ -211,11 +421,16 @@
 
   function appendExternalRow(r) {
     const row = normalizeExternalRow(r);
-    state.rows.push(row);
-    if (state.rows.length > 220) {
-      const dropped = state.rows.shift();
+    state.liveRows.push(row);
+    if (state.liveRows.length > 220) {
+      const dropped = state.liveRows.shift();
       if (dropped && dropped.id === state.selId) { state.selId = null; renderDetail(); }
     }
+    if (state.source.kind !== 'live') {
+      renderCaptureSessions();
+      return row.id;
+    }
+    state.rows = state.liveRows;
     appendRow(row);
     return row.id;
   }
@@ -224,7 +439,7 @@
   // (falls back to id) since the response event carries no sequence number.
   function updateExternalRow(r) {
     const cid = r.correlationId || '';
-    const row = state.rows.find((x) => (cid && x.correlationId === cid) || (r.id != null && x.id === Number(r.id)));
+    const row = state.liveRows.find((x) => (cid && x.correlationId === cid) || (r.id != null && x.id === Number(r.id)));
     if (!row) return -1;
     if (r.status != null) row.status = Number(r.status);
     if (r.statusText != null) row.statusText = r.statusText;
@@ -235,6 +450,7 @@
     if (r.ms != null) row.ms = Number(r.ms);
     row.bodyAvailable = !!r.bodyAvailable;
     row.bodySkipped = !!r.bodySkipped;
+    if (state.source.kind !== 'live') return row.id;
     // Re-render just this row in the list (cheapest correct option is a
     // targeted DOM swap; fall back to a full list render when it isn't visible).
     const el = document.querySelector(`#list [data-row="${row.id}"]`);
@@ -477,8 +693,8 @@
       const reqLine = `${r.method} ${r.path} ${(d.request && d.request.httpVersion) || r.version || 'HTTP/1.1'}`;
       const hdrs = reqH.map(([k, v]) => `${k}: ${v}`).join('\n');
       const rb = r.bodies.response;
-      const bodyText = rb && rb.available ? rb.text : '';
-      body = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">${esc(`${reqLine}\nhost: ${r.host}\n${hdrs}\n\n${bodyText}`)}</pre>`;
+      const rawBody = rb && rb.available ? bodyText(rb) : '';
+      body = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">${esc(`${reqLine}\nhost: ${r.host}\n${hdrs}\n\n${rawBody}`)}</pre>`;
     }
 
     wrap.innerHTML = `
@@ -508,6 +724,7 @@
     $('#statusbar').innerHTML = `
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px 0 14px;color:${state.proxyRunning ? C.mint : C.danger}">proxy ${state.proxyRunning ? 'running' : 'stopped'}</span>
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.capturing ? C.mint : C.faint}"><span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'recording' : 'recording stopped'}</span>
+      ${state.source.kind === 'capture' ? `<span style="padding:0 10px;color:${C.info}">read-only capture</span>` : ''}
       <span style="padding:0 10px;color:${C.dim}">${rows.length} req</span>
       <span style="padding:0 10px;color:${C.dim}">${err} errors</span>
       <span style="padding:0 10px;color:${C.dim}">avg ${avg}ms</span>
@@ -529,6 +746,15 @@
     cap.innerHTML = `<span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'Stop recording' : 'Start recording'}`;
     cap.style.color = state.capturing ? C.mint : C.dim;
     cap.style.background = state.capturing ? C.bg3 : 'transparent';
+
+    const clear = $('[data-action="clear"]');
+    const archived = state.source.kind === 'capture';
+    if (clear) {
+      clear.disabled = archived;
+      clear.title = archived ? 'Saved captures are read-only' : 'Clear the live session';
+      clear.style.opacity = archived ? '.45' : '1';
+      clear.style.cursor = archived ? 'not-allowed' : 'pointer';
+    }
 
     const dec = $('#btn-decrypt');
     dec.innerHTML = `${lock(state.decryption)} HTTPS decryption · ${state.decryption ? 'On' : 'Off'}`;
@@ -907,6 +1133,9 @@
       const side = e.target.closest('[data-side]');
       if (side) { state.sidebar = side.dataset.side; renderList(); return; }
 
+      const capture = e.target.closest('[data-open-capture]');
+      if (capture) { openCapture(decodeURIComponent(capture.dataset.openCapture)); return; }
+
       const tab = e.target.closest('[data-tab]');
       if (tab) { state.detailTab = tab.dataset.tab; renderDetail(); return; }
 
@@ -1035,9 +1264,12 @@
         proxyAction(state.proxyRunning ? 'stop' : 'start');
         break;
       case 'clear':
+        if (state.source.kind !== 'live') break;
         captureAction('clear');
-        state.rows = []; state.selId = null; renderList(); renderDetail();
+        state.liveRows = []; state.rows = state.liveRows; state.selId = null; renderList(); renderDetail();
         break;
+      case 'back-to-live': backToLive(); break;
+      case 'refresh-captures': loadCaptureFiles(); break;
       case 'toggle-decrypt':
         if (state.decryption) decryptHttps(false);
         else openCert();
@@ -1167,13 +1399,13 @@
 
   // ─── detail / body results (from /api/..., via WASM) ─────
   function setDetail(correlationId, detail) {
-    const row = state.rows.find((x) => x.correlationId === correlationId);
+    const row = state.liveRows.find((x) => x.correlationId === correlationId);
     if (!row) return;
     row.detail = detail || { error: 'Detail not found.' };
     if (row.id === state.selId) renderDetail();
   }
   function setBody(correlationId, side, body) {
-    const row = state.rows.find((x) => x.correlationId === correlationId);
+    const row = state.liveRows.find((x) => x.correlationId === correlationId);
     if (!row) return;
     row.bodies[side] = Object.assign({ loaded: true, loading: false }, body || {});
     if (row.id === state.selId && state.detailTab === 'body' && side === 'response') renderDetail();
@@ -1187,6 +1419,7 @@
     renderToolbar();
     renderList();
     renderDetail();
+    loadCaptureFiles();
   }
 
   // Contract with the WASM layer: WASM pushes data in through these; the row
@@ -1201,7 +1434,11 @@
     setCertificate: setCertificate,     // B6 CA status/actions
     setAccessControl: setAccessControl, // B5.3 access settings
     setUpstream: setUpstream,           // B5.2 upstream settings
-    clear: () => { state.rows = []; state.selId = null; renderList(); renderDetail(); },
+    clear: () => {
+      state.liveRows = [];
+      if (state.source.kind === 'live') { state.rows = state.liveRows; state.selId = null; renderList(); renderDetail(); }
+      else renderCaptureSessions();
+    },
     rowHTML: (r) => rowHTML(normalizeExternalRow(r)),
   };
 
