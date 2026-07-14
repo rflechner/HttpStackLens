@@ -170,6 +170,13 @@ type ProxyRuntimeStateDto struct {
 	Address string `json:"address"`
 }
 
+// RuntimeStatsDto contains lightweight process metrics displayed by the Web UI.
+// MemoryBytes is the total memory currently obtained from the operating system
+// by the Go runtime (runtime.MemStats.Sys).
+type RuntimeStatsDto struct {
+	MemoryBytes uint64 `json:"memory_bytes"`
+}
+
 // CaptureDecryptStateDto reports whether HTTPS decryption (MITM) is currently on,
 // so the status bar can show "decrypted" vs "passthrough".
 type CaptureDecryptStateDto struct {

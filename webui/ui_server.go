@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -310,6 +311,7 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	mux.HandleFunc("/api/proxy/start", proxyRuntimeHandler(true, hub, updateProxy, captureState))
 	mux.HandleFunc("/api/proxy/stop", proxyRuntimeHandler(false, hub, updateProxy, captureState))
 	mux.HandleFunc("/api/proxy/state", captureStateHandler(captureState))
+	mux.HandleFunc("/api/runtime/stats", runtimeStatsHandler)
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
@@ -1031,6 +1033,18 @@ func writeJSON(w http.ResponseWriter, value any) {
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		log.Printf("Error marshaling JSON response: %v", err)
 	}
+}
+
+func runtimeStatsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	writeJSON(w, shared.RuntimeStatsDto{MemoryBytes: stats.Sys})
 }
 
 func captureListHandler(folder string) http.HandlerFunc {

@@ -440,6 +440,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CaptureState"
+  /api/runtime/stats:
+    get:
+      tags: [Runtime]
+      summary: Read lightweight application runtime metrics
+      description: Returns the memory currently obtained from the operating system by the Go runtime.
+      responses:
+        "200":
+          description: Current runtime metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeStats"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
   /api/capture/state:
     get:
       tags: [Captures]
@@ -785,6 +799,15 @@ components:
           type: boolean
         body_size:
           type: integer
+    RuntimeStats:
+      type: object
+      required: [memory_bytes]
+      properties:
+        memory_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total bytes obtained from the operating system by the Go runtime (`runtime.MemStats.Sys`).
     CaptureState:
       type: object
       required: [capturing, recording, buffer_size, proxy, decrypt, upstream, access]

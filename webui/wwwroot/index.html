@@ -57,6 +57,13 @@
   .row-new { animation: hsl-row-in .45s ease-out; }
   #list [data-row]:hover { background: var(--bg2) !important; }
 
+  .detail-resizer { height:12px; flex-shrink:0; cursor:row-resize; touch-action:none; position:relative; z-index:2;
+    background:var(--bg3); border-top:1px solid var(--line); border-bottom:1px solid var(--line); transition:background .12s; }
+  .detail-resizer::after { content:""; position:absolute; left:50%; top:3px; width:62px; height:4px;
+    transform:translateX(-50%); border-radius:4px; background:var(--mint); box-shadow:0 0 0 1px color-mix(in srgb,var(--mint) 35%,transparent); }
+  .detail-resizer:hover { background:color-mix(in srgb,var(--mint) 16%,var(--bg3)); }
+  .detail-resizer:hover::after { box-shadow:0 0 0 2px color-mix(in srgb,var(--mint) 30%,transparent); }
+
   .spin { animation: hsl-spin 1s linear infinite; }
   @keyframes hsl-spin { to { transform: rotate(360deg); } }
 
@@ -120,6 +127,7 @@
       <optgroup label="Light themes">
         <option value="light">Original light</option>
         <option value="rose-light">Rose light</option>
+        <option value="red-light">Red light</option>
         <option value="yellow-light">Yellow light</option>
         <option value="green-light">Green light</option>
         <option value="blue-light">Blue light</option>
@@ -128,6 +136,7 @@
       <optgroup label="Dark themes">
         <option value="dark">Original dark</option>
         <option value="rose-dark">Rose dark</option>
+        <option value="red-dark">Red dark</option>
         <option value="yellow-dark">Yellow dark</option>
         <option value="green-dark">Green dark</option>
         <option value="blue-dark">Blue dark</option>
@@ -135,7 +144,7 @@
       </optgroup>
     </select>
     <button class="hsl-tb" data-action="open-settings">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.3"/><path d="M8 1.3v2M8 12.7v2M14.7 8h-2M3.3 8h-2M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4M12.8 12.8l-1.4-1.4M4.6 4.6L3.2 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      <span aria-hidden="true" style="font-size:16px;line-height:1">⚙</span>
       Settings
     </button>
   </div>

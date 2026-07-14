@@ -26,6 +26,8 @@
     dark: palette(DARK_BASE, '#7fd4b4', { onAccent: '#0c2a24' }),
     'rose-light': palette(LIGHT_BASE, '#bd3f83', { desk: '#f0e6eb', sidebar: '#fff8fb', bg0: '#f8eff3', bg2: '#fdf5f8', bg3: '#f1dfe8', line: '#ead3de', lineSoft: '#f3e4eb', info: '#7766c5', pink: '#bd3f83' }),
     'rose-dark': palette(DARK_BASE, '#f08fbd', { desk: '#100a0e', sidebar: '#1b1218', bg0: '#120c10', bg1: '#1b1218', bg2: '#251820', bg3: '#30202a', line: '#392530', lineSoft: '#2c1d25', pink: '#f08fbd' }),
+    'red-light': palette(LIGHT_BASE, '#b43b3b', { desk: '#eee3e1', sidebar: '#fff9f8', bg0: '#f7eeec', bg2: '#fcf5f3', bg3: '#eeddda', line: '#e3cfcb', lineSoft: '#f0e2df', danger: '#a51f2d', warn: '#9a6500' }),
+    'red-dark': palette(DARK_BASE, '#ff7373', { desk: '#100909', sidebar: '#1b1111', bg0: '#120b0b', bg1: '#1b1111', bg2: '#251818', bg3: '#302020', line: '#3d2929', lineSoft: '#2d1e1e', danger: '#ff5c68', warn: '#ffc266', onAccent: '#2a0505' }),
     'yellow-light': palette(LIGHT_BASE, '#a96d00', { desk: '#eee9d8', sidebar: '#fffdf4', bg0: '#f7f3e5', bg2: '#fcf8ea', bg3: '#eee5c6', line: '#e4d9b7', lineSoft: '#f0e8ce', warn: '#a96d00', onAccent: '#ffffff' }),
     'yellow-dark': palette(DARK_BASE, '#ffd166', { desk: '#0e0d08', sidebar: '#19170f', bg0: '#111008', bg1: '#19170f', bg2: '#222017', bg3: '#2d291b', line: '#383321', lineSoft: '#292619', warn: '#ffd166', onAccent: '#2c2100' }),
     'green-light': palette(LIGHT_BASE, '#16855b', { desk: '#e2ebe5', sidebar: '#f7fcf8', bg0: '#edf5ef', bg2: '#f4faf6', bg3: '#dcecdf', line: '#cfe1d3', lineSoft: '#e3eee5', success: '#16855b' }),
@@ -45,9 +47,12 @@
   let C = PALETTES[themeName];
   let METHOD_COLOR = methodColors(C);
   let savedDetailHeight = null;
+  let savedDensity = 'normal';
   try {
     const stored = Number(localStorage.getItem('hsl-detail-height'));
     if (Number.isFinite(stored) && stored > 0) savedDetailHeight = stored;
+    const density = localStorage.getItem('hsl-density');
+    if (density === 'compact' || density === 'normal' || density === 'comfy') savedDensity = density;
   } catch (e) {}
   function statusColor(s) {
     if (s >= 500) return C.danger;
@@ -95,8 +100,9 @@
     liveRows: [],
     source: { kind: 'live', name: '', metadata: null },
     captures: { files: [], loading: false, loaded: false, opening: false, error: null },
+    runtime: { memoryBytes: null, loading: false },
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
-    density: 'normal',
+    density: savedDensity,
     detailHeight: savedDetailHeight,
     upstream: { on: false, ntlm: false, host: '', noProxy: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
     access: { mode: 'loopback', networks: [], appliedMode: 'loopback', appliedNetworks: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
@@ -219,6 +225,21 @@
     }
   }
 
+  async function loadRuntimeStats() {
+    if (state.runtime.loading) return;
+    state.runtime.loading = true;
+    try {
+      const stats = await fetchJSON('/api/runtime/stats');
+      state.runtime.memoryBytes = typeof stats.memory_bytes === 'number' ? stats.memory_bytes : null;
+      renderProxySummary();
+    } catch (error) {
+      // Keep the last successful value: a temporary UI/API interruption should
+      // not make the footer flicker between a value and an error every 5s.
+    } finally {
+      state.runtime.loading = false;
+    }
+  }
+
   function captureHeaders(headers) {
     return Array.isArray(headers) ? headers.map((header) => [header.name || '', header.value || '']) : [];
   }
@@ -334,6 +355,17 @@
   // ─── request list ────────────────────────────────────────
   const GRID = 'grid-template-columns:44px 60px 22px 66px 190px 1fr 140px 74px 84px 58px';
   function rowHeight() { return state.density === 'compact' ? 28 : state.density === 'comfy' ? 42 : 34; }
+
+  function renderDensityButtons() {
+    $$('[data-density]').forEach((button) => {
+      const active = button.dataset.density === state.density;
+      button.style.background = active ? C.bg1 : 'transparent';
+      button.style.color = active ? C.mint : C.dim;
+      button.style.border = active ? `1px solid ${C.line}` : 'none';
+      button.style.fontWeight = active ? '600' : '500';
+      button.style.boxShadow = active ? '0 1px 2px rgba(0,0,0,.04)' : 'none';
+    });
+  }
 
   function filteredRows() {
     let rows = state.rows;
@@ -713,9 +745,7 @@
     }
 
     wrap.innerHTML = `
-      <div data-detail-resizer title="Drag to resize · double-click to reset" style="height:7px;margin-top:-4px;flex-shrink:0;cursor:row-resize;touch-action:none;position:relative;z-index:2">
-        <div style="position:absolute;left:50%;top:3px;width:42px;height:2px;transform:translateX(-50%);border-radius:2px;background:${C.line}"></div>
-      </div>
+      <div data-detail-resizer class="detail-resizer" title="Drag to resize · double-click to reset" aria-label="Resize request detail panel"></div>
       <div style="padding:10px 14px;border-bottom:1px solid ${C.line};background:${C.bg1};display:flex;align-items:center;gap:10px;flex-shrink:0">
         ${methodTag(r.method)}${statusPill(r.status)}
         <div class="flex-1 overflow-hidden">
@@ -793,7 +823,11 @@
     summary.innerHTML = `<div class="flex items-center gap-[7px]" style="margin-bottom:8px">
       <span style="width:7px;height:7px;border-radius:4px;background:${color};box-shadow:0 0 0 3px ${color}22"></span>
       <span style="color:${C.dim};font-size:11.5px;font-weight:600">${state.proxyRunning ? 'Proxy listening' : 'Proxy stopped'}</span>
-    </div><div style="font-family:'JetBrains Mono';font-size:12px;color:${state.proxyRunning ? C.ink : C.faint};word-break:break-all">${esc(state.proxyAddress || 'address unavailable')}</div>`;
+    </div><div style="font-family:'JetBrains Mono';font-size:12px;color:${state.proxyRunning ? C.ink : C.faint};word-break:break-all">${esc(state.proxyAddress || 'address unavailable')}</div>
+    <div class="flex items-center gap-[7px]" style="margin-top:11px;padding-top:10px;border-top:1px solid ${C.lineSoft};font-size:11px;color:${C.dim}">
+      <span aria-hidden="true" style="color:${C.faint};font-size:12px">▣</span><span>App memory</span>
+      <span style="margin-left:auto;color:${C.ink};font-family:'JetBrains Mono';font-variant-numeric:tabular-nums">${state.runtime.memoryBytes == null ? '—' : fmtBytes(state.runtime.memoryBytes)}</span>
+    </div>`;
   }
 
   // ─── modals ──────────────────────────────────────────────
@@ -1200,14 +1234,8 @@
 
     $$('[data-density]').forEach((b) => b.addEventListener('click', () => {
       state.density = b.dataset.density;
-      $$('[data-density]').forEach((x) => {
-        const on = x.dataset.density === state.density;
-        x.style.background = on ? C.bg1 : 'transparent';
-        x.style.color = on ? C.mint : C.dim;
-        x.style.border = on ? `1px solid ${C.line}` : 'none';
-        x.style.fontWeight = on ? '600' : '500';
-        x.style.boxShadow = on ? '0 1px 2px rgba(0,0,0,.04)' : 'none';
-      });
+      try { localStorage.setItem('hsl-density', state.density); } catch (e) {}
+      renderDensityButtons();
       renderList(); renderDetail();
     }));
 
@@ -1343,6 +1371,7 @@
     setThemeVariables(C);
     try { localStorage.setItem('hsl-theme', name); } catch (e) {}
     const select = $('#theme-select'); if (select) select.value = name;
+    renderDensityButtons();
     renderToolbar(); renderList(); renderDetail(); renderStatusBar();
     if (modalKind === 'settings') renderSettings();
     else if (modalKind === 'cert') renderCert();
@@ -1446,10 +1475,13 @@
     setThemeVariables(C);
     $('#theme-select').value = themeName;
     wire();
+    renderDensityButtons();
     renderToolbar();
     renderList();
     renderDetail();
     loadCaptureFiles();
+    loadRuntimeStats();
+    window.setInterval(loadRuntimeStats, 5000);
   }
 
   // Contract with the WASM layer: WASM pushes data in through these; the row

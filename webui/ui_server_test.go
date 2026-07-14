@@ -109,6 +109,38 @@ func TestRequestDetailDtoIncludesMetadataAndHeaders(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatsHandler(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/runtime/stats", nil)
+	rr := httptest.NewRecorder()
+
+	runtimeStatsHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	var got shared.RuntimeStatsDto
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode runtime stats: %v", err)
+	}
+	if got.MemoryBytes == 0 {
+		t.Fatal("memory_bytes = 0, want a runtime memory measurement")
+	}
+}
+
+func TestRuntimeStatsHandlerRejectsOtherMethods(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/runtime/stats", nil)
+	rr := httptest.NewRecorder()
+
+	runtimeStatsHandler(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rr.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow = %q, want %q", got, http.MethodGet)
+	}
+}
+
 func TestRequestDetailHandlerReturnsStoredExchange(t *testing.T) {
 	store := storage.NewRequestStore(10)
 	store.PutRequest("req-1", storage.RequestRecord{
