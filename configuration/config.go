@@ -16,6 +16,14 @@ type AppConfig struct {
 	Logging      LoggingConfig      `yaml:"logging"`
 	Storage      StorageConfig      `yaml:"storage"`
 	DecryptHttps DecryptHttpsConfig `yaml:"decrypt_https"`
+	Updates      UpdatesConfig      `yaml:"updates"`
+}
+
+// UpdatesConfig gates the automatic update check. It is opt-in: when CheckEnabled
+// is false (the default), the app makes no outbound request to GitHub and the Web
+// UI shows no update badge.
+type UpdatesConfig struct {
+	CheckEnabled bool `yaml:"check_enabled"` // check GitHub for a newer release on startup
 }
 
 type StorageConfig struct {

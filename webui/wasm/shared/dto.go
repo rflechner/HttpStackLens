@@ -177,6 +177,30 @@ type RuntimeStatsDto struct {
 	MemoryBytes uint64 `json:"memory_bytes"`
 }
 
+// BuildInfoDto reports the build metadata shown in the Web UI status bar.
+// CommitURL links to the exact commit on GitHub; it is empty for local/dev
+// builds where the commit hash is unknown.
+type BuildInfoDto struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	Date      string `json:"date"`
+	CommitURL string `json:"commit_url"`
+}
+
+// UpdateCheckDto reports whether a newer release is available on GitHub.
+// Checked is false when the check couldn't run (dev build, or GitHub was
+// unreachable) — the Web UI then simply shows no badge. AssetURL points at the
+// download for the current OS/arch when one is published, otherwise empty and
+// the UI falls back to ReleaseURL.
+type UpdateCheckDto struct {
+	Checked         bool   `json:"checked"`
+	UpdateAvailable bool   `json:"update_available"`
+	CurrentVersion  string `json:"current_version"`
+	LatestVersion   string `json:"latest_version"`
+	ReleaseURL      string `json:"release_url"`
+	AssetURL        string `json:"asset_url"`
+}
+
 // CaptureDecryptStateDto reports whether HTTPS decryption (MITM) is currently on,
 // so the status bar can show "decrypted" vs "passthrough".
 type CaptureDecryptStateDto struct {

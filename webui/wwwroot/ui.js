@@ -101,6 +101,8 @@
     source: { kind: 'live', name: '', metadata: null },
     captures: { files: [], loading: false, loaded: false, opening: false, error: null },
     runtime: { memoryBytes: null, loading: false },
+    build: { version: null, commit: null, commitUrl: null },
+    update: { available: false, latest: null, url: null },
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: savedDensity,
     detailHeight: savedDetailHeight,
@@ -237,6 +239,35 @@
       // not make the footer flicker between a value and an error every 5s.
     } finally {
       state.runtime.loading = false;
+    }
+  }
+
+  // Fetched once at boot: the running build never changes at runtime.
+  async function loadBuildInfo() {
+    try {
+      const info = await fetchJSON('/api/version');
+      state.build.version = info.version || null;
+      state.build.commit = info.commit || null;
+      state.build.commitUrl = info.commit_url || null;
+      renderStatusBar();
+    } catch (error) {
+      // Non-critical: leave the version slot empty if it can't be fetched.
+    }
+  }
+
+  // Checked once at boot. The backend caches the GitHub result, so this stays
+  // well within the API rate limit even across reloads. Prefers the direct asset
+  // download for this platform, falling back to the release page.
+  async function loadUpdateCheck() {
+    try {
+      const info = await fetchJSON('/api/update-check');
+      if (!info.checked || !info.update_available) return;
+      state.update.available = true;
+      state.update.latest = info.latest_version || null;
+      state.update.url = info.asset_url || info.release_url || null;
+      renderStatusBar();
+    } catch (error) {
+      // Non-critical: no badge if the check can't run.
     }
   }
 
@@ -777,7 +808,34 @@
       <span class="flex-1"></span>
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.decryption ? C.mint : C.warn}">${lock(state.decryption, !state.decryption)} HTTPS ${state.decryption ? 'decrypted' : 'passthrough'}</span>
       <span style="padding:0 10px;color:${C.dim}">upstream ${state.upstream.on ? (state.upstream.ntlm ? 'NTLM' : 'direct') : 'off'}</span>
-      <span style="padding:0 14px 0 10px;color:${C.dim}">access ${state.access.mode}</span>`;
+      <span style="padding:0 14px 0 10px;color:${C.dim}">access ${state.access.mode}</span>
+      ${updateSegment()}
+      ${versionSegment()}`;
+  }
+
+  // Update badge, shown only when the backend confirmed a newer GitHub release.
+  // Links to the platform asset (or the release page) so one click starts the
+  // download.
+  function updateSegment() {
+    if (!state.update.available || !state.update.url) return '';
+    const label = state.update.latest ? `update → ${esc(state.update.latest)}` : 'update available';
+    return `<a href="${esc(state.update.url)}" target="_blank" rel="noopener noreferrer"
+      title="Download the latest release from GitHub"
+      class="inline-flex items-center gap-[5px]"
+      style="margin:0 4px;padding:2px 9px;border-radius:10px;background:${C.bg3};color:${C.mint};text-decoration:none;font-weight:500">↑ ${label}</a>`;
+  }
+
+  // Version indicator at the far right of the status bar. Links to the exact
+  // commit on GitHub when the build injected a commit hash (release builds);
+  // otherwise it's plain text (dev builds report "dev" / no commit_url).
+  function versionSegment() {
+    if (!state.build.version) return '';
+    const label = esc(state.build.version);
+    const url = state.build.commitUrl;
+    const inner = url
+      ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="View commit ${esc(state.build.commit || '')} on GitHub" style="color:${C.info};text-decoration:none">${label}</a>`
+      : label;
+    return `<span style="padding:0 14px 0 10px;border-left:1px solid var(--line);color:${C.dim}">${inner}</span>`;
   }
 
   // ─── toolbar state sync ──────────────────────────────────
@@ -1481,6 +1539,8 @@
     renderDetail();
     loadCaptureFiles();
     loadRuntimeStats();
+    loadBuildInfo();
+    loadUpdateCheck();
     window.setInterval(loadRuntimeStats, 5000);
   }
 

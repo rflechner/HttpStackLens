@@ -27,6 +27,9 @@ storage:
   enable: true
   folder: "captures"
 
+updates:
+  check_enabled: false # when true, check GitHub for a newer release on startup (outbound request)
+
 decrypt_https:
   enabled: false # intercept & decrypt HTTPS (generates + installs a per-domain cert)
   cert_manager:

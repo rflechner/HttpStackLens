@@ -78,6 +78,11 @@ type Dependencies struct {
 	Capture               *storage.CaptureController
 	Proxy                 *storage.ProxyController
 	Commands              chan<- RuntimeCommand
+	Build                 shared.BuildInfoDto
+	// GitHubRepo is "owner/name", used to query the releases API for updates.
+	GitHubRepo string
+	// UpdateCheckEnabled gates the automatic GitHub update check (opt-in).
+	UpdateCheckEnabled bool
 }
 
 type Hub struct {
@@ -312,6 +317,8 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	mux.HandleFunc("/api/proxy/stop", proxyRuntimeHandler(false, hub, updateProxy, captureState))
 	mux.HandleFunc("/api/proxy/state", captureStateHandler(captureState))
 	mux.HandleFunc("/api/runtime/stats", runtimeStatsHandler)
+	mux.HandleFunc("/api/version", buildInfoHandler(deps.Build))
+	mux.HandleFunc("/api/update-check", updateCheckHandler(newUpdateChecker(deps.UpdateCheckEnabled, deps.Build.Version, deps.GitHubRepo)))
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
@@ -1045,6 +1052,20 @@ func runtimeStatsHandler(w http.ResponseWriter, r *http.Request) {
 	var stats runtime.MemStats
 	runtime.ReadMemStats(&stats)
 	writeJSON(w, shared.RuntimeStatsDto{MemoryBytes: stats.Sys})
+}
+
+// buildInfoHandler serves the build metadata (version/commit/date) that main
+// injects via -ldflags, so the Web UI status bar can display it and link to the
+// commit on GitHub.
+func buildInfoHandler(info shared.BuildInfoDto) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, info)
+	}
 }
 
 func captureListHandler(folder string) http.HandlerFunc {
