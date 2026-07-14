@@ -1009,13 +1009,14 @@ components:
           enum: [loopback, lan, allowlist, open]
           description: |
             `loopback` allows only localhost, `lan` allows loopback and private
-            network addresses, `allowlist` allows only the configured networks, and
+            network addresses, `allowlist` always allows IPv4/IPv6 loopback plus
+            the configured networks, and
             `open` allows any source.
         networks:
           type: array
           items:
             type: string
-          description: Allowed networks in CIDR notation, used when `mode` is `allowlist`.
+          description: Allowed IP addresses or networks. Individual IPv4/IPv6 addresses are normalized to `/32` or `/128`; CIDR notation is preserved. Used when `mode` is `allowlist`.
     MimeTypeRule:
       type: object
       required: [name]

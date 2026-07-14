@@ -1015,6 +1015,27 @@ func TestWebUiAccessControlMiddlewareAllowsPermittedRemote(t *testing.T) {
 	}
 }
 
+func TestWebUiAccessControlMiddlewareKeepsIPv6LocalhostAllowedByAllowlist(t *testing.T) {
+	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
+		WebUi: configuration.AccessControlConfig{
+			Mode:     configuration.AccessControlAllowlist,
+			Networks: []string{"127.0.0.1/32"},
+		},
+	})
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "[::1]:50000"
+	rr := httptest.NewRecorder()
+	webUiAccessControlMiddleware(settings, next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
+	}
+}
+
 func TestUpstreamSettingsHandlerReturnsSettings(t *testing.T) {
 	settings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{
 		OutputProxyUri:           "http://proxy:8080",

@@ -753,9 +753,9 @@
     let networks = '';
     if (a.mode === 'allowlist') {
       const rows = a.networks.length
-        ? a.networks.map((network, i) => `<div class="flex items-center gap-[8px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><input data-access-network="${i}" value="${String(network || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" placeholder="192.168.1.0/24" style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};background:${C.bg1};border:1px solid ${C.line};border-radius:3px;padding:5px 7px;flex:1;outline:none"><button data-action="access-remove-network:${i}" title="Remove network" style="background:transparent;border:1px solid ${C.line};color:${C.dim};border-radius:3px;cursor:pointer;height:27px;width:30px">×</button></div>`).join('')
-        : `<div style="padding:10px;color:${C.warn};font-size:11.5px;background:${C.bg2}">Add at least one network in CIDR notation.</div>`;
-      networks = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed networks</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${rows}<div style="padding:8px;background:${C.bg1}">${btn('+ Add network', 'access-add-network', 'ghost')}</div></div></div>`;
+        ? a.networks.map((network, i) => `<div class="flex items-center gap-[8px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><input data-access-network="${i}" value="${String(network || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" placeholder="127.0.0.1 or 192.168.1.0/24" style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};background:${C.bg1};border:1px solid ${C.line};border-radius:3px;padding:5px 7px;flex:1;outline:none"><button data-action="access-remove-network:${i}" title="Remove network" style="background:transparent;border:1px solid ${C.line};color:${C.dim};border-radius:3px;cursor:pointer;height:27px;width:30px">×</button></div>`).join('')
+        : `<div style="padding:10px;color:${C.warn};font-size:11.5px;background:${C.bg2}">Add at least one IP address or CIDR network.</div>`;
+      networks = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed IP addresses / networks</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${rows}<div style="padding:8px;background:${C.bg1}">${btn('+ Add network', 'access-add-network', 'ghost')}</div></div><div style="font-size:11px;color:${C.faint};margin-top:6px">Localhost is always allowed over IPv4 and IPv6 to prevent locking you out of this UI.</div></div>`;
     }
     const status = a.error ? `<span style="color:${C.danger}">${esc(a.error)}</span>` : a.saving ? '<span>Applying…</span>' : a.dirty ? `<span style="color:${C.warn}">Not applied yet</span>` : a.saved ? `<span style="color:${C.mint}">Applied ✓</span>` : '';
     return `<div class="grid gap-[14px]">
@@ -971,12 +971,12 @@
         if (!state.access.dirty || state.access.saving) break;
         const networks = state.access.networks.map((n) => n.trim());
         if (state.access.mode === 'allowlist' && (!networks.length || networks.some((n) => !n))) {
-          state.access.error = 'Allowlist mode requires at least one non-empty CIDR network.'; renderSettings(); break;
+          state.access.error = 'Allowlist mode requires at least one non-empty IP address or CIDR network.'; renderSettings(); break;
         }
         const warning = state.access.mode === 'open'
           ? 'Apply OPEN access to both the proxy and Web UI? Any machine that can reach this computer may connect.'
           : state.access.mode === 'allowlist'
-            ? 'Apply this allowlist to both the proxy and Web UI? If your current address is not included, this page will disconnect immediately.'
+            ? 'Apply this allowlist to both the proxy and Web UI? Remote clients not included will disconnect. Localhost remains allowed over IPv4 and IPv6.'
             : state.access.mode === 'loopback'
               ? 'Apply loopback-only access to both the proxy and Web UI? Any current remote session will disconnect immediately.'
               : 'Apply private-LAN access to both the proxy and Web UI? Clients outside private networks will disconnect.';

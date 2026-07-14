@@ -94,7 +94,7 @@ func ValidateAccessControl(config AccessControlConfig) (AccessControlConfig, err
 	}
 	for _, network := range config.Networks {
 		if _, err := netip.ParsePrefix(network); err != nil {
-			return AccessControlConfig{}, fmt.Errorf("invalid network %q: must be CIDR notation: %v", network, err)
+			return AccessControlConfig{}, fmt.Errorf("invalid network %q: must be an IP address or CIDR network: %v", network, err)
 		}
 	}
 	return config, nil
@@ -142,6 +142,12 @@ func (p AccessPolicy) AllowsIP(ip netip.Addr) bool {
 	case AccessControlLan:
 		return ip.IsLoopback() || ip.IsPrivate()
 	case AccessControlAllowlist:
+		// Keep localhost reachable over both IP families. HttpStackLens is a
+		// local development tool, and localhost may resolve to either 127.0.0.1
+		// or ::1 between requests.
+		if ip.IsLoopback() {
+			return true
+		}
 		for _, prefix := range p.prefixes {
 			if prefix.Contains(ip) {
 				return true
@@ -180,6 +186,9 @@ func cleanNetworks(values []string) []string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value != "" {
+			if addr, err := netip.ParseAddr(value); err == nil {
+				value = netip.PrefixFrom(addr, addr.BitLen()).String()
+			}
 			out = append(out, value)
 		}
 	}
