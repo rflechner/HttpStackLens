@@ -48,6 +48,17 @@ type windowsCertInstaller struct{}
 
 func (windowsCertInstaller) IsSupported() bool { return true }
 
+func (windowsCertInstaller) IsCACertInstalled(caCertFile string) (bool, error) {
+	der, err := readCertDER(caCertFile)
+	if err != nil {
+		return false, err
+	}
+	if len(der) == 0 {
+		return false, fmt.Errorf("no certificate found in %q", caCertFile)
+	}
+	return certInStore("ROOT", der)
+}
+
 // InstallCACert imports the CA certificate into the current user's "Root" store,
 // next to the other trusted certificate authorities. It first checks whether the
 // exact certificate is already present and skips the add if so — adding to the

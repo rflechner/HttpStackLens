@@ -1,239 +1,268 @@
-<!DOCTYPE html>
-<html lang="en" class="h-full">
+<!doctype html>
+<html lang="en" data-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTTP Stack Lens</title>
-    <link rel="stylesheet" href="css/output.css">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HttpStackLens — light / dark</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          bg0: 'var(--bg0)', bg1: 'var(--panel)', bg2: 'var(--bg2)', bg3: 'var(--bg3)',
+          line: 'var(--line)', lineSoft: 'var(--lineSoft)',
+          ink: 'var(--ink)', dim: 'var(--dim)', faint: 'var(--faint)',
+          mint: 'var(--mint)', warn: 'var(--warn)', danger: 'var(--danger)', info: 'var(--info)', pink: 'var(--pink)',
+        },
+        fontFamily: {
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          ui: ['Inter', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  :root, [data-theme="light"] {
+    --desk:#e9e5de; --panel:#ffffff; --sidebar:#faf8f4;
+    --bg0:#f1eee8; --bg2:#f6f3ee; --bg3:#eae5db;
+    --line:#e5e0d6; --lineSoft:#efebe3;
+    --ink:#2b2926; --dim:#6f6b62; --faint:#a49f94;
+    --mint:#2f9e8f; --warn:#c98a2b; --danger:#d1584f; --info:#4a7fc4; --pink:#9a6cc9; --success:#3f9d6b;
+    --pill-bg:#ffffff; --pill-border:#e5e0d6; --pill-shadow:0 1px 2px rgba(0,0,0,.04);
+    --scroll-thumb:#d8d2c6; --scroll-thumb-hover:#c7c0b2;
+    --brand-shadow:0 2px 6px #2f9e8f40;
+  }
+  [data-theme="dark"] {
+    --desk:#0a0b0d; --panel:#15171c; --sidebar:#15171c;
+    --bg0:#0e0f12; --bg2:#1c1f26; --bg3:#23272f;
+    --line:#262a33; --lineSoft:#1f232a;
+    --ink:#d8dce4; --dim:#8a93a3; --faint:#5a6173;
+    --mint:#7fd4b4; --warn:#f1b45a; --danger:#e86a6a; --info:#7aa7ff; --pink:#d48ad6; --success:#7fd4b4;
+    --pill-bg:#23272f; --pill-border:#2b303a; --pill-shadow:none;
+    --scroll-thumb:#23272f; --scroll-thumb-hover:#2f343d;
+    --brand-shadow:0 2px 8px #2f9e8f55;
+  }
+  html, body { margin: 0; height: 100%; background: var(--desk); overflow: hidden; }
+  body { font-family: Inter, system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; }
+
+  .rec-dot { width: 8px; height: 8px; border-radius: 4px; flex-shrink: 0; background: var(--faint); display: inline-block; }
+  .rec-dot.on { background: var(--danger); animation: hsl-pulse 1.6s ease-out infinite; }
+  @keyframes hsl-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent); } 100% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--danger) 0%, transparent); } }
+
+  @keyframes hsl-row-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
+  .row-new { animation: hsl-row-in .45s ease-out; }
+  #list [data-row]:hover { background: var(--bg2) !important; }
+
+  .detail-resizer { height:12px; flex-shrink:0; cursor:row-resize; touch-action:none; position:relative; z-index:2;
+    background:var(--bg3); border-top:1px solid var(--line); border-bottom:1px solid var(--line); transition:background .12s; }
+  .detail-resizer::after { content:""; position:absolute; left:50%; top:3px; width:62px; height:4px;
+    transform:translateX(-50%); border-radius:4px; background:var(--mint); box-shadow:0 0 0 1px color-mix(in srgb,var(--mint) 35%,transparent); }
+  .detail-resizer:hover { background:color-mix(in srgb,var(--mint) 16%,var(--bg3)); }
+  .detail-resizer:hover::after { box-shadow:0 0 0 2px color-mix(in srgb,var(--mint) 30%,transparent); }
+
+  .spin { animation: hsl-spin 1s linear infinite; }
+  @keyframes hsl-spin { to { transform: rotate(360deg); } }
+
+  .hsl-scroll::-webkit-scrollbar { width: 11px; height: 11px; }
+  .hsl-scroll::-webkit-scrollbar-track { background: transparent; }
+  .hsl-scroll::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; }
+  .hsl-scroll::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; border: 3px solid transparent; }
+
+  .hsl-tb { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 7px;
+    font-size: 12.5px; font-family: Inter; font-weight: 500; color: var(--dim); background: transparent;
+    border: 1px solid transparent; cursor: pointer; white-space: nowrap; user-select: none; transition: background .12s, color .12s; }
+  .hsl-tb:hover { background: var(--bg3); color: var(--ink); }
+  .hsl-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 7px;
+    font-size: 12.5px; font-family: Inter; font-weight: 500; color: var(--dim); background: var(--bg2);
+    border: 1px solid var(--line); cursor: pointer; white-space: nowrap; transition: background .12s, color .12s; }
+  .hsl-btn:hover { color: var(--ink); background: var(--bg3); }
+  a { color: var(--mint); }
+  a:hover { opacity: .8; }
+  input::placeholder { color: var(--faint); }
+  input:focus, select:focus { outline: none; }
+  .theme-toggle { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:9px;
+    border:1px solid var(--line); background:var(--bg2); color:var(--dim); cursor:pointer; transition:background .12s, color .12s; }
+  .theme-toggle:hover { background:var(--bg3); color:var(--ink); }
+  .theme-select { height:34px; max-width:154px; padding:0 28px 0 10px; border-radius:9px; border:1px solid var(--line);
+    background:var(--bg2); color:var(--ink); font:500 11.5px Inter,system-ui,sans-serif; cursor:pointer; }
+  .theme-select:hover { background:var(--bg3); }
+</style>
 </head>
-<body class="h-full flex flex-col">
+<body>
 
-    <!-- Page loader -->
-    <div id="loader">
-        <div class="loader-spinner"></div>
-        <span class="text-dim text-xs">Loading WASM…</span>
+<!-- Page loader -->
+<div id="loader">
+  <div class="loader-spinner"></div>
+  <span class="text-dim text-xs">Loading WASM…</span>
+</div>
+
+<div class="flex flex-col h-screen w-screen overflow-hidden bg-bg0">
+
+  <!-- title bar -->
+  <div class="flex items-center gap-[10px] flex-shrink-0" style="height:52px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)">
+    <div class="flex items-center gap-[10px] text-ink">
+      <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,#37b0a0,#2f9e8f);display:flex;align-items:center;justify-content:center;box-shadow:var(--brand-shadow)">
+        <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="5.5" stroke="#ffffff" stroke-width="1.4"></circle>
+          <circle cx="7" cy="7" r="1.9" fill="#ffffff"></circle>
+        </svg>
+      </div>
+      <div class="flex flex-col" style="line-height:1.15">
+        <span class="font-bold" style="font-size:15px;letter-spacing:-.2px">HttpStackLens</span>
+        <span id="source-subtitle" class="text-faint" style="font-size:11px">Live session</span>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-[3px]" style="background:var(--bg0);border:1px solid var(--line);border-radius:9px;padding:3px;margin-right:4px">
+      <span class="text-faint" style="font-size:11px;padding:0 6px 0 8px;font-weight:500">Density</span>
+      <button data-density="compact" class="hsl-density" style="height:24px;padding:0 10px;border-radius:6px;font-size:11.5px;font-family:Inter;font-weight:500;cursor:pointer;background:transparent;color:var(--dim);border:none">Compact</button>
+      <button data-density="normal" class="hsl-density" style="height:24px;padding:0 10px;border-radius:6px;font-size:11.5px;font-family:Inter;font-weight:600;cursor:pointer;background:var(--pill-bg);color:var(--mint);border:1px solid var(--pill-border);box-shadow:var(--pill-shadow)">Normal</button>
+      <button data-density="comfy" class="hsl-density" style="height:24px;padding:0 10px;border-radius:6px;font-size:11.5px;font-family:Inter;font-weight:500;cursor:pointer;background:transparent;color:var(--dim);border:none">Comfy</button>
+    </div>
+    <select id="theme-select" class="theme-select" aria-label="Colour theme" title="Colour theme">
+      <optgroup label="Light themes">
+        <option value="light">Original light</option>
+        <option value="rose-light">Rose light</option>
+        <option value="red-light">Red light</option>
+        <option value="yellow-light">Yellow light</option>
+        <option value="green-light">Green light</option>
+        <option value="blue-light">Blue light</option>
+        <option value="contrast-light">High contrast light</option>
+      </optgroup>
+      <optgroup label="Dark themes">
+        <option value="dark">Original dark</option>
+        <option value="rose-dark">Rose dark</option>
+        <option value="red-dark">Red dark</option>
+        <option value="yellow-dark">Yellow dark</option>
+        <option value="green-dark">Green dark</option>
+        <option value="blue-dark">Blue dark</option>
+        <option value="contrast-dark">High contrast dark</option>
+      </optgroup>
+    </select>
+    <button class="hsl-tb" data-action="open-settings">
+      <span aria-hidden="true" style="font-size:16px;line-height:1">⚙</span>
+      Settings
+    </button>
+  </div>
+
+  <!-- toolbar -->
+  <div class="flex items-center gap-2 flex-shrink-0" style="height:52px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)">
+    <button id="btn-proxy" class="hsl-tb" data-action="toggle-proxy"></button>
+    <div style="width:1px;height:22px;background:var(--line);margin:0 4px"></div>
+    <button id="btn-capture" class="hsl-tb" data-action="toggle-capture"></button>
+    <button class="hsl-tb" data-action="clear">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 3.8h9M5.2 3.8V2.6h3.6v1.2M4 3.8l.4 7.2h5.2l.4-7.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Clear session
+    </button>
+    <div style="width:1px;height:22px;background:var(--line);margin:0 4px"></div>
+    <button id="btn-decrypt" class="hsl-tb" data-action="toggle-decrypt"></button>
+    <button id="btn-upstream" class="hsl-tb" data-action="open-upstream"></button>
+    <button id="btn-access" class="hsl-tb" data-action="open-access"></button>
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-[8px]" style="background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:0 12px;height:34px;width:340px">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="4.5" stroke="var(--faint)" stroke-width="1.4"/><path d="M10.5 10.5l3 3" stroke="var(--faint)" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <input id="filter" placeholder="Search host, path, method, status…" class="flex-1 bg-transparent border-0 outline-none text-ink" style="font-size:13px;font-family:Inter" />
+      <button id="filter-clear" class="text-faint" style="background:none;border:none;cursor:pointer;font-size:15px;padding:0;line-height:1">×</button>
+    </div>
+  </div>
+
+  <!-- body -->
+  <div class="flex flex-1 min-h-0">
+
+    <!-- sidebar -->
+    <div class="flex flex-col flex-shrink-0 min-h-0" style="width:232px;background:var(--sidebar);border-right:1px solid var(--line)">
+      <div class="flex-1 min-h-0 overflow-y-auto hsl-scroll">
+      <div style="padding:16px 10px 4px">
+        <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;padding:0 10px 8px">Sessions</div>
+        <button id="live-session" data-action="back-to-live" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500">
+          <span class="rec-dot"></span><span class="flex-1">Live traffic</span><span id="live-session-count" class="text-faint" style="font-size:11.5px;font-weight:500">0</span>
+        </button>
+        <div class="flex items-center" style="padding:14px 10px 6px">
+          <span class="text-faint flex-1" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600">Saved captures</span>
+          <button data-action="refresh-captures" title="Refresh captures" style="border:0;background:transparent;color:var(--faint);cursor:pointer;font-size:15px;line-height:1;padding:2px">↻</button>
+        </div>
+        <div id="capture-sessions" class="hsl-scroll" style="max-height:190px;overflow:auto"></div>
+      </div>
+      <div style="padding:12px 10px 4px;border-top:1px solid var(--lineSoft);margin-top:8px">
+        <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;padding:0 10px 8px">Filters</div>
+        <div class="grid gap-[2px]">
+          <button data-side="all" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500"><span style="width:8px;height:8px;border-radius:4px;background:var(--faint)"></span><span class="flex-1">All traffic</span><span class="side-count text-faint" style="font-size:11.5px;font-weight:500">0</span></button>
+          <button data-side="2xx" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500;color:var(--dim)"><span style="width:8px;height:8px;border-radius:4px;background:var(--success)"></span><span class="flex-1">Success</span><span class="side-count text-faint" style="font-size:11.5px;font-weight:500">0</span></button>
+          <button data-side="4xx" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500;color:var(--dim)"><span style="width:8px;height:8px;border-radius:4px;background:var(--warn)"></span><span class="flex-1">Client errors</span><span class="side-count text-faint" style="font-size:11.5px;font-weight:500">0</span></button>
+          <button data-side="5xx" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500;color:var(--dim)"><span style="width:8px;height:8px;border-radius:4px;background:var(--danger)"></span><span class="flex-1">Server errors</span><span class="side-count text-faint" style="font-size:11.5px;font-weight:500">0</span></button>
+          <button data-side="tls" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500;color:var(--dim)"><span style="width:8px;height:8px;border-radius:4px;background:var(--mint)"></span><span class="flex-1">Secure (TLS)</span><span class="side-count text-faint" style="font-size:11.5px;font-weight:500">0</span></button>
+        </div>
+      </div>
+      <div style="padding:16px 10px 4px">
+        <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;padding:0 10px 8px">Hosts</div>
+        <div id="hosts" class="grid gap-[2px]"></div>
+      </div>
+      </div>
+      <div id="proxy-summary" style="padding:14px 16px;border-top:1px solid var(--line);background:var(--bg2)"></div>
     </div>
 
-    <!-- Header -->
-    <header class="bg-surface border-b border-border flex items-center justify-between px-5 py-3 shrink-0">
-        <div class="flex items-center gap-3">
-            <img src="images/logo-with-text.png" alt="HTTP Stack Lens" class="h-8 w-auto">
-            <span class="text-foreground text-sm font-semibold tracking-wide">HTTP Stack Lens</span>
+    <!-- content -->
+    <div class="flex flex-col flex-1 min-w-0" style="background:var(--bg0)">
+      <!-- identifies the read-only archive currently displayed -->
+      <div id="source-banner" class="flex-shrink-0" style="display:none"></div>
+      <!-- waterfall -->
+      <div id="waterfall" class="flex items-end gap-[2px] flex-shrink-0 overflow-hidden" style="height:52px;background:var(--panel);border-bottom:1px solid var(--line);padding:8px 16px"></div>
+
+      <!-- list region -->
+      <div id="list-region" class="flex flex-col min-h-0" style="flex:1">
+        <!-- column header -->
+        <div class="grid items-center flex-shrink-0" style="grid-template-columns:44px 60px 22px 66px 190px 1fr 140px 74px 84px 58px;gap:12px;padding:0 16px;height:34px;background:var(--sidebar);border-bottom:1px solid var(--line);border-left:3px solid transparent">
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;text-align:right">#</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Method</span>
+          <span></span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Status</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Host</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Path</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase">Type</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;text-align:right">Size</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;text-align:right">Time</span>
+          <span class="text-faint" style="font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;text-align:right">Dur</span>
         </div>
-        <div class="flex items-center gap-5">
+        <!-- list -->
+        <div id="list" class="flex-1 min-h-0 overflow-auto hsl-scroll" style="background:var(--panel)"></div>
+      </div>
 
-            <!-- Theme switcher -->
-            <div id="theme-switcher" class="flex items-center gap-2"></div>
-
-            <!-- Status badges -->
-            <div class="flex items-center gap-4">
-                <span id="sse-status" class="text-warning flex items-center gap-1.5 text-xs">
-                    <span class="bg-warning inline-block h-2 w-2 animate-pulse rounded-full"></span>
-                    Connecting SSE…
-                </span>
-                <span id="wasm-status" class="text-warning flex items-center gap-1.5 text-xs">
-                    <span class="bg-warning inline-block h-2 w-2 animate-pulse rounded-full"></span>
-                    Loading WASM…
-                </span>
-            </div>
-        </div>
-    </header>
-
-    <!-- Tab bar -->
-    <nav class="bg-surface border-b border-border flex items-end gap-1 px-5 shrink-0">
-        <button data-tab="traffic"       class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Traffic</button>
-        <button data-tab="configuration" class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Configuration</button>
-        <button data-tab="certificates"  class="tab-btn px-4 py-2.5 text-xs font-medium transition-colors">Certificates</button>
-    </nav>
-
-    <!-- Tab: Traffic -->
-    <div id="tab-traffic" class="tab-panel flex flex-col flex-1 overflow-hidden">
-
-        <!-- Toolbar -->
-        <div class="bg-surface border-b border-border-subtle flex items-center gap-4 px-5 py-2 shrink-0">
-            <span id="request-count" class="text-dim text-xs">0 requests</span>
-            <button onclick="clearRequests()"
-                    class="bg-surface-alt text-muted hover:text-foreground ml-auto rounded px-2 py-1 text-xs transition-colors">
-                Clear
-            </button>
-        </div>
-
-        <!-- Request table -->
-        <main class="flex-1 overflow-auto px-5 py-4">
-            <div id="summary">
-                <table class="w-full border-collapse text-sm">
-                    <thead>
-                        <tr>
-                            <th class="border-b border-border text-dim w-12 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">#</th>
-                            <th class="border-b border-border text-dim w-32 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Method</th>
-                            <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Host</th>
-                            <th class="border-b border-border text-dim px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Path</th>
-                        </tr>
-                    </thead>
-                    <tbody id="request-rows"></tbody>
-                </table>
-            </div>
-        </main>
+      <!-- detail -->
+      <div id="detail-wrap" class="flex flex-col min-h-0" style="flex:0.45;border-top:1px solid var(--line);background:var(--panel);display:none"></div>
     </div>
+  </div>
 
-    <!-- Tab: Configuration -->
-    <div id="tab-configuration" class="tab-panel flex-col flex-1 overflow-auto hidden">
-        <div class="max-w-xl px-5 py-6 flex flex-col gap-6">
+  <!-- status bar -->
+  <div id="statusbar" class="flex items-center flex-shrink-0" style="height:30px;background:var(--panel);border-top:1px solid var(--line);font-family:Inter;font-size:11.5px;color:var(--dim)"></div>
+</div>
 
-            <!-- Section: Proxy -->
-            <section>
-                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Proxy</h2>
-                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
+<!-- modal layer -->
+<div id="modal-root" style="position:fixed;inset:0;pointer-events:none;z-index:50"></div>
 
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">Port</span>
-                        <span id="config-proxy-port" class="text-foreground text-sm tabular-nums">—</span>
-                    </div>
+<script src="ui.js"></script>
+<script src="js/wasm_exec.js"></script>
 
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">Remote connections</span>
-                        <span id="config-proxy-remote" class="text-sm">—</span>
-                    </div>
+<script>
+  // ── Clear ───────────────────────────────────────────────────────────
+  function clearRequests() {
+    document.getElementById('request-rows').innerHTML = '';
+    document.getElementById('request-count').textContent = '0 requests';
+    if (window.wasmClear) window.wasmClear();
+  }
 
-                </div>
-            </section>
+  // ── WASM ────────────────────────────────────────────────────────────
+  const go = new Go();
+  WebAssembly.instantiateStreaming(fetch('wasm/app.wasm'), go.importObject)
+          .then(result => {
+            go.run(result.instance);
+            const loader = document.getElementById('loader');
+            loader.hidden = true;
+          });
+</script>
 
-            <!-- Section: Web UI -->
-            <section>
-                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Web UI</h2>
-                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">Port</span>
-                        <span id="config-webui-port" class="text-foreground text-sm tabular-nums">—</span>
-                    </div>
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">Remote connections</span>
-                        <span id="config-webui-remote" class="text-sm">—</span>
-                    </div>
-
-                </div>
-            </section>
-
-            <!-- Section: Certificates -->
-            <section>
-                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Certificates</h2>
-                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">CA cert file</span>
-                        <span id="config-cert-ca-file" class="text-foreground text-sm tabular-nums">—</span>
-                    </div>
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">CA key file</span>
-                        <span id="config-cert-ca-key-file" class="text-sm">—</span>
-                    </div>
-
-                </div>
-            </section>
-
-        </div>
-    </div>
-
-    <!-- Tab: Certificates -->
-    <div id="tab-certificates" class="tab-panel flex-col flex-1 overflow-auto hidden">
-        <div class="max-w-3xl px-5 py-6 flex flex-col gap-6">
-
-            <!-- Section: Certificate Authority -->
-            <section>
-                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">Certificate Authority</h2>
-                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">CA Common Name</span>
-                        <span id="cert-ca-common-name" class="text-foreground text-sm">—</span>
-                    </div>
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">Installed</span>
-                        <span id="cert-ca-installed" class="text-sm">—</span>
-                    </div>
-
-                </div>
-            </section>
-
-            <!-- Section: HTTPS Debugging -->
-            <section>
-                <h2 class="text-dim text-xs font-semibold uppercase tracking-wider mb-3">HTTPS Debugging</h2>
-                <div class="bg-surface rounded-lg border border-border-subtle divide-y divide-border-subtle">
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">Intercept HTTPS</span>
-                        <span id="config-https-enabled" class="text-sm">—</span>
-                    </div>
-
-                    <div class="flex items-center justify-between px-4 py-3">
-                        <span class="text-muted text-sm">Signed certificates</span>
-                        <span id="config-signed-certs-count" class="text-foreground text-sm tabular-nums">—</span>
-                    </div>
-
-                </div>
-            </section>
-
-        </div>
-    </div>
-
-    <script src="js/wasm_exec.js"></script>
-    <script>
-        // ── Theme switcher ──────────────────────────────────────────────────
-        const themes = [
-            { id: 'paper',      accent: 'color(display-p3 0.020 0.184 0.398)', label: 'Paper' },
-            { id: 'slate',      accent: '#38bdf8',                             label: 'Slate' },
-            { id: 'dracula',    accent: '#bd93f9',                             label: 'Dracula' },
-            { id: 'nord',       accent: '#88c0d0',                             label: 'Nord' },
-            { id: 'catppuccin', accent: '#89b4fa',                             label: 'Catppuccin' },
-            { id: 'solarized',  accent: '#268bd2',                             label: 'Solarized' },
-            { id: 'everforest', accent: '#a7c080',                             label: 'Everforest' },
-            { id: 'aurora',     accent: 'color(display-p3 0.393 0.920 0.699)', label: 'Aurora' },
-            { id: 'neon',       accent: 'color(display-p3 0.044 0.923 0.767)', label: 'Neon' },
-            { id: 'solar',      accent: 'color(display-p3 0.963 0.897 0.036)', label: 'Solar' },
-            { id: 'matrix',     accent: 'color(display-p3 0.716 0.901 0.589)', label: 'Matrix' },
-        ];
-
-        function setTheme(id) {
-            document.documentElement.dataset.theme = id;
-            localStorage.setItem('hsl-theme', id);
-            document.querySelectorAll('.theme-swatch').forEach(el => {
-                el.classList.toggle('active', el.dataset.themeId === id);
-            });
-        }
-
-        const switcher = document.getElementById('theme-switcher');
-        const current  = document.documentElement.dataset.theme;
-
-        themes.forEach(t => {
-            const btn = document.createElement('button');
-            btn.className = 'theme-swatch' + (t.id === current ? ' active' : '');
-            btn.dataset.themeId = t.id;
-            btn.style.backgroundColor = t.accent;
-            btn.title = t.label;
-            btn.addEventListener('click', () => setTheme(t.id));
-            switcher.appendChild(btn);
-        });
-
-        // ── Clear ───────────────────────────────────────────────────────────
-        function clearRequests() {
-            document.getElementById('request-rows').innerHTML = '';
-            document.getElementById('request-count').textContent = '0 requests';
-            if (window.wasmClear) window.wasmClear();
-        }
-
-        // ── WASM ────────────────────────────────────────────────────────────
-        const go = new Go();
-        WebAssembly.instantiateStreaming(fetch('wasm/app.wasm'), go.importObject)
-            .then(result => {
-                go.run(result.instance);
-                const el = document.getElementById('wasm-status');
-                el.innerHTML = '<span class="bg-success inline-block h-2 w-2 rounded-full"></span> WASM ready';
-                el.className = 'text-success flex items-center gap-1.5 text-xs';
-            });
-    </script>
 </body>
 </html>

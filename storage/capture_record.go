@@ -1,6 +1,9 @@
 package storage
 
-import "crypto/rand"
+import (
+	"crypto/rand"
+	"encoding/hex"
+)
 
 // This file models the in-memory shape of everything that gets serialized into a
 // .capture file. The on-disk binary layout is documented in ARCHITECTURE.md
@@ -84,6 +87,23 @@ func NewUUID() (UUID, error) {
 	u[6] = (u[6] & 0x0f) | 0x40 // version 4
 	u[8] = (u[8] & 0x3f) | 0x80 // RFC 4122 variant
 	return u, nil
+}
+
+// String returns the canonical RFC 4122 hyphenated form (8-4-4-4-12), e.g.
+// "f47ac10b-58cc-4372-a567-0e02b2c3d479". This is the stable string identifier
+// used to correlate a request with its response all the way to the Web UI.
+func (u UUID) String() string {
+	var buf [36]byte
+	hex.Encode(buf[0:8], u[0:4])
+	buf[8] = '-'
+	hex.Encode(buf[9:13], u[4:6])
+	buf[13] = '-'
+	hex.Encode(buf[14:18], u[6:8])
+	buf[18] = '-'
+	hex.Encode(buf[19:23], u[8:10])
+	buf[23] = '-'
+	hex.Encode(buf[24:36], u[10:16])
+	return string(buf[:])
 }
 
 // Header is a single HTTP header name/value pair. The slice order on a record

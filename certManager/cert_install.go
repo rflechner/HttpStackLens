@@ -13,6 +13,10 @@ type CertInstaller interface {
 	// other trusted certificate authorities.
 	InstallCACert(caCertFile string) error
 
+	// IsCACertInstalled reports whether the CA certificate is present/trusted in
+	// the operating-system store used by InstallCACert.
+	IsCACertInstalled(caCertFile string) (bool, error)
+
 	// InstallDomainCert adds a signed per-domain certificate to the current
 	// user's personal certificate store.
 	InstallDomainCert(domainCertFile string) error
@@ -29,3 +33,6 @@ type noopInstaller struct{}
 func (noopInstaller) InstallCACert(string) error     { return nil }
 func (noopInstaller) InstallDomainCert(string) error { return nil }
 func (noopInstaller) IsSupported() bool              { return false }
+func (noopInstaller) IsCACertInstalled(string) (bool, error) {
+	return false, nil
+}

@@ -14,12 +14,12 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 
 - Listens for incoming connections on a local port (default `3128`)
 - Handles HTTPS tunnels via the `CONNECT` method
+- Can decrypt HTTPS traffic with opt-in local MITM when `decrypt_https.enabled` is enabled
 - Forwards requests and responses bidirectionally
 - Web UI (WASM-based) to inspect live HTTP traffic
 
 ## What it doesn't do (yet)
 
-- Does not decrypt SSL/TLS traffic — HTTPS tunnels are forwarded as-is
 - Not intended for production use or shared networks
 
 ## Prerequisites

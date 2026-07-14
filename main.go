@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"httpStackLens/certManager"
 	"httpStackLens/configuration"
 	"httpStackLens/logging"
 	"httpStackLens/proxy/middlewares"
@@ -47,17 +46,23 @@ func main() {
 
 	stopChan := make(chan bool)
 
-	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, config)
-
-	caCert, caKey, err := certManager.GetHttpsDebugRootCertificates(config)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Issues and caches the per-domain certificates used to decrypt HTTPS. When
-	// decrypt_https is enabled, each new domain cert is also added to the user's
-	// personal store (see NewCertStoreFromConfig).
-	certStore := certManager.NewCertStoreFromConfig(caCert, caKey, config)
+	// Keeps the most recent request/response records in memory so the Web UI can
+	// fetch their full headers and bodies on demand.
+	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
+	// Live recording is independent from storage.enable, which only controls
+	// whether the recorded traffic is also persisted to .capture files.
+	captureCtl := storage.NewCaptureController(true)
+	proxyCtl := storage.NewProxyController(true)
+	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
+	upstreamSettings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettingsFromProxyConfig(config.Proxy))
+	accessControlSettings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettingsFromConfig(config))
+	proxyAccess := accessControlSettings.Get().Proxy
+	proxyCtl.SetAddress(fmt.Sprintf("%s:%d", proxyAccess.ListenHost(), appContext.port))
+	runtimeConfig := newRuntimeConfigState(config)
+	runtimeCommands := make(chan webui.RuntimeCommand, 16)
+	basePipeline := appContext.pipeline
+	activePipeline := middlewares.NewSwitchableMiddleware(basePipeline)
+	appContext.pipeline = activePipeline
 
 	// Optional capture file. When decrypting, the interceptor stores clear-text
 	// requests/responses; otherwise only top-level HTTP requests and CONNECTs.
@@ -66,34 +71,50 @@ func main() {
 		defer func() { _ = captureWriter.Close() }()
 	}
 
-	// To decrypt HTTPS, the CA must be trusted by the OS so the domain
-	// certificates we sign on the fly are accepted. A failure here is not fatal:
-	// the user can still install the CA manually.
-	if config.Capture.DecryptHttps {
-		installer := certManager.NewCertInstaller()
-		if !installer.IsSupported() {
-			slog.Warn("Automatic certificate installation is not supported on this OS; install the CA manually",
-				"caCertFile", config.CertManager.CaCertFile)
-		} else if err := installer.InstallCACert(config.CertManager.CaCertFile); err != nil {
-			slog.Warn("Failed to install the CA certificate in the OS trust store; install it manually",
-				"caCertFile", config.CertManager.CaCertFile, "error", err)
-		}
+	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
+		InitialConfig:         config,
+		CurrentConfig:         runtimeConfig.Snapshot,
+		DecryptHTTPSSettings:  decryptHttpsSettings,
+		UpstreamSettings:      upstreamSettings,
+		AccessControlSettings: accessControlSettings,
+		Requests:              requestStore,
+		Capture:               captureCtl,
+		Proxy:                 proxyCtl,
+		Commands:              runtimeCommands,
+	})
 
-		// Insert the man-in-the-middle in front of the tunnel so CONNECT requests
-		// are decrypted instead of blindly piped.
-		appContext.pipeline = &middlewares.HttpsInterceptor{
-			CertStore: certStore,
-			Next:      appContext.pipeline,
-			Capture:   captureWriter,
-			Limits:    config.Capture,
-		}
-		slog.Info("HTTPS decryption enabled")
+	// Streams request/response events to the Web UI over SSE. Created before the
+	// pipeline so the HTTPS interceptor can surface the decrypted requests and
+	// responses it sees (they are otherwise only written to the capture file).
+	logger := logging.CreateWebUiEventLogger(hub)
+
+	decryptRuntime := newDecryptHttpsRuntime(config, basePipeline, activePipeline, decryptHttpsSettings, captureWriter, logger, requestStore, captureCtl, configuration.PersistDecryptHttpsEnabled)
+	if err := decryptRuntime.ApplyInitial(); err != nil {
+		log.Fatal(err)
 	}
 
-	logger := logging.CreateWebUiEventLogger(hub)
-	proxyServer := CreateProxyServer(appContext, logger, config.Proxy, config.Capture.DecryptHttps, certStore, captureWriter)
+	proxyServer, err := CreateProxyServer(appContext, logger, config.Proxy, accessControlSettings, captureWriter, requestStore, captureCtl)
+	if err != nil {
+		log.Fatal(err)
+	}
+	proxyCtl.SetAddress(proxyServer.Address())
+	supervisor := &runtimeSupervisor{
+		config:        runtimeConfig,
+		appContext:    appContext,
+		proxy:         proxyServer,
+		eventLogger:   logger,
+		decrypt:       decryptRuntime,
+		decryptStore:  decryptHttpsSettings,
+		upstreamStore: upstreamSettings,
+		accessStore:   accessControlSettings,
+		capture:       captureWriter,
+		requests:      requestStore,
+		captureCtl:    captureCtl,
+		proxyCtl:      proxyCtl,
+	}
 
 	go proxyServer.Run()
+	go supervisor.Run(runtimeCommands, stopChan)
 
 	keyboard := bufio.NewReader(os.Stdin)
 
@@ -109,7 +130,7 @@ func main() {
 
 	select {
 	case <-stopChan:
-		proxyServer.Close()
+		supervisor.closeAllProxies()
 	}
 }
 
@@ -134,12 +155,12 @@ func openCaptureWriter(config configuration.AppConfig) storage.CaptureSessionWri
 	name := fmt.Sprintf("capture-%s.capture", time.Now().Format("20060102-150405"))
 	path := filepath.Join(folder, name)
 
-	w, err := storage.NewFileCaptureSessionWriter(path, config.Capture.DecryptHttps)
+	w, err := storage.NewFileCaptureSessionWriter(path, config.DecryptHttps.Enabled)
 	if err != nil {
 		slog.Warn("Could not open capture file; captures disabled", "path", path, "error", err)
 		return nil
 	}
 
-	slog.Info("Capture recording enabled", "file", path, "decrypted", config.Capture.DecryptHttps)
+	slog.Info("Capture recording enabled", "file", path, "decrypted", config.DecryptHttps.Enabled)
 	return w
 }

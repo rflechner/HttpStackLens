@@ -5,6 +5,7 @@ import (
 	"fmt"
 	configuration "httpStackLens/configuration"
 	"httpStackLens/proxy"
+	"httpStackLens/proxy/middlewares"
 	"log"
 	"net/url"
 )
@@ -45,7 +46,7 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		outputProxy = &(url.URL{})
 	}
 
-	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy)
+	pipeline, err := proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, config.Proxy.NoProxy)
 	if err != nil {
 		return AppContext{}, err
 	}
@@ -55,4 +56,18 @@ func CreateOsSpecificProxyPipeline(config configuration.AppConfig) (AppContext, 
 		port:      port,
 		webUiPort: webUiPort,
 	}, nil
+}
+
+func RebuildOsSpecificProxyPipeline(config configuration.ProxyConfig) (middlewares.Middleware, error) {
+	outputProxy := &url.URL{}
+	useOutputProxy := false
+	if config.OutputProxyUri != "" {
+		parsed, err := url.Parse(config.OutputProxyUri)
+		if err != nil {
+			return nil, err
+		}
+		outputProxy = parsed
+		useOutputProxy = true
+	}
+	return proxy.ConfigureOsSpecificProxyPipeline(*outputProxy, useOutputProxy, config.NoProxy)
 }

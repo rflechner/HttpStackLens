@@ -11,8 +11,8 @@ func (c *ConsoleEventLogger) LogEvent(event string) {
 	fmt.Printf("Console Event: %s\n", event)
 }
 
-func (c *ConsoleEventLogger) LogRequest(id int, request models.ProxyRequest) {
-	fmt.Printf("Console Request: %v\n", request.HttpRequestLine.String())
+func (c *ConsoleEventLogger) LogRequest(id int, correlationID string, request models.ProxyRequest) {
+	fmt.Printf("Console Request [%s]: %v\n", correlationID, request.HttpRequestLine.String())
 }
 
 func CreateConsoleEventLogger() ConsoleEventLogger {

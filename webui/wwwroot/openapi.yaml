@@ -1,0 +1,1174 @@
+openapi: 3.1.0
+info:
+  title: HttpStackLens Web UI API
+  version: 0.1.0
+  description: Local-only API used by the HttpStackLens traffic inspector.
+servers:
+  - url: http://127.0.0.1:9000
+    description: Default local Web UI server
+tags:
+  - name: Runtime
+  - name: Requests
+  - name: Captures
+  - name: Events
+paths:
+  /config:
+    get:
+      tags: [Runtime]
+      summary: Read sanitized runtime configuration
+      responses:
+        "200":
+          description: Current configuration safe for the browser UI
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppConfig"
+  /certificates-infos:
+    get:
+      tags: [Runtime]
+      summary: Read local HTTPS debugging CA information
+      responses:
+        "200":
+          description: Certificate information and trust-store status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificatesInfos"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/certificates/ca/generate:
+    post:
+      tags: [Runtime]
+      summary: Generate or explicitly regenerate the local HTTPS debugging CA
+      description: |
+        Generates the configured local CA certificate and private key. If both files
+        already exist, the request is rejected unless `replace` is true because
+        rotating the CA invalidates trust and previously issued domain certificates.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateGenerateRequest"
+      responses:
+        "200":
+          description: Generated CA metadata and trust-store status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificatesInfos"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/certificates/ca/install:
+    post:
+      tags: [Runtime]
+      summary: Install or reinstall the local HTTPS debugging CA into the OS trust store
+      description: Installs the configured local CA certificate using the platform-specific `certManager` installer when supported.
+      responses:
+        "200":
+          description: CA metadata and updated trust-store status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificatesInfos"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/certificates/ca/export:
+    get:
+      tags: [Runtime]
+      summary: Export the local HTTPS debugging CA certificate
+      description: Downloads only the public CA certificate PEM. The private key is never exported by this endpoint.
+      responses:
+        "200":
+          description: CA certificate PEM
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/settings/body-capture:
+    get:
+      tags: [Runtime]
+      summary: Read HTTPS body capture rules
+      description: Reads the runtime body capture limits used by decrypted HTTPS inspection.
+      responses:
+        "200":
+          description: Current body capture rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BodyCaptureSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [Runtime]
+      summary: Replace HTTPS body capture rules
+      description: Updates the runtime body capture limits and persists them to `config.yaml`. This does not enable or disable HTTPS decryption.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BodyCaptureSettings"
+      responses:
+        "200":
+          description: Updated body capture rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BodyCaptureSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/settings/decrypt-https:
+    get:
+      tags: [Runtime]
+      summary: Read HTTPS decryption state
+      description: Reads whether HTTPS MITM decryption is currently enabled for new CONNECT requests.
+      responses:
+        "200":
+          description: Current HTTPS decryption state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecryptHttpsToggleSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [Runtime]
+      summary: Enable or disable HTTPS decryption
+      description: Updates the runtime HTTPS MITM toggle for new CONNECT requests and persists `decrypt_https.enabled` to `config.yaml`. Existing tunnels keep using the mode they started with.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecryptHttpsToggleSettings"
+      responses:
+        "200":
+          description: Updated HTTPS decryption state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecryptHttpsToggleSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/settings/upstream:
+    get:
+      tags: [Runtime]
+      summary: Read upstream proxy settings
+      description: Reads the outbound (corporate) proxy configuration used to forward traffic.
+      responses:
+        "200":
+          description: Current upstream proxy settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpstreamSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [Runtime]
+      summary: Replace upstream proxy settings
+      description: |
+        Updates the outbound proxy URL, bypass list, and Windows authentication toggle and
+        persists them to `config.yaml`. Changes take effect on the next application start;
+        the running pipeline is not hot-reconfigured yet.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpstreamSettings"
+      responses:
+        "200":
+          description: Updated upstream proxy settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpstreamSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/settings/access-control:
+    get:
+      tags: [Runtime]
+      summary: Read inbound access-control settings
+      description: Reads which client IPs may connect to the local proxy and Web UI.
+      responses:
+        "200":
+          description: Current access-control settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessControlSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [Runtime]
+      summary: Replace inbound access-control settings
+      description: |
+        Updates and persists the inbound access policy for the proxy and Web UI.
+        The active filters use the new settings immediately. Changing from loopback
+        to a remote-capable mode may require restart if the listener was bound to
+        127.0.0.1 at startup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessControlSettings"
+      responses:
+        "200":
+          description: Updated access-control settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessControlSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /events:
+    get:
+      tags: [Events]
+      summary: Subscribe to live proxy events
+      description: |
+        Server-Sent Events stream. Known event types are `request_occurred`
+        `response_occurred`, and `capture_state`.
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                request_occurred:
+                  value: |
+                    event: request_occurred
+                    data: {"id":1,"correlation_id":"f47ac10b-58cc-4372-a567-0e02b2c3d479","method":"GET","host":"example.com","port":443,"path":"/","version":"HTTP/1.1","scheme":"https","tls":true,"decrypted":true}
+                capture_state:
+                  value: |
+                    event: capture_state
+                    data: {"capturing":false,"buffer_size":0,"decrypt":{"enabled":true},"upstream":{"enabled":false,"ntlm":false},"access":{"mode":"loopback"}}
+  /api/requests/{id}:
+    get:
+      tags: [Requests]
+      summary: Read one captured request/response detail
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: Request/response metadata and headers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/requests/{id}/body:
+    get:
+      tags: [Requests]
+      summary: Read a captured request or response body
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+        - name: side
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [request, response]
+          description: Which side of the exchange to read.
+      responses:
+        "200":
+          description: Raw captured body
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          description: Body was intentionally skipped by capture limits
+          headers:
+            X-Body-Skipped:
+              schema:
+                type: string
+                const: "true"
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/recording/state:
+    get:
+      tags: [Runtime]
+      summary: Read live recording and proxy state
+      responses:
+        "200":
+          description: Current recording and proxy runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/recording/start:
+    post:
+      tags: [Runtime]
+      summary: Start recording traffic for the inspector
+      description: Proxy forwarding is unaffected. This runtime switch does not change `storage.enable`, which independently controls `.capture` file persistence.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/recording/stop:
+    post:
+      tags: [Runtime]
+      summary: Stop recording traffic for the inspector
+      description: Proxy forwarding continues, but new UI events and in-memory/file records are gated.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/recording/clear:
+    post:
+      tags: [Runtime]
+      summary: Clear the current inspector session
+      description: Clears the in-memory request buffer without deleting saved `.capture` files.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/proxy/state:
+    get:
+      tags: [Runtime]
+      summary: Read proxy listener state
+      responses:
+        "200":
+          description: Current runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/proxy/start:
+    post:
+      tags: [Runtime]
+      summary: Start the proxy listener
+      description: Starts accepting new proxy connections. The Web UI server is independent and remains available.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/proxy/stop:
+    post:
+      tags: [Runtime]
+      summary: Stop the proxy listener
+      description: Stops accepting new proxy connections. Existing accepted connections may finish; the Web UI remains available.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/runtime/stats:
+    get:
+      tags: [Runtime]
+      summary: Read lightweight application runtime metrics
+      description: Returns the memory currently obtained from the operating system by the Go runtime.
+      responses:
+        "200":
+          description: Current runtime metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeStats"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /api/capture/state:
+    get:
+      tags: [Captures]
+      summary: Read live capture state
+      deprecated: true
+      responses:
+        "200":
+          description: Current live capture state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /api/capture/pause:
+    post:
+      tags: [Captures]
+      summary: Pause live capture
+      deprecated: true
+      description: Compatibility alias for `POST /api/recording/stop`. Proxy forwarding continues and `storage.enable` is not changed.
+      responses:
+        "200":
+          description: Updated capture state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/capture/resume:
+    post:
+      tags: [Captures]
+      deprecated: true
+      summary: Resume live capture
+      description: Compatibility alias for `POST /api/recording/start`. Does not change `storage.enable`.
+      responses:
+        "200":
+          description: Updated capture state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/capture/clear:
+    post:
+      tags: [Captures]
+      deprecated: true
+      summary: Clear the in-memory request buffer
+      description: Does not delete `.capture` files from disk.
+      responses:
+        "200":
+          description: Updated capture state after clearing the server buffer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+  /api/captures:
+    get:
+      tags: [Captures]
+      summary: List stored capture files
+      responses:
+        "200":
+          description: Capture files sorted by modification time, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CaptureFile"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/captures/{name}/metadata:
+    get:
+      tags: [Captures]
+      summary: Read capture file metadata
+      parameters:
+        - $ref: "#/components/parameters/CaptureName"
+      responses:
+        "200":
+          description: Capture header and file metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureMetadata"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/captures/{name}/records:
+    get:
+      tags: [Captures]
+      summary: Read capture records in file order
+      parameters:
+        - $ref: "#/components/parameters/CaptureName"
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Zero-based record index to start from.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Maximum number of records to return.
+      responses:
+        "200":
+          description: One page of decoded records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureRecords"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+components:
+  parameters:
+    RequestId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Request correlation id.
+    CaptureName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[^/]+\\.capture$"
+      description: Capture file name from `/api/captures`.
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        text/plain:
+          schema:
+            type: string
+    NotFound:
+      description: Resource not found
+      content:
+        text/plain:
+          schema:
+            type: string
+    Conflict:
+      description: Request conflicts with current state
+      content:
+        text/plain:
+          schema:
+            type: string
+    MethodNotAllowed:
+      description: Method not allowed
+      headers:
+        Allow:
+          schema:
+            type: string
+      content:
+        text/plain:
+          schema:
+            type: string
+    ServiceUnavailable:
+      description: Request store is unavailable
+      content:
+        text/plain:
+          schema:
+            type: string
+    UnprocessableEntity:
+      description: Capture file is not readable as a supported HttpStackLens capture
+      content:
+        text/plain:
+          schema:
+            type: string
+    InternalServerError:
+      description: Internal server error
+      content:
+        text/plain:
+          schema:
+            type: string
+  schemas:
+    Header:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+    RequestEvent:
+      type: object
+      required: [id, correlation_id, method, host, port, path, version, scheme, tls, decrypted]
+      properties:
+        id:
+          type: integer
+        correlation_id:
+          type: string
+        method:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        path:
+          type: string
+        version:
+          type: string
+        scheme:
+          type: string
+          enum: [http, https]
+        tls:
+          type: boolean
+        decrypted:
+          type: boolean
+    ResponseEvent:
+      type: object
+      required: [correlation_id, status, status_text, content_type, size, duration_ms, body_available, body_skipped, stream]
+      properties:
+        correlation_id:
+          type: string
+        status:
+          type: integer
+        status_text:
+          type: string
+        content_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        duration_ms:
+          type: integer
+          format: int64
+        body_available:
+          type: boolean
+        body_skipped:
+          type: boolean
+        stream:
+          type: boolean
+    RequestDetail:
+      type: object
+      required: [correlation_id, created_at]
+      properties:
+        correlation_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        request:
+          $ref: "#/components/schemas/RequestDetailRequest"
+        response:
+          $ref: "#/components/schemas/RequestDetailResponse"
+        timing:
+          $ref: "#/components/schemas/Timing"
+    Timing:
+      type: object
+      description: >-
+        Per-phase timing breakdown of the exchange, in milliseconds, for the
+        UI's Timing tab / waterfall. Present only for decrypted HTTPS traffic,
+        where the upstream transport is instrumented. Phases that did not occur
+        (e.g. DNS/connect/TLS on a reused keep-alive connection) are zero.
+      required: [dns_ms, connect_ms, tls_ms, ttfb_ms, download_ms, total_ms]
+      properties:
+        dns_ms:
+          type: integer
+          format: int64
+        connect_ms:
+          type: integer
+          format: int64
+        tls_ms:
+          type: integer
+          format: int64
+        ttfb_ms:
+          type: integer
+          format: int64
+        download_ms:
+          type: integer
+          format: int64
+        total_ms:
+          type: integer
+          format: int64
+    RequestDetailRequest:
+      type: object
+      required: [method, url, http_version, headers, body_available, body_skipped, body_size]
+      properties:
+        method:
+          type: string
+        url:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_available:
+          type: boolean
+        body_skipped:
+          type: boolean
+        body_size:
+          type: integer
+    RequestDetailResponse:
+      type: object
+      required: [status, status_text, http_version, headers, body_available, body_skipped, body_size]
+      properties:
+        status:
+          type: integer
+        status_text:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_available:
+          type: boolean
+        body_skipped:
+          type: boolean
+        body_size:
+          type: integer
+    RuntimeStats:
+      type: object
+      required: [memory_bytes]
+      properties:
+        memory_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total bytes obtained from the operating system by the Go runtime (`runtime.MemStats.Sys`).
+    CaptureState:
+      type: object
+      required: [capturing, recording, buffer_size, proxy, decrypt, upstream, access]
+      properties:
+        capturing:
+          type: boolean
+          deprecated: true
+          description: Compatibility alias for `recording`.
+        recording:
+          type: boolean
+          description: Whether the inspector is accepting new UI events and records. This does not control proxy forwarding or `storage.enable`.
+        buffer_size:
+          type: integer
+          description: Number of exchanges currently kept in the in-memory request buffer.
+        proxy:
+          type: object
+          required: [running, address]
+          description: Runtime state of the proxy TCP listener. The Web UI listener is independent.
+          properties:
+            running:
+              type: boolean
+            address:
+              type: string
+              description: Effective or configured proxy listener address (`host:port`).
+        decrypt:
+          type: object
+          required: [enabled]
+          description: Live HTTPS decryption (MITM) state, for the status bar.
+          properties:
+            enabled:
+              type: boolean
+        upstream:
+          type: object
+          required: [enabled, ntlm]
+          description: Live outbound (corporate) proxy state, for the status bar.
+          properties:
+            enabled:
+              type: boolean
+              description: True when an upstream proxy URL is configured.
+            ntlm:
+              type: boolean
+              description: True when Windows (NTLM/Negotiate) authentication is enabled.
+        access:
+          type: object
+          required: [mode]
+          description: Live proxy access-control mode, for the status bar.
+          properties:
+            mode:
+              type: string
+              enum: [loopback, lan, allowlist, open]
+    CaptureFile:
+      type: object
+      required: [name, size, modified_at]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+        modified_at:
+          type: string
+          format: date-time
+    CaptureMetadata:
+      type: object
+      required: [name, size, modified_at, version, https_decrypted, records_count]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+        modified_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int32
+        https_decrypted:
+          type: boolean
+        records_count:
+          type: integer
+          format: int32
+          description: Number of records in the capture file. The API resolves legacy/streaming headers that store -1 by counting records on read.
+    CaptureRecords:
+      type: object
+      required: [name, offset, limit, records, next_offset, has_more]
+      properties:
+        name:
+          type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureRecord"
+        next_offset:
+          type: integer
+        has_more:
+          type: boolean
+    CaptureRecord:
+      type: object
+      required: [index, type]
+      properties:
+        index:
+          type: integer
+        type:
+          type: string
+          enum: [request, response, unknown]
+        request:
+          $ref: "#/components/schemas/CaptureRequestRecord"
+        response:
+          $ref: "#/components/schemas/CaptureResponseRecord"
+    CaptureRequestRecord:
+      type: object
+      required: [request_id, method, url, http_version, headers, body_skipped, body_available, body_size]
+      properties:
+        request_id:
+          type: string
+        method:
+          type: string
+        url:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_skipped:
+          type: boolean
+        body_available:
+          type: boolean
+        body_size:
+          type: integer
+        body_base64:
+          type: string
+          contentEncoding: base64
+    CaptureResponseRecord:
+      type: object
+      required: [request_id, status, status_text, http_version, headers, body_skipped, body_available, body_size]
+      properties:
+        request_id:
+          type: string
+        status:
+          type: integer
+        status_text:
+          type: string
+        http_version:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body_skipped:
+          type: boolean
+        body_available:
+          type: boolean
+        body_size:
+          type: integer
+        body_base64:
+          type: string
+          contentEncoding: base64
+    CertificatesInfos:
+      type: object
+      required:
+        - available
+        - ca_cert_subject
+        - ca_cert_issuer
+        - ca_cert_serial_number
+        - fingerprint_sha256
+        - not_before
+        - not_after
+        - expired
+        - install_supported
+        - installed
+      properties:
+        available:
+          type: boolean
+          description: Whether the configured CA certificate and key could be loaded.
+        ca_cert_subject:
+          type: string
+          description: X.509 subject of the local CA certificate.
+        ca_cert_issuer:
+          type: string
+          description: X.509 issuer of the local CA certificate.
+        ca_cert_serial_number:
+          type: string
+          description: Decimal serial number of the CA certificate.
+        fingerprint_sha256:
+          type: string
+          description: Colon-separated SHA-256 fingerprint of the CA certificate.
+        not_before:
+          type: string
+          format: date-time
+        not_after:
+          type: string
+          format: date-time
+        expired:
+          type: boolean
+          description: True when the current time is outside the certificate validity range.
+        install_supported:
+          type: boolean
+          description: Whether this OS build can check/install the CA trust store automatically.
+        installed:
+          type: boolean
+          description: Whether the CA is currently trusted in the OS store used by HttpStackLens.
+        install_check_error:
+          type: string
+          description: Error returned while checking OS trust-store status, when metadata loading succeeded.
+        error:
+          type: string
+          description: Error returned while loading the configured CA certificate/key.
+    CertificateGenerateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        replace:
+          type: boolean
+          default: false
+          description: Explicitly overwrite an existing CA certificate and key when true.
+    AppConfig:
+      type: object
+      required: [proxy, web_ui, decrypt_https]
+      properties:
+        proxy:
+          $ref: "#/components/schemas/ProxyConfig"
+        web_ui:
+          $ref: "#/components/schemas/WebUiConfig"
+        decrypt_https:
+          $ref: "#/components/schemas/DecryptHttpsConfig"
+    ProxyConfig:
+      type: object
+      required: [port, enable_remote_connection, access_control]
+      properties:
+        port:
+          type: integer
+        enable_remote_connection:
+          type: boolean
+          deprecated: true
+          description: Legacy compatibility flag. Use `access_control` instead.
+        access_control:
+          $ref: "#/components/schemas/AccessControlConfig"
+    WebUiConfig:
+      type: object
+      required: [port, enable_remote_connection, access_control]
+      properties:
+        port:
+          type: integer
+        enable_remote_connection:
+          type: boolean
+          deprecated: true
+          description: Legacy compatibility flag. Use `access_control` instead.
+        access_control:
+          $ref: "#/components/schemas/AccessControlConfig"
+    DecryptHttpsConfig:
+      type: object
+      required: [enabled, mime_types, cert_manager]
+      properties:
+        enabled:
+          type: boolean
+        default_max_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Default body capture limit for content types without an explicit rule.
+        mime_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/MimeTypeRule"
+        cert_manager:
+          $ref: "#/components/schemas/CertManagerConfig"
+    BodyCaptureSettings:
+      type: object
+      required: [mime_types]
+      properties:
+        default_max_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Default body capture limit for content types without an explicit rule. When omitted, the built-in 500 KiB default is used.
+        mime_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/MimeTypeRule"
+    DecryptHttpsToggleSettings:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: Enables local MITM decryption for new HTTPS CONNECT tunnels.
+    UpstreamSettings:
+      type: object
+      required: [output_proxy_uri, no_proxy, add_windows_authentication]
+      properties:
+        output_proxy_uri:
+          type: string
+          description: Upstream proxy URL (for example `http://proxy:8080`). Empty means direct connections with no upstream proxy.
+        no_proxy:
+          type: array
+          items:
+            type: string
+          description: Hosts or suffixes that bypass the upstream proxy and connect directly.
+          nullable: true
+        add_windows_authentication:
+          type: boolean
+          description: Enable Windows (NTLM/Negotiate) authentication against the upstream proxy. Only effective on Windows.
+    AccessControlSettings:
+      type: object
+      required: [proxy, web_ui]
+      properties:
+        proxy:
+          $ref: "#/components/schemas/AccessControlConfig"
+        web_ui:
+          $ref: "#/components/schemas/AccessControlConfig"
+    AccessControlConfig:
+      type: object
+      required: [mode, networks]
+      properties:
+        mode:
+          type: string
+          enum: [loopback, lan, allowlist, open]
+          description: |
+            `loopback` allows only localhost, `lan` allows loopback and private
+            network addresses, `allowlist` always allows IPv4/IPv6 loopback plus
+            the configured networks, and
+            `open` allows any source.
+        networks:
+          type: array
+          items:
+            type: string
+          description: Allowed IP addresses or networks. Individual IPv4/IPv6 addresses are normalized to `/32` or `/128`; CIDR notation is preserved. Used when `mode` is `allowlist`.
+    MimeTypeRule:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: MIME type matcher such as `application/json`, `text/*`, or `*/*`.
+        max_size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Capture limit in bytes. At most one size field may be set.
+        max_size_kb:
+          type: number
+          minimum: 0
+          description: Capture limit in KiB. At most one size field may be set.
+        max_size_mb:
+          type: number
+          minimum: 0
+          description: Capture limit in MiB. At most one size field may be set.
+    CertManagerConfig:
+      type: object
+      required: [ca_cert_file, ca_key_file, domain_certs_folder]
+      properties:
+        ca_cert_file:
+          type: string
+        ca_key_file:
+          type: string
+        domain_certs_folder:
+          type: string

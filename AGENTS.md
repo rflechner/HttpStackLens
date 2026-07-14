@@ -37,20 +37,23 @@ Do not prioritize:
 The app currently:
 - Starts a local HTTP proxy.
 - Supports HTTP requests.
-- Supports HTTPS `CONNECT` tunneling without decrypting TLS.
+- Supports HTTPS `CONNECT` tunneling.
+- Supports opt-in HTTPS decryption through local MITM when configured.
 - Can forward traffic to an upstream proxy.
 - Has Windows-specific authentication support.
 - Serves a Web UI using Go/WASM.
 - Streams proxy events to the UI using SSE.
+- Serves an OpenAPI contract for the Web UI API at `/openapi.yaml`.
 
 ## Important Design Constraints
 
-HTTPS traffic is currently tunneled as-is. Do not assume HTTPS contents are
-inspectable unless explicit MITM support is being implemented.
+HTTPS traffic can run in two modes:
+- plain tunneling mode, where `CONNECT` traffic is forwarded as opaque TLS;
+- MITM inspection mode, where `decrypt_https.enabled` uses a local CA to decrypt
+  and inspect HTTPS traffic.
 
-Any future HTTPS interception must be opt-in and must clearly separate:
-- plain tunneling mode
-- MITM inspection mode
+HTTPS interception must remain opt-in and must clearly separate plain tunneling
+mode from MITM inspection mode.
 
 Avoid silently weakening security.
 
@@ -74,6 +77,7 @@ Key areas:
 - `security/`: Windows authentication helpers.
 - `webui/`: embedded Web UI server.
 - `webui/wasm/`: client-side UI logic.
+- `webui/wwwroot/openapi.yaml`: OpenAPI contract for Web UI HTTP endpoints.
 
 ## Coding Guidance
 
@@ -121,6 +125,20 @@ Prioritize:
 - export/replay later
 
 Avoid decorative UI that makes inspection slower.
+
+## API Documentation
+
+The Web UI HTTP API is documented in `webui/wwwroot/openapi.yaml` and served by
+the app at `/openapi.yaml`.
+
+When adding, removing, or changing Web UI endpoints, request/response DTOs, query
+parameters, status codes, or SSE event payloads, update `openapi.yaml` in the
+same change. Keeping this contract current is required so the local API remains
+usable from tools such as Swagger UI, Redoc, Bruno, Postman, and Insomnia.
+
+If a Web UI API changes a value that is configured in `config.yaml`, persist that
+change back to `config.yaml` as part of the API behavior. Users who prefer the UI
+over editing YAML should not lose their settings on the next application start.
 
 ## Build
 
@@ -177,7 +195,7 @@ Possible future features:
 - filtering/search
 - replay requests
 - rules for header/body rewriting
-- opt-in HTTPS MITM with local CA
+- further HTTPS MITM controls and diagnostics
 - per-tool profiles
 - system proxy auto-configuration
 - diagnostics page for corporate proxy issues

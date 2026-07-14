@@ -9,13 +9,30 @@ import (
 	"httpStackLens/configuration"
 	"httpStackLens/http/models"
 	"httpStackLens/storage"
+	"httpStackLens/webui/wasm/shared"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 )
+
+// EventSink receives real-time request/response events for the Web UI. It is
+// satisfied by logging.WebUiEventLogger and injected into the interceptor so the
+// decrypted HTTPS requests/responses — which are otherwise only written to the
+// capture file — show up live in the UI, correlated by CorrelationID.
+type EventSink interface {
+	PublishRequestEvent(shared.RequestEventDto)
+	PublishResponseEvent(shared.ResponseEventDto)
+}
+
+type CaptureLimitSource interface {
+	Get() configuration.DecryptHttpsConfig
+}
 
 // HttpsInterceptor performs a man-in-the-middle on CONNECT tunnels so that the
 // HTTPS traffic can be inspected in clear text: it terminates the browser's TLS
@@ -32,7 +49,18 @@ type HttpsInterceptor struct {
 	Capture storage.CaptureSessionWriter
 	// Limits drives the per-content-type body size caps. Bodies larger than the
 	// limit are forwarded to the browser but not stored (BodySkipped is set).
-	Limits configuration.CaptureConfig
+	Limits CaptureLimitSource
+	// Events, when non-nil, receives a request/response event per decrypted
+	// request so live HTTPS traffic appears in the Web UI.
+	Events EventSink
+	// Store, when non-nil, keeps the decrypted request/response records in memory
+	// so the Web UI can fetch their headers and bodies on demand.
+	Store *storage.RequestStore
+	// CaptureCtl gates recording and live UI events without affecting forwarding.
+	CaptureCtl *storage.CaptureController
+	// seq numbers decrypted requests for the UI's display column. It is shared
+	// across all tunnels since one interceptor instance handles every CONNECT.
+	seq atomic.Int64
 }
 
 func (m *HttpsInterceptor) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
@@ -116,18 +144,27 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	req.RequestURI = ""
 	req.Header.Del("Accept-Encoding")
 
-	// One id correlates the request record with its response record. The request
-	// body is captured within its size limit while still being forwarded in full.
+	// One id correlates the request record with its response record — and, via
+	// the same string, the request/response events streamed to the UI. The
+	// request body is captured within its size limit while still being forwarded
+	// in full.
 	recordID, _ := storage.NewUUID()
+	correlationID := recordID.String()
 	reqBody, reqSkipped, err := m.capRequestBody(req)
 	if err != nil {
 		return err
 	}
 	m.recordRequest(recordID, req, reqBody, reqSkipped)
+	m.publishRequestEvent(correlationID, req, host, authority)
 
 	log.Printf("🔓 %s https://%s%s\n", req.Method, host, req.URL.RequestURI())
 
-	resp, err := transport.RoundTrip(req)
+	// Time the exchange from issuing the upstream request to finishing writing
+	// the response back to the client, and instrument the transport so the UI can
+	// draw a real per-phase waterfall (DNS/connect/TLS/TTFB/download).
+	tracedReq, trace := newTracedRequest(req)
+	start := time.Now()
+	resp, err := transport.RoundTrip(tracedReq)
 	if err != nil {
 		return err
 	}
@@ -135,7 +172,7 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	defer originalBody.Close()
 
 	contentType := resp.Header.Get("Content-Type")
-	limit, _ := m.Limits.LimitForContentType(contentType)
+	limit, _ := m.captureLimits().LimitForContentType(contentType)
 
 	// Stream the response to the browser as it arrives, capturing at most `limit`
 	// bytes in parallel through a tee. The response keeps its original framing
@@ -146,7 +183,7 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	// stall progressive and long-lived responses — video segments, SSE,
 	// long-poll — until they closed, leaving the browser stuck in "loading".
 	var capture *captureLimitWriter
-	if m.Capture != nil || isHtmlOrJs(contentType) {
+	if (m.isCapturing() && (m.Capture != nil || m.Events != nil || m.Store != nil)) || isHtmlOrJs(contentType) {
 		capture = &captureLimitWriter{limit: limit}
 		resp.Body = io.NopCloser(io.TeeReader(originalBody, capture))
 	}
@@ -168,9 +205,66 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 			printIfTextual(host, req.URL.RequestURI(), contentType, body)
 		}
 		m.recordResponse(recordID, resp, body, skipped)
+		m.publishResponseEvent(correlationID, resp, contentType, capture.total(), skipped, len(body), time.Since(start))
 	}
 
+	m.recordTiming(correlationID, trace.timing(start, time.Now()))
+
 	return writeErr
+}
+
+// publishRequestEvent streams a decrypted request to the UI. It is a no-op when
+// no sink is wired.
+func (m *HttpsInterceptor) publishRequestEvent(correlationID string, req *http.Request, host, authority string) {
+	if m.Events == nil || !m.isCapturing() {
+		return
+	}
+	port := 443
+	if _, p, err := net.SplitHostPort(authority); err == nil {
+		if n, convErr := strconv.Atoi(p); convErr == nil {
+			port = n
+		}
+	}
+	m.Events.PublishRequestEvent(shared.RequestEventDto{
+		ID:            int(m.seq.Add(1)),
+		CorrelationID: correlationID,
+		Method:        req.Method,
+		Host:          host,
+		Port:          port,
+		Path:          req.URL.RequestURI(),
+		Version:       fmt.Sprintf("HTTP/%d.%d", req.ProtoMajor, req.ProtoMinor),
+		Scheme:        "https",
+		Tls:           true,
+		Decrypted:     true,
+	})
+}
+
+// publishResponseEvent streams the matching response to the UI. size is the
+// total bytes transferred; bodyLen is the number of bytes actually captured.
+func (m *HttpsInterceptor) publishResponseEvent(correlationID string, resp *http.Response, contentType string, size int64, skipped bool, bodyLen int, elapsed time.Duration) {
+	if m.Events == nil || !m.isCapturing() {
+		return
+	}
+	m.Events.PublishResponseEvent(shared.ResponseEventDto{
+		CorrelationID: correlationID,
+		Status:        resp.StatusCode,
+		StatusText:    statusMessage(resp),
+		ContentType:   contentType,
+		Size:          size,
+		DurationMs:    elapsed.Milliseconds(),
+		BodyAvailable: !skipped && bodyLen > 0,
+		BodySkipped:   skipped,
+		Stream:        isStreaming(contentType, resp),
+	})
+}
+
+// isStreaming reports whether a response is a long-lived stream whose body is
+// never captured — Server-Sent Events or a WebSocket upgrade.
+func isStreaming(contentType string, resp *http.Response) bool {
+	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
+		return true
+	}
+	return resp.StatusCode == http.StatusSwitchingProtocols
 }
 
 // captureLimitWriter accumulates the bytes written to it up to limit, so a
@@ -198,6 +292,11 @@ func (w *captureLimitWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// total returns the number of bytes seen so far, regardless of whether they
+// were buffered or dropped for exceeding the limit — i.e. the real transferred
+// body size.
+func (w *captureLimitWriter) total() int64 { return w.written }
 
 // captured returns the buffered body and whether it was skipped for exceeding
 // the limit. When skipped, the body is nil (nothing is stored).
@@ -232,10 +331,10 @@ func capBody(body io.Reader, limit int64) (store []byte, forward io.Reader, skip
 // replay for forwarding upstream. It is a no-op when capture is off or the
 // request has no body.
 func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skipped bool, err error) {
-	if m.Capture == nil || req.Body == nil {
+	if !m.isCapturing() || (m.Capture == nil && m.Store == nil) || req.Body == nil {
 		return nil, false, nil
 	}
-	limit, _ := m.Limits.LimitForContentType(req.Header.Get("Content-Type"))
+	limit, _ := m.captureLimits().LimitForContentType(req.Header.Get("Content-Type"))
 
 	store, forward, skipped, err := capBody(req.Body, limit)
 	if err != nil {
@@ -249,7 +348,10 @@ func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skip
 }
 
 func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, body []byte, skipped bool) {
-	if m.Capture == nil {
+	if !m.isCapturing() {
+		return
+	}
+	if m.Capture == nil && m.Store == nil {
 		return
 	}
 	rec := storage.RequestRecord{
@@ -261,13 +363,21 @@ func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, bod
 		BodySkipped: skipped,
 		Body:        body,
 	}
-	if err := m.Capture.WriteRequest(rec); err != nil {
-		log.Printf("⚠️  capture: failed to record request: %v\n", err)
+	if m.Capture != nil {
+		if err := m.Capture.WriteRequest(rec); err != nil {
+			log.Printf("⚠️  capture: failed to record request: %v\n", err)
+		}
+	}
+	if m.Store != nil {
+		m.Store.PutRequest(id.String(), rec)
 	}
 }
 
 func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, body []byte, skipped bool) {
-	if m.Capture == nil {
+	if !m.isCapturing() {
+		return
+	}
+	if m.Capture == nil && m.Store == nil {
 		return
 	}
 	rec := storage.ResponseRecord{
@@ -279,9 +389,94 @@ func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, 
 		BodySkipped:   skipped,
 		Body:          body,
 	}
-	if err := m.Capture.WriteResponse(rec); err != nil {
-		log.Printf("⚠️  capture: failed to record response: %v\n", err)
+	if m.Capture != nil {
+		if err := m.Capture.WriteResponse(rec); err != nil {
+			log.Printf("⚠️  capture: failed to record response: %v\n", err)
+		}
 	}
+	if m.Store != nil {
+		m.Store.PutResponse(id.String(), rec)
+	}
+}
+
+// recordTiming stores the measured per-phase breakdown for the exchange so the
+// Web UI can fetch it via the detail endpoint. It is gated the same way as the
+// other records: only while capturing and only when a store is wired.
+func (m *HttpsInterceptor) recordTiming(correlationID string, t storage.Timing) {
+	if !m.isCapturing() || m.Store == nil {
+		return
+	}
+	m.Store.PutTiming(correlationID, t)
+}
+
+// requestTrace captures the httptrace timestamps of a single exchange so the
+// per-phase durations can be derived once the response has been written.
+type requestTrace struct {
+	dnsStart, dnsDone         time.Time
+	connectStart, connectDone time.Time
+	tlsStart, tlsDone         time.Time
+	wroteRequest              time.Time
+	firstByte                 time.Time
+}
+
+// newTracedRequest returns a copy of req whose context carries an
+// httptrace.ClientTrace feeding the returned requestTrace.
+func newTracedRequest(req *http.Request) (*http.Request, *requestTrace) {
+	rt := &requestTrace{}
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(httptrace.DNSStartInfo) { rt.dnsStart = time.Now() },
+		DNSDone:  func(httptrace.DNSDoneInfo) { rt.dnsDone = time.Now() },
+		ConnectStart: func(_, _ string) {
+			if rt.connectStart.IsZero() {
+				rt.connectStart = time.Now()
+			}
+		},
+		ConnectDone:          func(_, _ string, _ error) { rt.connectDone = time.Now() },
+		TLSHandshakeStart:    func() { rt.tlsStart = time.Now() },
+		TLSHandshakeDone:     func(tls.ConnectionState, error) { rt.tlsDone = time.Now() },
+		WroteRequest:         func(httptrace.WroteRequestInfo) { rt.wroteRequest = time.Now() },
+		GotFirstResponseByte: func() { rt.firstByte = time.Now() },
+	}
+	return req.WithContext(httptrace.WithClientTrace(req.Context(), trace)), rt
+}
+
+// timing derives the per-phase durations from the captured timestamps, bounded
+// by the overall start/end of the exchange.
+func (rt *requestTrace) timing(start, end time.Time) storage.Timing {
+	t := storage.Timing{
+		Dns:     span(rt.dnsStart, rt.dnsDone),
+		Connect: span(rt.connectStart, rt.connectDone),
+		Tls:     span(rt.tlsStart, rt.tlsDone),
+		Total:   span(start, end),
+	}
+	if !rt.firstByte.IsZero() {
+		if !rt.wroteRequest.IsZero() {
+			t.Ttfb = span(rt.wroteRequest, rt.firstByte)
+		} else {
+			t.Ttfb = span(start, rt.firstByte)
+		}
+		t.Download = span(rt.firstByte, end)
+	}
+	return t
+}
+
+// span returns b-a, or 0 when either bound is missing or out of order.
+func span(a, b time.Time) time.Duration {
+	if a.IsZero() || b.IsZero() || b.Before(a) {
+		return 0
+	}
+	return b.Sub(a)
+}
+
+func (m *HttpsInterceptor) isCapturing() bool {
+	return m.CaptureCtl == nil || m.CaptureCtl.IsCapturing()
+}
+
+func (m *HttpsInterceptor) captureLimits() configuration.DecryptHttpsConfig {
+	if m.Limits == nil {
+		return configuration.DecryptHttpsConfig{}
+	}
+	return m.Limits.Get()
 }
 
 // httpHeadersToRecords flattens an http.Header map into ordered name/value

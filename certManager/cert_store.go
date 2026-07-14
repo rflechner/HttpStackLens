@@ -42,13 +42,13 @@ func NewCertStore(ca *x509.Certificate, caKey *ecdsa.PrivateKey, certsFolder str
 // NewCertStoreFromConfig builds a store from the application configuration.
 //
 // Per-domain certificates are installed into the user's personal store only
-// when capture.decrypt_https is true; otherwise no OS trust-store change is made.
+// when decrypt_https.enabled is true; otherwise no OS trust-store change is made.
 func NewCertStoreFromConfig(ca *x509.Certificate, caKey *ecdsa.PrivateKey, config configuration.AppConfig) *CertStore {
 	var installer CertInstaller
-	if config.Capture.DecryptHttps {
+	if config.DecryptHttps.Enabled {
 		installer = NewCertInstaller()
 	}
-	return NewCertStore(ca, caKey, config.CertManager.DomainCertsFolder, installer)
+	return NewCertStore(ca, caKey, config.DecryptHttps.CertManager.DomainCertsFolder, installer)
 }
 
 // GetCertificate returns the TLS certificate for domain, creating it if needed.

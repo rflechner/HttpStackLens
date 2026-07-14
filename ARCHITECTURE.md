@@ -57,7 +57,7 @@ interface; the Web UI implementation of that interface publishes to a `Hub`.
 4. The Web UI starts (`webui.ServeWebUi`), returning the `Hub`.
 5. The CA is loaded/generated (`certManager.GetHttpsDebugRootCertificates`) and a
    `CertStore` is created.
-6. If `proxy.decrypt_https` is enabled, the CA is installed into the OS trust
+6. If `decrypt_https.enabled` is true, the CA is installed into the OS trust
    store and an `HttpsInterceptor` is wrapped around the pipeline.
 7. The proxy server is created with the pipeline + `CertStore` and `Run()` in a
    goroutine.
@@ -115,7 +115,7 @@ acceptable for the common local-debug case.
 
 ### HTTPS interception (MITM)
 
-When `proxy.decrypt_https` is true, `HttpsInterceptor.intercept` does:
+When `decrypt_https.enabled` is true, `HttpsInterceptor.intercept` does:
 
 1. Reply `200 Connection Established` to the browser.
 2. `tls.Server` over the browser connection, selecting a certificate per SNI via
@@ -161,17 +161,22 @@ certificates.
 
 ## Configuration (`configuration/`)
 
-`config.go` defines `AppConfig` (proxy, webui, cert_manager, logging) and loads
+`config.go` defines `AppConfig` (proxy, webui, decrypt_https, logging) and loads
 it from `config.yaml` with `goccy/go-yaml`. Key flags:
 
-- `proxy.decrypt_https` — enable HTTPS MITM.
+- `decrypt_https.enabled` — enable HTTPS MITM.
 - `proxy.output_proxy_uri` — upstream proxy.
 - `proxy.require_windows_authentication` / `add_windows_authentication_to_output_proxy`.
-- `cert_manager.ca_cert_file` / `ca_key_file` / `domain_certs_folder`.
+- `decrypt_https.cert_manager.ca_cert_file` / `ca_key_file` / `domain_certs_folder`.
 
 `AppConfig.ToDto()` converts to a sanitized DTO (`webui/wasm/shared`) that is
 safe to expose to the browser over `/config` — a deliberate duplicate type so
 internal-only fields never leak to the UI.
+
+Runtime APIs may expose UI-first settings flows for values that originate in
+`config.yaml`. When an API changes one of those values, it should also persist
+the updated configuration back to `config.yaml`, so the setting survives the next
+application start for users who prefer the Web UI over editing YAML manually.
 
 ## Web UI (`webui/`)
 
@@ -181,11 +186,17 @@ internal-only fields never leak to the UI.
   to WebAssembly).
 - `/events` — **Server-Sent Events** stream.
 - `/config`, `/certificates-infos` — JSON endpoints consumed by the WASM client.
+- `/openapi.yaml` — the OpenAPI contract for the Web UI HTTP API.
 
 Live traffic uses a small pub/sub **`Hub`**: SSE clients `subscribe()` to a
 buffered channel; `Publish(eventType, data)` fans messages out to all clients and
 **drops messages for slow clients** (non-blocking send) so one stuck browser
 can't stall the proxy.
+
+The API contract lives at `webui/wwwroot/openapi.yaml`, which means it is served
+directly in development and embedded into production binaries together with the
+rest of `wwwroot`. Any change to Web UI HTTP endpoints, DTOs, query parameters,
+status codes, or SSE event payloads should update this file in the same change.
 
 ### Client (`webui/wasm/`)
 
@@ -458,7 +469,7 @@ http/models/, http/parser/                            HTTP types and combinator 
 security/                                             SSPI / Windows authentication
 webui/                                                Embedded Web UI server + SSE hub
 webui/wasm/                                           Go/WASM client + shared DTOs
-webui/wwwroot/                                        Static assets (html/css/js/wasm)
+webui/wwwroot/                                        Static assets (html/css/js/wasm) + openapi.yaml
 logging/                                              Event loggers + structured logging
 build-tools/                                          WASM/CSS/native build orchestration
 ```

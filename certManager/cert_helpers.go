@@ -34,13 +34,15 @@ func ensureParentDir(path string) error {
 }
 
 func GetHttpsDebugRootCertificates(config configuration.AppConfig) (*x509.Certificate, *ecdsa.PrivateKey, error) {
-	if config.CertManager.CaCertFile == "" || config.CertManager.CaKeyFile == "" {
+	certConfig := config.DecryptHttps.CertManager
+
+	if certConfig.CaCertFile == "" || certConfig.CaKeyFile == "" {
 		log.Fatal("CA certificate and key files must be specified in config.yaml")
 		return nil, nil, errors.New("CA certificate and key files must be specified in config.yaml")
 	}
 
-	if !fileExists(config.CertManager.CaCertFile) || !fileExists(config.CertManager.CaKeyFile) {
-		err := GenerateCA(config.CertManager.CaCertFile, config.CertManager.CaKeyFile)
+	if !fileExists(certConfig.CaCertFile) || !fileExists(certConfig.CaKeyFile) {
+		err := GenerateCA(certConfig.CaCertFile, certConfig.CaKeyFile)
 		if err != nil {
 			log.Printf("Failed to generate CA: %v\n", err)
 			return nil, nil, err
@@ -49,7 +51,7 @@ func GetHttpsDebugRootCertificates(config configuration.AppConfig) (*x509.Certif
 		log.Printf("🔒 CA certificate and key files already exist, skipping generation")
 	}
 
-	caCert, caKey, err := LoadCA(config.CertManager.CaCertFile, config.CertManager.CaKeyFile)
+	caCert, caKey, err := LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile)
 	if err != nil {
 		log.Printf("Failed to load CA: %v\n", err)
 		return nil, nil, err

@@ -5,17 +5,17 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/goccy/go-yaml"
 )
 
 type AppConfig struct {
-	Proxy       ProxyConfig       `json:"proxy"`
-	WebUi       WebUiConfig       `json:"webui"`
-	CertManager CertManagerConfig `json:"cert_manager"`
-	Logging     LoggingConfig     `yaml:"logging"`
-	Storage     StorageConfig     `yaml:"storage"`
-	Capture     CaptureConfig     `yaml:"capture"`
+	Proxy        ProxyConfig        `json:"proxy"`
+	WebUi        WebUiConfig        `json:"webui"`
+	Logging      LoggingConfig      `yaml:"logging"`
+	Storage      StorageConfig      `yaml:"storage"`
+	DecryptHttps DecryptHttpsConfig `yaml:"decrypt_https"`
 }
 
 type StorageConfig struct {
@@ -27,10 +27,11 @@ type StorageConfig struct {
 // specifies no explicit size.
 const DefaultCaptureSizeBytes int64 = 500 * 1024 // 500 KiB
 
-type CaptureConfig struct {
-	DecryptHttps    bool           `yaml:"decrypt_https"`     // intercept & decrypt HTTPS (MITM)
-	MimeTypes       []MimeTypeRule `yaml:"mime_types"`        // per-content-type capture limits
-	DefaultMaxBytes *int64         `yaml:"default_max_bytes"` // limit for content types not listed (and rules without an explicit size); defaults to DefaultCaptureSizeBytes
+type DecryptHttpsConfig struct {
+	Enabled         bool              `yaml:"enabled"` // intercept & decrypt HTTPS (MITM)
+	CertManager     CertManagerConfig `yaml:"cert_manager"`
+	MimeTypes       []MimeTypeRule    `yaml:"mime_types"`        // per-content-type capture limits
+	DefaultMaxBytes *int64            `yaml:"default_max_bytes"` // limit for content types not listed (and rules without an explicit size); defaults to DefaultCaptureSizeBytes
 }
 
 // MimeTypeRule caps how much of a response body is captured for a given content
@@ -41,6 +42,75 @@ type MimeTypeRule struct {
 	MaxSizeBytes *int64   `yaml:"max_size_bytes"` //
 	MaxSizeKb    *float64 `yaml:"max_size_kb"`    //
 	MaxSizeMb    *float64 `yaml:"max_size_mb"`    //
+}
+
+type DecryptHttpsConfigStore struct {
+	mu     sync.RWMutex
+	config DecryptHttpsConfig
+}
+
+func NewDecryptHttpsConfigStore(config DecryptHttpsConfig) *DecryptHttpsConfigStore {
+	return &DecryptHttpsConfigStore{config: cloneDecryptHttpsConfig(config)}
+}
+
+func (s *DecryptHttpsConfigStore) Get() DecryptHttpsConfig {
+	if s == nil {
+		return DecryptHttpsConfig{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneDecryptHttpsConfig(s.config)
+}
+
+func (s *DecryptHttpsConfigStore) UpdateCaptureRules(defaultMaxBytes *int64, rules []MimeTypeRule) DecryptHttpsConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.DefaultMaxBytes = cloneInt64Ptr(defaultMaxBytes)
+	s.config.MimeTypes = cloneMimeTypeRules(rules)
+	return cloneDecryptHttpsConfig(s.config)
+}
+
+func (s *DecryptHttpsConfigStore) UpdateEnabled(enabled bool) DecryptHttpsConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.Enabled = enabled
+	return cloneDecryptHttpsConfig(s.config)
+}
+
+func cloneDecryptHttpsConfig(config DecryptHttpsConfig) DecryptHttpsConfig {
+	config.DefaultMaxBytes = cloneInt64Ptr(config.DefaultMaxBytes)
+	config.MimeTypes = cloneMimeTypeRules(config.MimeTypes)
+	return config
+}
+
+func cloneMimeTypeRules(rules []MimeTypeRule) []MimeTypeRule {
+	if rules == nil {
+		return nil
+	}
+	out := make([]MimeTypeRule, len(rules))
+	for i, rule := range rules {
+		out[i] = rule
+		out[i].MaxSizeBytes = cloneInt64Ptr(rule.MaxSizeBytes)
+		out[i].MaxSizeKb = cloneFloat64Ptr(rule.MaxSizeKb)
+		out[i].MaxSizeMb = cloneFloat64Ptr(rule.MaxSizeMb)
+	}
+	return out
+}
+
+func cloneInt64Ptr(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneFloat64Ptr(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
 }
 
 // explicitLimit returns the size limit set by the rule's YAML, if any. The
@@ -70,7 +140,7 @@ func (r MimeTypeRule) LimitBytes() int64 {
 // DefaultLimitBytes returns the limit applied to content types that match no
 // rule (and to rules without an explicit size): the configured
 // default_max_bytes, or DefaultCaptureSizeBytes when unset.
-func (c CaptureConfig) DefaultLimitBytes() int64 {
+func (c DecryptHttpsConfig) DefaultLimitBytes() int64 {
 	if c.DefaultMaxBytes != nil {
 		return *c.DefaultMaxBytes
 	}
@@ -81,7 +151,7 @@ func (c CaptureConfig) DefaultLimitBytes() int64 {
 // "text/html; charset=utf-8"), matching rules in order with "type/*" wildcard
 // support. matched reports whether any rule applied; when false the returned
 // limit is DefaultLimitBytes.
-func (c CaptureConfig) LimitForContentType(contentType string) (limit int64, matched bool) {
+func (c DecryptHttpsConfig) LimitForContentType(contentType string) (limit int64, matched bool) {
 	ct := normalizeContentType(contentType)
 	for _, rule := range c.MimeTypes {
 		if contentTypeMatches(rule.Name, ct) {
@@ -129,27 +199,32 @@ type LoggingConfig struct {
 }
 
 type ProxyConfig struct {
-	Port                                  int    `yaml:"port"`
-	EnableRemoteConnection                bool   `yaml:"enable_remote_connection"`
-	OutputProxyUri                        string `yaml:"output_proxy_uri"`
-	AddWindowsAuthenticationToOutputProxy bool   `yaml:"add_windows_authentication_to_output_proxy"`
-	Treat401AsProxyAuthentication         bool   `yaml:"treat_401_as_proxy_authentication"`
-	RequireWindowsAuthentication          bool   `yaml:"require_windows_authentication"`
+	Port                                  int                 `yaml:"port"`
+	EnableRemoteConnection                bool                `yaml:"enable_remote_connection"`
+	AccessControl                         AccessControlConfig `yaml:"access_control"`
+	OutputProxyUri                        string              `yaml:"output_proxy_uri"`
+	AddWindowsAuthenticationToOutputProxy bool                `yaml:"add_windows_authentication_to_output_proxy"`
+	Treat401AsProxyAuthentication         bool                `yaml:"treat_401_as_proxy_authentication"`
+	RequireWindowsAuthentication          bool                `yaml:"require_windows_authentication"`
+	NoProxy                               []string            `yaml:"no_proxy"` // hosts that bypass the upstream proxy and connect directly
 }
 
 type WebUiConfig struct {
-	Port                   int  `yaml:"port"`
-	EnableRemoteConnection bool `yaml:"enable_remote_connection"`
+	Port                   int                 `yaml:"port"`
+	EnableRemoteConnection bool                `yaml:"enable_remote_connection"`
+	AccessControl          AccessControlConfig `yaml:"access_control"`
 }
 
 func DefaultAppConfig() AppConfig {
 	return AppConfig{
-		Proxy:       ProxyConfig{Port: 3128, EnableRemoteConnection: false},
-		WebUi:       WebUiConfig{Port: 9000, EnableRemoteConnection: false},
-		CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
-		Logging:     LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
-		Storage:     StorageConfig{Enable: false, Folder: "captures"},
-		Capture:     CaptureConfig{DecryptHttps: false},
+		Proxy:   ProxyConfig{Port: 3128, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
+		WebUi:   WebUiConfig{Port: 9000, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
+		Logging: LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
+		Storage: StorageConfig{Enable: false, Folder: "captures"},
+		DecryptHttps: DecryptHttpsConfig{
+			Enabled:     false,
+			CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
+		},
 	}
 }
 
@@ -170,19 +245,50 @@ func ReadConfiguration() AppConfig {
 }
 
 func (c *AppConfig) ToDto() shared.AppConfigDto {
+	accessControl := AccessControlSettingsFromConfig(*c)
 	return shared.AppConfigDto{
 		Proxy: shared.ProxyConfigDto{
 			Port:                   c.Proxy.Port,
-			EnableRemoteConnection: c.Proxy.EnableRemoteConnection,
+			EnableRemoteConnection: accessControl.Proxy.Mode != AccessControlLoopback,
+			AccessControl:          accessControlConfigToDto(accessControl.Proxy),
 		},
 		WebUi: shared.WebUiConfigDto{
 			Port:                   c.WebUi.Port,
-			EnableRemoteConnection: c.WebUi.EnableRemoteConnection,
+			EnableRemoteConnection: accessControl.WebUi.Mode != AccessControlLoopback,
+			AccessControl:          accessControlConfigToDto(accessControl.WebUi),
 		},
-		CertManager: shared.CertManagerConfigDto{
-			CaCertFile:        c.CertManager.CaCertFile,
-			CaKeyFile:         c.CertManager.CaKeyFile,
-			DomainCertsFolder: c.CertManager.DomainCertsFolder,
+		DecryptHttps: shared.DecryptHttpsConfigDto{
+			Enabled:         c.DecryptHttps.Enabled,
+			DefaultMaxBytes: c.DecryptHttps.DefaultMaxBytes,
+			MimeTypes:       mimeTypeRulesToDto(c.DecryptHttps.MimeTypes),
+			CertManager: shared.CertManagerConfigDto{
+				CaCertFile:        c.DecryptHttps.CertManager.CaCertFile,
+				CaKeyFile:         c.DecryptHttps.CertManager.CaKeyFile,
+				DomainCertsFolder: c.DecryptHttps.CertManager.DomainCertsFolder,
+			},
 		},
 	}
+}
+
+func accessControlConfigToDto(config AccessControlConfig) shared.AccessControlConfigDto {
+	return shared.AccessControlConfigDto{
+		Mode:     string(config.Mode),
+		Networks: cloneStringSlice(config.Networks),
+	}
+}
+
+func mimeTypeRulesToDto(rules []MimeTypeRule) []shared.MimeTypeRuleDto {
+	if rules == nil {
+		return nil
+	}
+	out := make([]shared.MimeTypeRuleDto, len(rules))
+	for i, rule := range rules {
+		out[i] = shared.MimeTypeRuleDto{
+			Name:         rule.Name,
+			MaxSizeBytes: rule.MaxSizeBytes,
+			MaxSizeKb:    rule.MaxSizeKb,
+			MaxSizeMb:    rule.MaxSizeMb,
+		}
+	}
+	return out
 }
