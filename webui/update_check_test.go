@@ -25,6 +25,17 @@ func TestIsNewer(t *testing.T) {
 	}
 }
 
+func TestDisabledCheckerDoesNotContactGitHub(t *testing.T) {
+	// A nil HTTP client would panic on any outbound call, proving the disabled
+	// checker short-circuits before touching the network.
+	c := newUpdateChecker(false, "v0.1.0", "rflechner/HttpStackLens")
+	c.client = nil
+	got := c.result()
+	if got.Checked || got.UpdateAvailable {
+		t.Errorf("disabled checker returned %+v, want Checked=false", got)
+	}
+}
+
 func TestParseSemver(t *testing.T) {
 	if _, _, ok := parseSemver("dev"); ok {
 		t.Error("parseSemver(dev) should be invalid")

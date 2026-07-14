@@ -121,6 +121,7 @@ func main() {
 		Commands:              runtimeCommands,
 		Build:                 buildInfo(),
 		GitHubRepo:            repoSlug,
+		UpdateCheckEnabled:    config.Updates.CheckEnabled,
 	})
 
 	// Streams request/response events to the Web UI over SSE. Created before the

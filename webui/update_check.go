@@ -32,6 +32,7 @@ type githubRelease struct {
 // updateChecker queries GitHub for the latest release and caches the comparison
 // against the running version. It is safe for concurrent use.
 type updateChecker struct {
+	enabled        bool
 	currentVersion string
 	apiURL         string
 	userAgent      string
@@ -44,9 +45,10 @@ type updateChecker struct {
 
 // newUpdateChecker builds a checker for the given "owner/name" repo. A generic,
 // project-scoped User-Agent identifies the client to GitHub as requested by
-// their API guidelines.
-func newUpdateChecker(currentVersion, repo string) *updateChecker {
+// their API guidelines. When enabled is false the checker never contacts GitHub.
+func newUpdateChecker(enabled bool, currentVersion, repo string) *updateChecker {
 	return &updateChecker{
+		enabled:        enabled,
 		currentVersion: currentVersion,
 		apiURL:         fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo),
 		userAgent:      "update-checker/" + currentVersion,
@@ -55,12 +57,16 @@ func newUpdateChecker(currentVersion, repo string) *updateChecker {
 }
 
 // result returns the current update status, refreshing from GitHub when the
-// cache is stale. Dev builds (no valid version) short-circuit without a network
-// call and report Checked=false.
+// cache is stale. When update checking is disabled in config, or on dev builds
+// (no valid version), it short-circuits without a network call and reports
+// Checked=false.
 func (u *updateChecker) result() shared.UpdateCheckDto {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
+	if !u.enabled {
+		return shared.UpdateCheckDto{Checked: false, CurrentVersion: u.currentVersion}
+	}
 	if _, _, ok := parseSemver(u.currentVersion); !ok {
 		return shared.UpdateCheckDto{Checked: false, CurrentVersion: u.currentVersion}
 	}
