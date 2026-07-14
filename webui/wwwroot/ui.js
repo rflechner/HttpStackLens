@@ -101,6 +101,7 @@
     source: { kind: 'live', name: '', metadata: null },
     captures: { files: [], loading: false, loaded: false, opening: false, error: null },
     runtime: { memoryBytes: null, loading: false },
+    build: { version: null, commit: null, commitUrl: null },
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: savedDensity,
     detailHeight: savedDetailHeight,
@@ -237,6 +238,19 @@
       // not make the footer flicker between a value and an error every 5s.
     } finally {
       state.runtime.loading = false;
+    }
+  }
+
+  // Fetched once at boot: the running build never changes at runtime.
+  async function loadBuildInfo() {
+    try {
+      const info = await fetchJSON('/api/version');
+      state.build.version = info.version || null;
+      state.build.commit = info.commit || null;
+      state.build.commitUrl = info.commit_url || null;
+      renderStatusBar();
+    } catch (error) {
+      // Non-critical: leave the version slot empty if it can't be fetched.
     }
   }
 
@@ -777,7 +791,21 @@
       <span class="flex-1"></span>
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.decryption ? C.mint : C.warn}">${lock(state.decryption, !state.decryption)} HTTPS ${state.decryption ? 'decrypted' : 'passthrough'}</span>
       <span style="padding:0 10px;color:${C.dim}">upstream ${state.upstream.on ? (state.upstream.ntlm ? 'NTLM' : 'direct') : 'off'}</span>
-      <span style="padding:0 14px 0 10px;color:${C.dim}">access ${state.access.mode}</span>`;
+      <span style="padding:0 14px 0 10px;color:${C.dim}">access ${state.access.mode}</span>
+      ${versionSegment()}`;
+  }
+
+  // Version indicator at the far right of the status bar. Links to the exact
+  // commit on GitHub when the build injected a commit hash (release builds);
+  // otherwise it's plain text (dev builds report "dev" / no commit_url).
+  function versionSegment() {
+    if (!state.build.version) return '';
+    const label = esc(state.build.version);
+    const url = state.build.commitUrl;
+    const inner = url
+      ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="View commit ${esc(state.build.commit || '')} on GitHub" style="color:${C.info};text-decoration:none">${label}</a>`
+      : label;
+    return `<span style="padding:0 14px 0 10px;border-left:1px solid var(--line);color:${C.dim}">${inner}</span>`;
   }
 
   // ─── toolbar state sync ──────────────────────────────────
@@ -1481,6 +1509,7 @@
     renderDetail();
     loadCaptureFiles();
     loadRuntimeStats();
+    loadBuildInfo();
     window.setInterval(loadRuntimeStats, 5000);
   }
 

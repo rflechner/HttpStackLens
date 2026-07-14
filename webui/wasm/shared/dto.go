@@ -177,6 +177,16 @@ type RuntimeStatsDto struct {
 	MemoryBytes uint64 `json:"memory_bytes"`
 }
 
+// BuildInfoDto reports the build metadata shown in the Web UI status bar.
+// CommitURL links to the exact commit on GitHub; it is empty for local/dev
+// builds where the commit hash is unknown.
+type BuildInfoDto struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	Date      string `json:"date"`
+	CommitURL string `json:"commit_url"`
+}
+
 // CaptureDecryptStateDto reports whether HTTPS decryption (MITM) is currently on,
 // so the status bar can show "decrypted" vs "passthrough".
 type CaptureDecryptStateDto struct {

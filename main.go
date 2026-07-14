@@ -9,6 +9,7 @@ import (
 	"httpStackLens/proxy/middlewares"
 	"httpStackLens/storage"
 	"httpStackLens/webui"
+	"httpStackLens/webui/wasm/shared"
 	"log"
 	"log/slog"
 	"os"
@@ -16,7 +17,40 @@ import (
 	"time"
 )
 
+// Injected at build time via -ldflags "-X main.version=... -X main.commit=... -X main.date=...".
+// These must stay package-level: ldflags -X cannot write to a local variable.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
+// repoURL is the GitHub repository the Web UI status bar links to for the
+// currently running commit.
+const repoURL = "https://github.com/rflechner/HttpStackLens"
+
+// buildInfo assembles the version metadata for the Web UI. CommitURL is only
+// set when commit holds a real hash (release builds), so dev builds don't render
+// a link to a non-existent commit.
+func buildInfo() shared.BuildInfoDto {
+	info := shared.BuildInfoDto{Version: version, Commit: commit, Date: date}
+	if commit != "" && commit != "none" {
+		info.CommitURL = repoURL + "/commit/" + commit
+	}
+	return info
+}
+
 func main() {
+	// Handled before flag.Parse (which runs later inside
+	// CreateOsSpecificProxyPipeline, after -port/-webUiPort are registered), so we
+	// scan os.Args directly instead of registering a flag we cannot parse yet.
+	for _, arg := range os.Args[1:] {
+		if arg == "-version" || arg == "--version" {
+			fmt.Printf("httpStackLens %s (commit %s, built %s)\n", version, commit, date)
+			return
+		}
+	}
+
 	config := configuration.ReadConfiguration()
 
 	// Registered here but parsed inside CreateOsSpecificProxyPipeline (which
@@ -81,6 +115,7 @@ func main() {
 		Capture:               captureCtl,
 		Proxy:                 proxyCtl,
 		Commands:              runtimeCommands,
+		Build:                 buildInfo(),
 	})
 
 	// Streams request/response events to the Web UI over SSE. Created before the
