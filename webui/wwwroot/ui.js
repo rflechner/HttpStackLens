@@ -75,7 +75,7 @@
 
   // ─── state ───────────────────────────────────────────────
   const state = {
-    rows: [], selId: null, capturing: true, proxyRunning: true, decryption: true,
+    rows: [], selId: null, capturing: true, proxyRunning: true, proxyAddress: '', decryption: true,
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
     detailHeight: savedDetailHeight,
@@ -542,6 +542,17 @@
     const acc = $('#btn-access');
     const modeLabel = { loopback: 'Loopback', lan: 'Private LAN', allowlist: 'Allowlist', open: 'Open' };
     acc.textContent = `Access · ${modeLabel[state.access.mode] || state.access.mode}`;
+    renderProxySummary();
+  }
+
+  function renderProxySummary() {
+    const summary = $('#proxy-summary');
+    if (!summary) return;
+    const color = state.proxyRunning ? C.mint : C.danger;
+    summary.innerHTML = `<div class="flex items-center gap-[7px]" style="margin-bottom:8px">
+      <span style="width:7px;height:7px;border-radius:4px;background:${color};box-shadow:0 0 0 3px ${color}22"></span>
+      <span style="color:${C.dim};font-size:11.5px;font-weight:600">${state.proxyRunning ? 'Proxy listening' : 'Proxy stopped'}</span>
+    </div><div style="font-family:'JetBrains Mono';font-size:12px;color:${state.proxyRunning ? C.ink : C.faint};word-break:break-all">${esc(state.proxyAddress || 'address unavailable')}</div>`;
   }
 
   // ─── modals ──────────────────────────────────────────────
@@ -1082,6 +1093,7 @@
     if (typeof s.recording === 'boolean') state.capturing = s.recording;
     else if (typeof s.capturing === 'boolean') state.capturing = s.capturing;
     if (s.proxy && typeof s.proxy.running === 'boolean') state.proxyRunning = s.proxy.running;
+    if (s.proxy && typeof s.proxy.address === 'string') state.proxyAddress = s.proxy.address;
     // decrypt / upstream / access come from the backend (F3.2); the status bar
     // and toolbar reflect the real pipeline state rather than local toggles.
     if (s.decrypt && typeof s.decrypt.enabled === 'boolean') state.decryption = s.decrypt.enabled;

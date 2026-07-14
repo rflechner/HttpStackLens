@@ -15,4 +15,8 @@ func TestProxyControllerTracksRunningState(t *testing.T) {
 	if !controller.IsRunning() {
 		t.Fatal("proxy should be running again")
 	}
+	controller.SetAddress("127.0.0.1:8823")
+	if got := controller.Address(); got != "127.0.0.1:8823" {
+		t.Fatalf("address = %q, want 127.0.0.1:8823", got)
+	}
 }

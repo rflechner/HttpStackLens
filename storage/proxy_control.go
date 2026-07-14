@@ -8,6 +8,25 @@ import "sync"
 type ProxyController struct {
 	mu      sync.RWMutex
 	running bool
+	address string
+}
+
+func (c *ProxyController) Address() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.address
+}
+
+func (c *ProxyController) SetAddress(address string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.address = address
+	c.mu.Unlock()
 }
 
 func NewProxyController(running bool) *ProxyController {

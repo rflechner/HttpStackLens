@@ -338,9 +338,13 @@ func TestCaptureStateHandlerReturnsState(t *testing.T) {
 
 func TestCaptureStateDtoReportsProxyRuntimeState(t *testing.T) {
 	proxyCtl := storage.NewProxyController(true)
+	proxyCtl.SetAddress("127.0.0.1:8823")
 	got := captureStateDto(nil, nil, nil, nil, nil, proxyCtl)
 	if !got.Proxy.Running {
 		t.Fatal("proxy runtime state should be running")
+	}
+	if got.Proxy.Address != "127.0.0.1:8823" {
+		t.Fatalf("proxy address = %q, want 127.0.0.1:8823", got.Proxy.Address)
 	}
 	proxyCtl.SetRunning(false)
 	got = captureStateDto(nil, nil, nil, nil, nil, proxyCtl)

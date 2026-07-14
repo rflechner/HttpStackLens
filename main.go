@@ -56,6 +56,8 @@ func main() {
 	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
 	upstreamSettings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettingsFromProxyConfig(config.Proxy))
 	accessControlSettings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettingsFromConfig(config))
+	proxyAccess := accessControlSettings.Get().Proxy
+	proxyCtl.SetAddress(fmt.Sprintf("%s:%d", proxyAccess.ListenHost(), appContext.port))
 	runtimeConfig := newRuntimeConfigState(config)
 	runtimeCommands := make(chan webui.RuntimeCommand, 16)
 	basePipeline := appContext.pipeline
@@ -95,6 +97,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	proxyCtl.SetAddress(proxyServer.Address())
 	supervisor := &runtimeSupervisor{
 		config:        runtimeConfig,
 		appContext:    appContext,

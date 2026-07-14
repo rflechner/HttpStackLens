@@ -114,6 +114,7 @@ func (s *runtimeSupervisor) startProxy() error {
 		return err
 	}
 	s.proxy = proxy
+	s.proxyCtl.SetAddress(proxy.Address())
 	s.proxyCtl.SetRunning(true)
 	go proxy.Run()
 	return nil
@@ -202,5 +203,6 @@ func (s *runtimeSupervisor) setAccessControl(settings configuration.AccessContro
 		config.Proxy.AccessControl = settings.Proxy
 		config.WebUi.AccessControl = settings.WebUi
 	})
+	s.proxyCtl.SetAddress(fmt.Sprintf("%s:%d", settings.Proxy.ListenHost(), s.appContext.port))
 	return nil
 }

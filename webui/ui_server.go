@@ -476,6 +476,7 @@ func captureStateDto(captureCtl *storage.CaptureController, store *storage.Reque
 	dto := shared.CaptureStateDto{Capturing: capturing, Recording: capturing, BufferSize: size}
 	if len(proxyControllers) > 0 && proxyControllers[0] != nil {
 		dto.Proxy.Running = proxyControllers[0].IsRunning()
+		dto.Proxy.Address = proxyControllers[0].Address()
 	}
 	if decryptSettings != nil {
 		dto.Decrypt.Enabled = decryptSettings.Get().Enabled

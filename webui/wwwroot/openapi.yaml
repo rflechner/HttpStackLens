@@ -801,11 +801,14 @@ components:
           description: Number of exchanges currently kept in the in-memory request buffer.
         proxy:
           type: object
-          required: [running]
+          required: [running, address]
           description: Runtime state of the proxy TCP listener. The Web UI listener is independent.
           properties:
             running:
               type: boolean
+            address:
+              type: string
+              description: Effective or configured proxy listener address (`host:port`).
         decrypt:
           type: object
           required: [enabled]

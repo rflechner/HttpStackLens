@@ -259,7 +259,7 @@ func captureStateToJS(st shared.CaptureStateDto) map[string]any {
 		"recording":  st.Recording,
 		"capturing":  st.Capturing,
 		"bufferSize": st.BufferSize,
-		"proxy":      map[string]any{"running": st.Proxy.Running},
+		"proxy":      map[string]any{"running": st.Proxy.Running, "address": st.Proxy.Address},
 		"decrypt":    map[string]any{"enabled": st.Decrypt.Enabled},
 		"upstream":   map[string]any{"enabled": st.Upstream.Enabled, "ntlm": st.Upstream.Ntlm},
 		"access":     map[string]any{"mode": st.Access.Mode},

@@ -166,7 +166,8 @@ type CaptureStateDto struct {
 }
 
 type ProxyRuntimeStateDto struct {
-	Running bool `json:"running"`
+	Running bool   `json:"running"`
+	Address string `json:"address"`
 }
 
 // CaptureDecryptStateDto reports whether HTTPS decryption (MITM) is currently on,

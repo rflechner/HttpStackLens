@@ -38,6 +38,13 @@ type pipelineSnapshotter interface {
 	Snapshot() (middlewares.Middleware, bool)
 }
 
+func (s *ProxyServer) Address() string {
+	if s == nil || s.listener == nil {
+		return ""
+	}
+	return s.listener.Addr().String()
+}
+
 func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, config configuration.ProxyConfig, accessControl *configuration.AccessControlSettingsStore, capture storage.CaptureSessionWriter, store *storage.RequestStore, captureCtl *storage.CaptureController) (*ProxyServer, error) {
 	log.Printf("Socket server started on port %v\n", appContext.port)
 	access := configuration.NormalizeAccessControl(config.AccessControl, config.EnableRemoteConnection)
