@@ -281,7 +281,7 @@ server and WASM.
 
 ### EPIC F3 — Toolbar & status bar
 - [x] F3.1 Pause/Resume, Clear wired to B3.
-      Toolbar + Space/⌘L relay through WASM `hslCapture` to
+      Toolbar controls relay through WASM `hslCapture` to
       `POST /api/capture/{pause,resume,clear}`; the authoritative `capturing`
       flag comes back via the `capture_state` SSE event → `setCaptureState`.
 - [x] F3.2 Status bar: req/errors/avg/total (front) +
@@ -306,10 +306,8 @@ server and WASM.
       The wizard and TLS settings tab now use the real B6 status/generate/install/
       export endpoints. Key generation shows an honest busy state rather than a
       simulated percentage; regeneration requires explicit confirmation.
-- [ ] F4.5 Shortcuts tab (static, OK as-is).
 
 ### EPIC F5 — Polish
-- [ ] F5.1 Real keyboard shortcuts (Space/⌘K/⌘L/R/J/K — partly in the mockup).
 - [ ] F5.2 SSE reconnection / stream-loss handling.
 - [ ] F5.3 Cleanup: remove the fake data, delete the old UI.
 

@@ -643,7 +643,7 @@
   let settingsTab = 'body';
   function openSettings(tab) { modalKind = 'settings'; settingsTab = tab || 'body'; renderSettings(); }
   function renderSettings() {
-    const tabs = [['cert', 'TLS / Certificate'], ['body', 'Body capture'], ['upstream', 'Upstream proxy'], ['access', 'Access control'], ['hotkeys', 'Shortcuts']];
+    const tabs = [['cert', 'TLS / Certificate'], ['body', 'Body capture'], ['upstream', 'Upstream proxy'], ['access', 'Access control']];
     const nav = tabs.map(([id, l]) => `<button data-settab="${id}" style="display:block;width:100%;text-align:left;background:${settingsTab === id ? C.bg3 : 'transparent'};border:none;cursor:pointer;padding:7px 10px;border-radius:3px;margin-bottom:2px;color:${settingsTab === id ? C.ink : C.dim};font-size:12px;font-family:Inter;font-weight:500">${l}</button>`).join('');
     openModal(modalHeader('Settings') +
       `<div class="grid" style="grid-template-columns:180px 1fr;min-height:380px">
@@ -672,10 +672,6 @@
     if (settingsTab === 'body') return bodyRulesPanel();
     if (settingsTab === 'upstream') return upstreamPanel();
     if (settingsTab === 'access') return accessPanel();
-    if (settingsTab === 'hotkeys') {
-      const keys = [['Space', 'Pause / resume capture'], ['⌘/Ctrl K', 'Filter requests'], ['⌘/Ctrl L', 'Clear session'], ['R', 'Replay selected'], ['Enter', 'Toggle detail pane'], ['J / K', 'Prev / next request']];
-      return keys.map(([k, l]) => `<div class="flex justify-between" style="padding:7px 2px;border-bottom:1px solid ${C.lineSoft};font-size:12px"><span style="color:${C.dim}">${l}</span><span style="font-family:'JetBrains Mono';color:${C.ink};background:${C.bg2};border:1px solid ${C.line};border-radius:3px;padding:1px 7px;font-size:11px">${k}</span></div>`).join('');
-    }
     return '';
   }
 
@@ -959,13 +955,6 @@
       renderList(); renderDetail();
     }));
 
-    document.addEventListener('keydown', (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-      if (e.code === 'Space') { e.preventDefault(); handleAction('toggle-capture'); }
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('#filter').focus(); }
-      if (e.key === 'l' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleAction('clear'); }
-      if (e.key === 'Escape') closeModal();
-    });
   }
 
   function handleAction(a) {
