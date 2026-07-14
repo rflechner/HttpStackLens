@@ -708,6 +708,74 @@ func TestCertificateGenerateHandlerReplacesExistingCAWhenRequested(t *testing.T)
 	}
 }
 
+func TestCertificateCleanupHandlerDisablesDecryptAndRemovesArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "ca.crt")
+	keyFile := filepath.Join(dir, "ca.key")
+	domains := filepath.Join(dir, "domains")
+	if err := certManager.GenerateCA(certFile, keyFile); err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+	if err := os.MkdirAll(domains, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	disableCalled := false
+	disableDecrypt := func() (bool, error) {
+		disableCalled = true
+		return true, nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/certificates/cleanup", nil)
+	rr := httptest.NewRecorder()
+	certificateCleanupHandler(configuration.CertManagerConfig{
+		CaCertFile:        certFile,
+		CaKeyFile:         keyFile,
+		DomainCertsFolder: domains,
+	}, fakeCertInstaller{}, disableDecrypt).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !disableCalled {
+		t.Error("cleanup did not disable HTTPS decryption")
+	}
+	var got shared.CertificatesCleanupResultDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !got.DecryptionDisabled {
+		t.Error("DecryptionDisabled = false, want true")
+	}
+	if !got.DomainFolderRemoved {
+		t.Error("DomainFolderRemoved = false, want true")
+	}
+	if len(got.RemovedFiles) != 2 {
+		t.Errorf("RemovedFiles = %v, want the 2 CA files", got.RemovedFiles)
+	}
+	if got.Certificates.Available {
+		t.Error("Certificates.Available = true after CA files deleted, want false")
+	}
+	for _, p := range []string{certFile, keyFile, domains} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s still exists after cleanup (err=%v)", p, err)
+		}
+	}
+}
+
+func TestCertificateCleanupHandlerRejectsNonPost(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/certificates/cleanup", nil)
+	rr := httptest.NewRecorder()
+	certificateCleanupHandler(configuration.CertManagerConfig{}, fakeCertInstaller{}, nil).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	if got := rr.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("Allow = %q, want POST", got)
+	}
+}
+
 func TestCertificateInstallHandlerInstallsExistingCA(t *testing.T) {
 	dir := t.TempDir()
 	certFile := filepath.Join(dir, "ca.crt")

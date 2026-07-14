@@ -953,6 +953,7 @@
     if (r.domain_folder_removed) parts.push('Deleted the per-domain certificates folder.');
     const files = Array.isArray(r.removed_files) ? r.removed_files : [];
     if (files.length) parts.push(`Deleted ${files.length} CA file${files.length === 1 ? '' : 's'}.`);
+    if (r.decryption_disabled) parts.push('Turned HTTPS decryption off and reset the in-memory certificate cache.');
     const warnings = Array.isArray(r.warnings) ? r.warnings : [];
     const warnHTML = warnings.length ? `<div style="color:${C.warn};margin-top:6px">${warnings.map(w => '⚠ ' + esc(w)).join('<br>')}</div>` : '';
     return `<div style="margin-top:10px;padding:10px;background:${C.mint}10;border:1px solid ${C.mint}40;border-radius:4px;color:${C.ink};font-size:11.5px;line-height:1.6">${parts.map(esc).join('<br>')}${warnHTML}</div>`;

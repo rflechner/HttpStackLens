@@ -1078,6 +1078,12 @@ components:
         domain_folder_removed:
           type: boolean
           description: Whether the per-domain certificates folder was deleted.
+        decryption_disabled:
+          type: boolean
+          description: >-
+            True when cleanup turned HTTPS decryption off (dropping the in-memory
+            CertStore so it cannot repopulate the purged store). False when
+            decryption was already off or no runtime was available.
         warnings:
           type: array
           items:

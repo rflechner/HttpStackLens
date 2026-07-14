@@ -638,6 +638,7 @@ func cleanupResultToJS(dto shared.CertificatesCleanupResultDto) map[string]any {
 		"root_certs_removed":      dto.RootCertsRemoved,
 		"domain_certs_removed":    dto.DomainCertsRemoved,
 		"domain_folder_removed":   dto.DomainFolderRemoved,
+		"decryption_disabled":     dto.DecryptionDisabled,
 		"removed_files":           files,
 		"warnings":                warnings,
 	}

@@ -253,7 +253,12 @@ type CertificatesCleanupResultDto struct {
 	DomainCertsRemoved  int      `json:"domain_certs_removed"`
 	RemovedFiles        []string `json:"removed_files,omitempty"`
 	DomainFolderRemoved bool     `json:"domain_folder_removed"`
-	Warnings            []string `json:"warnings,omitempty"`
+	// DecryptionDisabled is true when the cleanup turned HTTPS decryption off as
+	// part of the operation (which drops the in-memory CertStore so it cannot
+	// repopulate the just-purged store). It is false when decryption was already
+	// off or no runtime was available to toggle.
+	DecryptionDisabled bool     `json:"decryption_disabled"`
+	Warnings           []string `json:"warnings,omitempty"`
 	// Certificates is the CA status after cleanup (typically "unavailable" since
 	// the CA files were deleted).
 	Certificates CertificatesInfosDto `json:"certificates"`
