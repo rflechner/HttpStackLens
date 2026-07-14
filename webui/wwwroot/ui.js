@@ -75,7 +75,7 @@
 
   // ─── state ───────────────────────────────────────────────
   const state = {
-    rows: [], selId: null, capturing: true, decryption: true,
+    rows: [], selId: null, capturing: true, proxyRunning: true, decryption: true,
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
     detailHeight: savedDetailHeight,
@@ -506,7 +506,8 @@
     const avg = timed.length ? Math.round(timed.reduce((s, r) => s + r.ms, 0) / timed.length) : 0;
     const err = rows.filter((r) => r.status >= 400).length;
     $('#statusbar').innerHTML = `
-      <span class="inline-flex items-center gap-[6px]" style="padding:0 10px 0 14px;color:${state.capturing ? C.mint : C.faint}"><span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'capturing' : 'paused'}</span>
+      <span class="inline-flex items-center gap-[6px]" style="padding:0 10px 0 14px;color:${state.proxyRunning ? C.mint : C.danger}">proxy ${state.proxyRunning ? 'running' : 'stopped'}</span>
+      <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.capturing ? C.mint : C.faint}"><span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'recording' : 'recording stopped'}</span>
       <span style="padding:0 10px;color:${C.dim}">${rows.length} req</span>
       <span style="padding:0 10px;color:${C.dim}">${err} errors</span>
       <span style="padding:0 10px;color:${C.dim}">avg ${avg}ms</span>
@@ -519,8 +520,13 @@
 
   // ─── toolbar state sync ──────────────────────────────────
   function renderToolbar() {
+    const proxy = $('#btn-proxy');
+    proxy.innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:${state.proxyRunning ? C.mint : C.danger}"></span>${state.proxyRunning ? 'Stop proxy' : 'Start proxy'}`;
+    proxy.style.color = state.proxyRunning ? C.mint : C.danger;
+    proxy.style.background = state.proxyRunning ? C.bg3 : 'transparent';
+
     const cap = $('#btn-capture');
-    cap.innerHTML = `<span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'Capturing' : 'Paused'}`;
+    cap.innerHTML = `<span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'Stop recording' : 'Start recording'}`;
     cap.style.color = state.capturing ? C.mint : C.dim;
     cap.style.background = state.capturing ? C.bg3 : 'transparent';
 
@@ -788,6 +794,11 @@
     if (typeof fn === 'function') fn(action);
   }
 
+  function proxyAction(action) {
+    const fn = window.hslProxy;
+    if (typeof fn === 'function') fn(action);
+  }
+
   function decryptHttps(enabled) {
     const fn = window.hslDecryptHttps;
     if (typeof fn === 'function') fn(enabled);
@@ -1018,10 +1029,10 @@
         break;
       case 'access-reload': state.access.error = null; state.access.loaded = false; renderSettings(); break;
       case 'toggle-capture':
-        // Optimistic flip; the capture_state event will confirm/correct it.
-        captureAction(state.capturing ? 'pause' : 'resume');
-        state.capturing = !state.capturing;
-        renderToolbar(); renderStatusBar();
+        captureAction(state.capturing ? 'stop' : 'start');
+        break;
+      case 'toggle-proxy':
+        proxyAction(state.proxyRunning ? 'stop' : 'start');
         break;
       case 'clear':
         captureAction('clear');
@@ -1079,7 +1090,9 @@
   // ─── capture state (from SSE capture_state, via WASM) ────
   function setCaptureState(s) {
     if (!s) return;
-    if (typeof s.capturing === 'boolean') state.capturing = s.capturing;
+    if (typeof s.recording === 'boolean') state.capturing = s.recording;
+    else if (typeof s.capturing === 'boolean') state.capturing = s.capturing;
+    if (s.proxy && typeof s.proxy.running === 'boolean') state.proxyRunning = s.proxy.running;
     // decrypt / upstream / access come from the backend (F3.2); the status bar
     // and toolbar reflect the real pipeline state rather than local toggles.
     if (s.decrypt && typeof s.decrypt.enabled === 'boolean') state.decryption = s.decrypt.enabled;

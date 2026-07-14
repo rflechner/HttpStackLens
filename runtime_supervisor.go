@@ -38,6 +38,8 @@ type runtimeSupervisor struct {
 	config        *runtimeConfigState
 	appContext    AppContext
 	proxy         *ProxyServer
+	retired       []*ProxyServer
+	proxyCtl      *storage.ProxyController
 	eventLogger   ProxyEventLogger
 	decrypt       *decryptHttpsRuntime
 	decryptStore  *configuration.DecryptHttpsConfigStore
@@ -55,7 +57,6 @@ func (s *runtimeSupervisor) Run(commands <-chan webui.RuntimeCommand, stop <-cha
 			result := s.apply(command)
 			command.Reply <- result
 		case <-stop:
-			s.proxy.Close()
 			return
 		}
 	}
@@ -90,10 +91,53 @@ func (s *runtimeSupervisor) apply(command webui.RuntimeCommand) webui.RuntimeCom
 	case webui.SetAccessControl:
 		result.Err = s.setAccessControl(command.AccessControl)
 
+	case webui.StartProxy:
+		result.Err = s.startProxy()
+		result.ProxyRunning = s.proxyCtl.IsRunning()
+
+	case webui.StopProxy:
+		s.stopProxy()
+		result.ProxyRunning = s.proxyCtl.IsRunning()
+
 	default:
 		result.Err = fmt.Errorf("unknown runtime command %d", command.Kind)
 	}
 	return result
+}
+
+func (s *runtimeSupervisor) startProxy() error {
+	if s.proxyCtl.IsRunning() {
+		return nil
+	}
+	proxy, err := CreateProxyServer(s.appContext, s.eventLogger, s.config.Snapshot().Proxy, s.accessStore, s.capture, s.requests, s.captureCtl)
+	if err != nil {
+		return err
+	}
+	s.proxy = proxy
+	s.proxyCtl.SetRunning(true)
+	go proxy.Run()
+	return nil
+}
+
+func (s *runtimeSupervisor) stopProxy() {
+	if !s.proxyCtl.IsRunning() {
+		return
+	}
+	s.proxy.StopAccepting()
+	s.retired = append(s.retired, s.proxy)
+	s.proxyCtl.SetRunning(false)
+}
+
+func (s *runtimeSupervisor) closeAllProxies() {
+	if s.proxy != nil {
+		s.proxy.Close()
+	}
+	for _, proxy := range s.retired {
+		if proxy != nil && proxy != s.proxy {
+			proxy.Close()
+		}
+	}
+	s.proxyCtl.SetRunning(false)
 }
 
 func (s *runtimeSupervisor) setUpstream(settings configuration.UpstreamSettings) error {
@@ -125,14 +169,15 @@ func (s *runtimeSupervisor) setUpstream(settings configuration.UpstreamSettings)
 
 func (s *runtimeSupervisor) setAccessControl(settings configuration.AccessControlSettings) error {
 	old := s.accessStore.Get()
-	restart := old.Proxy.ListenHost() != settings.Proxy.ListenHost()
+	restart := s.proxyCtl.IsRunning() && old.Proxy.ListenHost() != settings.Proxy.ListenHost()
 
 	if err := configuration.PersistAccessControlSettings(settings); err != nil {
 		return err
 	}
 
 	if restart {
-		s.proxy.Close()
+		s.proxy.StopAccepting()
+		s.retired = append(s.retired, s.proxy)
 		s.accessStore.Update(settings)
 		proxy, err := CreateProxyServer(s.appContext, s.eventLogger, s.config.Snapshot().Proxy, s.accessStore, s.capture, s.requests, s.captureCtl)
 		if err != nil {

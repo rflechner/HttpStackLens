@@ -356,10 +356,95 @@ paths:
                 type: string
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/recording/state:
+    get:
+      tags: [Runtime]
+      summary: Read live recording and proxy state
+      responses:
+        "200":
+          description: Current recording and proxy runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/recording/start:
+    post:
+      tags: [Runtime]
+      summary: Start recording traffic for the inspector
+      description: Proxy forwarding is unaffected. This runtime switch does not change `storage.enable`, which independently controls `.capture` file persistence.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/recording/stop:
+    post:
+      tags: [Runtime]
+      summary: Stop recording traffic for the inspector
+      description: Proxy forwarding continues, but new UI events and in-memory/file records are gated.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/recording/clear:
+    post:
+      tags: [Runtime]
+      summary: Clear the current inspector session
+      description: Clears the in-memory request buffer without deleting saved `.capture` files.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/proxy/state:
+    get:
+      tags: [Runtime]
+      summary: Read proxy listener state
+      responses:
+        "200":
+          description: Current runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+  /api/proxy/start:
+    post:
+      tags: [Runtime]
+      summary: Start the proxy listener
+      description: Starts accepting new proxy connections. The Web UI server is independent and remains available.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/proxy/stop:
+    post:
+      tags: [Runtime]
+      summary: Stop the proxy listener
+      description: Stops accepting new proxy connections. Existing accepted connections may finish; the Web UI remains available.
+      responses:
+        "200":
+          description: Updated runtime state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureState"
   /api/capture/state:
     get:
       tags: [Captures]
       summary: Read live capture state
+      deprecated: true
       responses:
         "200":
           description: Current live capture state
@@ -373,7 +458,8 @@ paths:
     post:
       tags: [Captures]
       summary: Pause live capture
-      description: Proxy forwarding continues, but new UI events and records are gated. Persists `storage.enable=false` to `config.yaml`.
+      deprecated: true
+      description: Compatibility alias for `POST /api/recording/stop`. Proxy forwarding continues and `storage.enable` is not changed.
       responses:
         "200":
           description: Updated capture state
@@ -388,8 +474,9 @@ paths:
   /api/capture/resume:
     post:
       tags: [Captures]
+      deprecated: true
       summary: Resume live capture
-      description: Persists `storage.enable=true` to `config.yaml`.
+      description: Compatibility alias for `POST /api/recording/start`. Does not change `storage.enable`.
       responses:
         "200":
           description: Updated capture state
@@ -404,6 +491,7 @@ paths:
   /api/capture/clear:
     post:
       tags: [Captures]
+      deprecated: true
       summary: Clear the in-memory request buffer
       description: Does not delete `.capture` files from disk.
       responses:
@@ -699,14 +787,25 @@ components:
           type: integer
     CaptureState:
       type: object
-      required: [capturing, buffer_size, decrypt, upstream, access]
+      required: [capturing, recording, buffer_size, proxy, decrypt, upstream, access]
       properties:
         capturing:
           type: boolean
-          description: Whether live capture is currently accepting new UI events and records.
+          deprecated: true
+          description: Compatibility alias for `recording`.
+        recording:
+          type: boolean
+          description: Whether the inspector is accepting new UI events and records. This does not control proxy forwarding or `storage.enable`.
         buffer_size:
           type: integer
           description: Number of exchanges currently kept in the in-memory request buffer.
+        proxy:
+          type: object
+          required: [running]
+          description: Runtime state of the proxy TCP listener. The Web UI listener is independent.
+          properties:
+            running:
+              type: boolean
         decrypt:
           type: object
           required: [enabled]

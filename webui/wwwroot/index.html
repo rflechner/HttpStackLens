@@ -124,10 +124,12 @@
 
   <!-- toolbar -->
   <div class="flex items-center gap-2 flex-shrink-0" style="height:52px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)">
+    <button id="btn-proxy" class="hsl-tb" data-action="toggle-proxy"></button>
+    <div style="width:1px;height:22px;background:var(--line);margin:0 4px"></div>
     <button id="btn-capture" class="hsl-tb" data-action="toggle-capture"></button>
     <button class="hsl-tb" data-action="clear">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 3.8h9M5.2 3.8V2.6h3.6v1.2M4 3.8l.4 7.2h5.2l.4-7.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Clear
+      Clear session
     </button>
     <div style="width:1px;height:22px;background:var(--line);margin:0 4px"></div>
     <button id="btn-decrypt" class="hsl-tb" data-action="toggle-decrypt"></button>

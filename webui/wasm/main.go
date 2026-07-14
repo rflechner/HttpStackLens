@@ -256,8 +256,10 @@ func (m *StateModel) connectSSE() {
 // bar consumes (capturing + live decrypt/upstream/access states).
 func captureStateToJS(st shared.CaptureStateDto) map[string]any {
 	return map[string]any{
+		"recording":  st.Recording,
 		"capturing":  st.Capturing,
 		"bufferSize": st.BufferSize,
+		"proxy":      map[string]any{"running": st.Proxy.Running},
 		"decrypt":    map[string]any{"enabled": st.Decrypt.Enabled},
 		"upstream":   map[string]any{"enabled": st.Upstream.Enabled, "ntlm": st.Upstream.Ntlm},
 		"access":     map[string]any{"mode": st.Access.Mode},
@@ -412,6 +414,12 @@ func (m *StateModel) registerBridges() {
 	js.Global().Set("hslCapture", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) >= 1 {
 			capture(args[0].String())
+		}
+		return nil
+	}))
+	js.Global().Set("hslProxy", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			proxyAction(args[0].String())
 		}
 		return nil
 	}))
@@ -773,18 +781,29 @@ func (m *StateModel) loadAccessControl() {
 func capture(action string) {
 	var path string
 	switch action {
-	case "pause":
-		path = "/api/capture/pause"
-	case "resume":
-		path = "/api/capture/resume"
+	case "stop":
+		path = "/api/recording/stop"
+	case "start":
+		path = "/api/recording/start"
 	case "clear":
-		path = "/api/capture/clear"
+		path = "/api/recording/clear"
 	default:
 		return
 	}
 	js.Global().Call("fetch", path, map[string]any{"method": "POST"}).
 		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
 			consoleLog("capture " + action + " failed: " + args[0].String())
+			return nil
+		}))
+}
+
+func proxyAction(action string) {
+	if action != "start" && action != "stop" {
+		return
+	}
+	js.Global().Call("fetch", "/api/proxy/"+action, map[string]any{"method": "POST"}).
+		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+			consoleLog("proxy " + action + " failed: " + args[0].String())
 			return nil
 		}))
 }

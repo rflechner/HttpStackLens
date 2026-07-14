@@ -49,7 +49,10 @@ func main() {
 	// Keeps the most recent request/response records in memory so the Web UI can
 	// fetch their full headers and bodies on demand.
 	requestStore := storage.NewRequestStore(storage.DefaultRequestStoreSize)
-	captureCtl := storage.NewCaptureController(config.Storage.Enable)
+	// Live recording is independent from storage.enable, which only controls
+	// whether the recorded traffic is also persisted to .capture files.
+	captureCtl := storage.NewCaptureController(true)
+	proxyCtl := storage.NewProxyController(true)
 	decryptHttpsSettings := configuration.NewDecryptHttpsConfigStore(config.DecryptHttps)
 	upstreamSettings := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettingsFromProxyConfig(config.Proxy))
 	accessControlSettings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettingsFromConfig(config))
@@ -74,6 +77,7 @@ func main() {
 		AccessControlSettings: accessControlSettings,
 		Requests:              requestStore,
 		Capture:               captureCtl,
+		Proxy:                 proxyCtl,
 		Commands:              runtimeCommands,
 	})
 
@@ -103,6 +107,7 @@ func main() {
 		capture:       captureWriter,
 		requests:      requestStore,
 		captureCtl:    captureCtl,
+		proxyCtl:      proxyCtl,
 	}
 
 	go proxyServer.Run()
@@ -122,7 +127,7 @@ func main() {
 
 	select {
 	case <-stopChan:
-		proxyServer.Close()
+		supervisor.closeAllProxies()
 	}
 }
 

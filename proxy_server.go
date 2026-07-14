@@ -69,15 +69,8 @@ func CreateProxyServer(appContext AppContext, eventLogger ProxyEventLogger, conf
 }
 
 func (s *ProxyServer) Close() {
+	s.StopAccepting()
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return
-	}
-	s.closed = true
-	if err := s.listener.Close(); err != nil {
-		log.Printf("Warning when closing browser connection: %v\n", err.Error())
-	}
 	for connection := range s.connections {
 		if err := connection.Close(); err != nil {
 			log.Printf("Warning when closing active proxy connection: %v\n", err)
@@ -86,12 +79,35 @@ func (s *ProxyServer) Close() {
 	s.mu.Unlock()
 }
 
+// StopAccepting closes only the listener. Connections that were already
+// accepted keep running so HTTP exchanges can finish naturally. Close is used
+// for full application shutdown when those active connections must also end.
+func (s *ProxyServer) StopAccepting() {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	listener := s.listener
+	s.mu.Unlock()
+	if listener != nil {
+		if err := listener.Close(); err != nil && !isClosedNetworkError(err) {
+			log.Printf("Warning when stopping proxy listener: %v\n", err)
+		}
+	}
+}
+
+func isClosedNetworkError(err error) bool {
+	return err != nil && err == net.ErrClosed
+}
+
 func (s *ProxyServer) Run() {
 	requestId := 0
 	for {
 		browser, err := s.listener.Accept()
 		if err != nil {
-			if s.closed {
+			if s.isClosed() {
 				return
 			}
 			log.Println("Error accepting connection:", err)
@@ -113,6 +129,12 @@ func (s *ProxyServer) Run() {
 			s.handleRequest(connection, id)(s.appContext.pipeline)
 		}(browser, requestId)
 	}
+}
+
+func (s *ProxyServer) isClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
 }
 
 func (s *ProxyServer) trackConnection(connection net.Conn) bool {

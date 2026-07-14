@@ -331,8 +331,46 @@ func TestCaptureStateHandlerReturnsState(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !got.Capturing || got.BufferSize != 1 {
-		t.Fatalf("state = %+v, want capturing true and buffer size 1", got)
+	if !got.Capturing || !got.Recording || got.BufferSize != 1 {
+		t.Fatalf("state = %+v, want recording/capturing true and buffer size 1", got)
+	}
+}
+
+func TestCaptureStateDtoReportsProxyRuntimeState(t *testing.T) {
+	proxyCtl := storage.NewProxyController(true)
+	got := captureStateDto(nil, nil, nil, nil, nil, proxyCtl)
+	if !got.Proxy.Running {
+		t.Fatal("proxy runtime state should be running")
+	}
+	proxyCtl.SetRunning(false)
+	got = captureStateDto(nil, nil, nil, nil, nil, proxyCtl)
+	if got.Proxy.Running {
+		t.Fatal("proxy runtime state should be stopped")
+	}
+}
+
+func TestProxyRuntimeHandlerChangesState(t *testing.T) {
+	proxyCtl := storage.NewProxyController(true)
+	update := func(running bool) (bool, error) {
+		proxyCtl.SetRunning(running)
+		return running, nil
+	}
+	state := func() shared.CaptureStateDto {
+		return captureStateDto(nil, nil, nil, nil, nil, proxyCtl)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/proxy/stop", nil)
+	rr := httptest.NewRecorder()
+	proxyRuntimeHandler(false, nil, update, state).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || proxyCtl.IsRunning() {
+		t.Fatalf("stop status = %d, running = %t", rr.Code, proxyCtl.IsRunning())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/proxy/start", nil)
+	rr = httptest.NewRecorder()
+	proxyRuntimeHandler(true, nil, update, state).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !proxyCtl.IsRunning() {
+		t.Fatalf("start status = %d, running = %t", rr.Code, proxyCtl.IsRunning())
 	}
 }
 

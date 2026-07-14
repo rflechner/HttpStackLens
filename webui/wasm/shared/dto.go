@@ -154,11 +154,19 @@ type CaptureResponseRecordDto struct {
 }
 
 type CaptureStateDto struct {
+	// Capturing is kept for older UI clients. Recording is the preferred name:
+	// it gates inspection/storage but never controls proxy forwarding.
 	Capturing  bool                    `json:"capturing"`
+	Recording  bool                    `json:"recording"`
 	BufferSize int                     `json:"buffer_size"`
+	Proxy      ProxyRuntimeStateDto    `json:"proxy"`
 	Decrypt    CaptureDecryptStateDto  `json:"decrypt"`
 	Upstream   CaptureUpstreamStateDto `json:"upstream"`
 	Access     CaptureAccessStateDto   `json:"access"`
+}
+
+type ProxyRuntimeStateDto struct {
+	Running bool `json:"running"`
 }
 
 // CaptureDecryptStateDto reports whether HTTPS decryption (MITM) is currently on,

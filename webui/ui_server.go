@@ -35,6 +35,7 @@ type bodyCaptureSettingsPersister func(configuration.DecryptHttpsConfig) error
 type upstreamSettingsPersister func(configuration.UpstreamSettings) error
 type accessControlSettingsPersister func(configuration.AccessControlSettings) error
 type decryptHttpsToggleUpdater func(bool) (configuration.DecryptHttpsConfig, error)
+type proxyRuntimeUpdater func(bool) (bool, error)
 
 type RuntimeCommandKind int
 
@@ -44,6 +45,8 @@ const (
 	SetDecryptHTTPS
 	SetUpstream
 	SetAccessControl
+	StartProxy
+	StopProxy
 )
 
 // RuntimeCommand is emitted by the HTTP adapter and handled by the application
@@ -60,6 +63,7 @@ type RuntimeCommand struct {
 
 type RuntimeCommandResult struct {
 	DecryptHTTPS configuration.DecryptHttpsConfig
+	ProxyRunning bool
 	Err          error
 }
 
@@ -71,6 +75,7 @@ type Dependencies struct {
 	AccessControlSettings *configuration.AccessControlSettingsStore
 	Requests              *storage.RequestStore
 	Capture               *storage.CaptureController
+	Proxy                 *storage.ProxyController
 	Commands              chan<- RuntimeCommand
 }
 
@@ -183,6 +188,7 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	accessControlSettings := deps.AccessControlSettings
 	requestStore := deps.Requests
 	captureCtl := deps.Capture
+	proxyCtl := deps.Proxy
 
 	send := func(command RuntimeCommand) RuntimeCommandResult {
 		if deps.Commands == nil {
@@ -191,9 +197,6 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 		command.Reply = make(chan RuntimeCommandResult, 1)
 		deps.Commands <- command
 		return <-command.Reply
-	}
-	persistStorageEnabled := func(enabled bool) error {
-		return send(RuntimeCommand{Kind: SetStorageEnabled, Enabled: enabled}).Err
 	}
 	persistBodyCaptureSettings := func(settings configuration.DecryptHttpsConfig) error {
 		return send(RuntimeCommand{Kind: SetBodyCapture, DecryptHTTPS: settings}).Err
@@ -207,6 +210,14 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	updateDecryptHttps := func(enabled bool) (configuration.DecryptHttpsConfig, error) {
 		result := send(RuntimeCommand{Kind: SetDecryptHTTPS, Enabled: enabled})
 		return result.DecryptHTTPS, result.Err
+	}
+	updateProxy := func(running bool) (bool, error) {
+		kind := StopProxy
+		if running {
+			kind = StartProxy
+		}
+		result := send(RuntimeCommand{Kind: kind})
+		return result.ProxyRunning, result.Err
 	}
 	rootFS := getFS()
 
@@ -281,15 +292,24 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	// and the /api/capture/state endpoint. It bundles the capture flag with the
 	// live decrypt/upstream/access states so the status bar (F3.2) stays in sync.
 	captureState := func() shared.CaptureStateDto {
-		return captureStateDto(captureCtl, requestStore, decryptHttpsSettings, upstreamSettings, accessControlSettings)
+		return captureStateDto(captureCtl, requestStore, decryptHttpsSettings, upstreamSettings, accessControlSettings, proxyCtl)
 	}
 	broadcastCaptureState := func() { publishCaptureState(hub, captureState()) }
 	mux.HandleFunc("/events", sseHandler(hub))
 	mux.HandleFunc("/api/requests/", requestsAPIHandler(requestStore))
 	mux.HandleFunc("/api/capture/state", captureStateHandler(captureState))
-	mux.HandleFunc("/api/capture/pause", capturePauseHandler(hub, captureCtl, persistStorageEnabled, captureState))
-	mux.HandleFunc("/api/capture/resume", captureResumeHandler(hub, captureCtl, persistStorageEnabled, captureState))
+	mux.HandleFunc("/api/capture/pause", capturePauseHandler(hub, captureCtl, nil, captureState))
+	mux.HandleFunc("/api/capture/resume", captureResumeHandler(hub, captureCtl, nil, captureState))
 	mux.HandleFunc("/api/capture/clear", captureClearHandler(hub, requestStore, captureState))
+	// Preferred recording terminology. The capture routes remain as compatible
+	// aliases for existing clients.
+	mux.HandleFunc("/api/recording/state", captureStateHandler(captureState))
+	mux.HandleFunc("/api/recording/start", captureResumeHandler(hub, captureCtl, nil, captureState))
+	mux.HandleFunc("/api/recording/stop", capturePauseHandler(hub, captureCtl, nil, captureState))
+	mux.HandleFunc("/api/recording/clear", captureClearHandler(hub, requestStore, captureState))
+	mux.HandleFunc("/api/proxy/start", proxyRuntimeHandler(true, hub, updateProxy, captureState))
+	mux.HandleFunc("/api/proxy/stop", proxyRuntimeHandler(false, hub, updateProxy, captureState))
+	mux.HandleFunc("/api/proxy/state", captureStateHandler(captureState))
 	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
@@ -444,7 +464,7 @@ func captureClearHandler(hub *Hub, store *storage.RequestStore, stateFn func() s
 	}
 }
 
-func captureStateDto(captureCtl *storage.CaptureController, store *storage.RequestStore, decryptSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessSettings *configuration.AccessControlSettingsStore) shared.CaptureStateDto {
+func captureStateDto(captureCtl *storage.CaptureController, store *storage.RequestStore, decryptSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessSettings *configuration.AccessControlSettingsStore, proxyControllers ...*storage.ProxyController) shared.CaptureStateDto {
 	size := 0
 	if store != nil {
 		size = store.Len()
@@ -453,7 +473,10 @@ func captureStateDto(captureCtl *storage.CaptureController, store *storage.Reque
 	if captureCtl != nil {
 		capturing = captureCtl.IsCapturing()
 	}
-	dto := shared.CaptureStateDto{Capturing: capturing, BufferSize: size}
+	dto := shared.CaptureStateDto{Capturing: capturing, Recording: capturing, BufferSize: size}
+	if len(proxyControllers) > 0 && proxyControllers[0] != nil {
+		dto.Proxy.Running = proxyControllers[0].IsRunning()
+	}
 	if decryptSettings != nil {
 		dto.Decrypt.Enabled = decryptSettings.Get().Enabled
 	}
@@ -466,6 +489,31 @@ func captureStateDto(captureCtl *storage.CaptureController, store *storage.Reque
 		dto.Access.Mode = string(accessSettings.Get().Proxy.Mode)
 	}
 	return dto
+}
+
+func proxyRuntimeHandler(start bool, hub *Hub, update proxyRuntimeUpdater, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if update == nil {
+			http.Error(w, "proxy runtime control is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if _, err := update(start); err != nil {
+			log.Printf("Could not change proxy runtime state: %v", err)
+			http.Error(w, "could not change proxy runtime state", http.StatusInternalServerError)
+			return
+		}
+		state := shared.CaptureStateDto{}
+		if stateFn != nil {
+			state = stateFn()
+		}
+		publishCaptureState(hub, state)
+		writeJSON(w, state)
+	}
 }
 
 func publishCaptureState(hub *Hub, state shared.CaptureStateDto) {
