@@ -5,30 +5,45 @@
 (function () {
   'use strict';
 
-  // ─── palette (mirrors Tailwind config) ───────────────────
+  // ─── palettes ────────────────────────────────────────────
+  // Every colour family has a light and a dark variant. `mint` is the UI's
+  // semantic accent slot; its actual hue depends on the selected theme.
+  const LIGHT_BASE = {
+    desk: '#e9e5de', sidebar: '#faf8f4', bg0: '#f1eee8', bg1: '#ffffff', bg2: '#f6f3ee', bg3: '#eae5db',
+    line: '#e5e0d6', lineSoft: '#efebe3', ink: '#2b2926', dim: '#6f6b62', faint: '#a49f94',
+    warn: '#c98a2b', danger: '#d1584f', info: '#4a7fc4', pink: '#9a6cc9', white: '#ffffff', onAccent: '#ffffff',
+    success: '#3f9d6b', scroll: '#d8d2c6', scrollHover: '#c7c0b2',
+  };
+  const DARK_BASE = {
+    desk: '#0a0b0d', sidebar: '#15171c', bg0: '#0e0f12', bg1: '#15171c', bg2: '#1c1f26', bg3: '#23272f',
+    line: '#262a33', lineSoft: '#1f232a', ink: '#d8dce4', dim: '#8a93a3', faint: '#5a6173',
+    warn: '#f1b45a', danger: '#e86a6a', info: '#7aa7ff', pink: '#d48ad6', white: '#ffffff', onAccent: '#0c1210',
+    success: '#7fd4b4', scroll: '#23272f', scrollHover: '#2f343d',
+  };
+  const palette = (base, accent, overrides) => Object.assign({}, base, { mint: accent }, overrides || {});
   const PALETTES = {
-    light: {
-      bg0: '#f1eee8', bg1: '#ffffff', bg2: '#f6f3ee', bg3: '#eae5db',
-      line: '#e5e0d6', lineSoft: '#efebe3',
-      ink: '#2b2926', dim: '#6f6b62', faint: '#a49f94',
-      mint: '#2f9e8f', warn: '#c98a2b', danger: '#d1584f', info: '#4a7fc4', pink: '#9a6cc9',
-      white: '#ffffff', onAccent: '#0c2a24',
-    },
-    dark: {
-      bg0: '#0e0f12', bg1: '#15171c', bg2: '#1c1f26', bg3: '#23272f',
-      line: '#262a33', lineSoft: '#1f232a',
-      ink: '#d8dce4', dim: '#8a93a3', faint: '#5a6173',
-      mint: '#7fd4b4', warn: '#f1b45a', danger: '#e86a6a', info: '#7aa7ff', pink: '#d48ad6',
-      white: '#ffffff', onAccent: '#0c2a24',
-    },
+    light: palette(LIGHT_BASE, '#2f9e8f', { onAccent: '#0c2a24' }),
+    dark: palette(DARK_BASE, '#7fd4b4', { onAccent: '#0c2a24' }),
+    'rose-light': palette(LIGHT_BASE, '#bd3f83', { desk: '#f0e6eb', sidebar: '#fff8fb', bg0: '#f8eff3', bg2: '#fdf5f8', bg3: '#f1dfe8', line: '#ead3de', lineSoft: '#f3e4eb', info: '#7766c5', pink: '#bd3f83' }),
+    'rose-dark': palette(DARK_BASE, '#f08fbd', { desk: '#100a0e', sidebar: '#1b1218', bg0: '#120c10', bg1: '#1b1218', bg2: '#251820', bg3: '#30202a', line: '#392530', lineSoft: '#2c1d25', pink: '#f08fbd' }),
+    'yellow-light': palette(LIGHT_BASE, '#a96d00', { desk: '#eee9d8', sidebar: '#fffdf4', bg0: '#f7f3e5', bg2: '#fcf8ea', bg3: '#eee5c6', line: '#e4d9b7', lineSoft: '#f0e8ce', warn: '#a96d00', onAccent: '#ffffff' }),
+    'yellow-dark': palette(DARK_BASE, '#ffd166', { desk: '#0e0d08', sidebar: '#19170f', bg0: '#111008', bg1: '#19170f', bg2: '#222017', bg3: '#2d291b', line: '#383321', lineSoft: '#292619', warn: '#ffd166', onAccent: '#2c2100' }),
+    'green-light': palette(LIGHT_BASE, '#16855b', { desk: '#e2ebe5', sidebar: '#f7fcf8', bg0: '#edf5ef', bg2: '#f4faf6', bg3: '#dcecdf', line: '#cfe1d3', lineSoft: '#e3eee5', success: '#16855b' }),
+    'green-dark': palette(DARK_BASE, '#63e6a6', { desk: '#070e0a', sidebar: '#101a14', bg0: '#09110c', bg1: '#101a14', bg2: '#17241c', bg3: '#1e3025', line: '#263b2e', lineSoft: '#1c2c22', success: '#63e6a6' }),
+    'blue-light': palette(LIGHT_BASE, '#2869c7', { desk: '#e1e8f0', sidebar: '#f7faff', bg0: '#edf2f8', bg2: '#f4f7fc', bg3: '#dce6f3', line: '#cfdae8', lineSoft: '#e2e9f2', info: '#2869c7' }),
+    'blue-dark': palette(DARK_BASE, '#65a7ff', { desk: '#080c12', sidebar: '#111823', bg0: '#0a1018', bg1: '#111823', bg2: '#182231', bg3: '#202d40', line: '#29394f', lineSoft: '#1d2939', info: '#65a7ff' }),
+    'contrast-light': palette(LIGHT_BASE, '#005fcc', { desk: '#ffffff', sidebar: '#ffffff', bg0: '#ffffff', bg2: '#f2f2f2', bg3: '#d9e8ff', line: '#292929', lineSoft: '#b5b5b5', ink: '#000000', dim: '#292929', faint: '#555555', danger: '#b00020', warn: '#7a4b00', info: '#005fcc', pink: '#7b1fa2', success: '#006b35', scroll: '#555555', scrollHover: '#111111' }),
+    'contrast-dark': palette(DARK_BASE, '#00ffff', { desk: '#000000', sidebar: '#000000', bg0: '#000000', bg1: '#000000', bg2: '#111111', bg3: '#202020', line: '#ffffff', lineSoft: '#666666', ink: '#ffffff', dim: '#eeeeee', faint: '#bdbdbd', danger: '#ff5c5c', warn: '#ffe066', info: '#66b3ff', pink: '#ff8cff', success: '#66ff99', scroll: '#aaaaaa', scrollHover: '#ffffff', onAccent: '#000000' }),
   };
-  const METHODS_BY_THEME = {
-    light: { GET: '#2f9e8f', POST: '#c98a2b', PUT: '#4a7fc4', DELETE: '#d1584f', PATCH: '#9a6cc9', OPTIONS: '#6f6b62', HEAD: '#6f6b62', CONNECT: '#a49f94' },
-    dark: { GET: '#7fd4b4', POST: '#f1b45a', PUT: '#7aa7ff', DELETE: '#e86a6a', PATCH: '#d48ad6', OPTIONS: '#8a93a3', HEAD: '#8a93a3', CONNECT: '#5a6173' },
-  };
-  let themeName = (function () { try { return localStorage.getItem('hsl-theme') === 'dark' ? 'dark' : 'light'; } catch (e) { return 'light'; } })();
+  function methodColors(colors) {
+    return { GET: colors.mint, POST: colors.warn, PUT: colors.info, DELETE: colors.danger, PATCH: colors.pink, OPTIONS: colors.dim, HEAD: colors.dim, CONNECT: colors.faint };
+  }
+  let themeName = (function () {
+    try { const saved = localStorage.getItem('hsl-theme'); return PALETTES[saved] ? saved : 'light'; }
+    catch (e) { return 'light'; }
+  })();
   let C = PALETTES[themeName];
-  let METHOD_COLOR = METHODS_BY_THEME[themeName];
+  let METHOD_COLOR = methodColors(C);
   let savedDetailHeight = null;
   try {
     const stored = Number(localStorage.getItem('hsl-detail-height'));
@@ -68,6 +83,7 @@
   }
   function fmtMs(ms) { if (ms == null) return '—'; return ms >= 1000 ? (ms / 1000).toFixed(2) + 's' : ms + 'ms'; }
   function fmtTime(ts) {
+    if (ts == null) return '—';
     const d = new Date(ts), p = (n) => String(n).padStart(2, '0');
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
   }
@@ -76,6 +92,9 @@
   // ─── state ───────────────────────────────────────────────
   const state = {
     rows: [], selId: null, capturing: true, proxyRunning: true, proxyAddress: '', decryption: true,
+    liveRows: [],
+    source: { kind: 'live', name: '', metadata: null },
+    captures: { files: [], loading: false, loaded: false, opening: false, error: null },
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
     density: 'normal',
     detailHeight: savedDetailHeight,
@@ -106,6 +125,210 @@
     return `<svg width="10" height="12" viewBox="0 0 10 12" fill="none" style="display:block">
       <rect x="1" y="5" width="8" height="6" rx="1" stroke="${c}" stroke-width="1"/>
       <path d="${on ? 'M3 5V3.5a2 2 0 014 0V5' : 'M3 5V3.5a2 2 0 013-1.7'}" stroke="${c}" stroke-width="1" stroke-linecap="round"/></svg>`;
+  }
+
+  // ─── live / saved capture sources ───────────────────────
+  function captureDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'unknown date';
+    const today = new Date();
+    const sameDay = date.toDateString() === today.toDateString();
+    return new Intl.DateTimeFormat(undefined, sameDay
+      ? { hour: '2-digit', minute: '2-digit' }
+      : { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date);
+  }
+
+  function renderCaptureSessions() {
+    const live = $('#live-session');
+    if (!live) return;
+    const isLive = state.source.kind === 'live';
+    live.style.background = isLive ? C.bg3 : 'transparent';
+    live.style.color = isLive ? C.ink : C.dim;
+    const dot = $('.rec-dot', live);
+    if (dot) dot.classList.toggle('on', state.capturing);
+    $('#live-session-count').textContent = state.liveRows.length;
+
+    const root = $('#capture-sessions');
+    const captures = state.captures;
+    if (captures.loading && !captures.loaded) {
+      root.innerHTML = `<div style="padding:8px 10px;color:${C.faint};font-size:11.5px">Loading captures…</div>`;
+      return;
+    }
+    const error = captures.error
+      ? `<div style="padding:8px 10px;color:${C.danger};font-size:11px;line-height:1.4">${esc(captures.error)}</div>`
+      : '';
+    if (!captures.files.length) {
+      root.innerHTML = error || `<div style="padding:8px 10px;color:${C.faint};font-size:11.5px">No saved captures</div>`;
+      return;
+    }
+    root.innerHTML = error + captures.files.map((file) => {
+      const active = state.source.kind === 'capture' && state.source.name === file.name;
+      const opening = captures.opening === file.name;
+      return `<button data-open-capture="${encodeURIComponent(file.name)}" class="flex items-center gap-[8px] w-full text-left rounded-[8px]" style="padding:7px 10px;border:none;cursor:pointer;background:${active ? C.bg3 : 'transparent'};color:${active ? C.ink : C.dim};font-family:Inter">
+        <span style="color:${active ? C.mint : C.faint};font-size:12px">${opening ? '◌' : '▣'}</span>
+        <span class="flex-1 min-w-0"><span class="block truncate" style="font-size:11.5px;font-weight:500">${esc(file.name.replace(/^capture-/, '').replace(/\.capture$/, ''))}</span><span class="block" style="font-size:10.5px;color:${C.faint};margin-top:2px">${captureDate(file.modified_at)} · ${fmtBytes(file.size)}</span></span>
+      </button>`;
+    }).join('');
+  }
+
+  function renderSourceBanner() {
+    const banner = $('#source-banner');
+    const waterfall = $('#waterfall');
+    const subtitle = $('#source-subtitle');
+    if (state.source.kind === 'live') {
+      if (subtitle) subtitle.textContent = 'Live session';
+      banner.style.display = 'none';
+      waterfall.style.display = 'flex';
+      return;
+    }
+    const metadata = state.source.metadata || {};
+    if (subtitle) subtitle.textContent = 'Saved capture';
+    banner.style.display = 'flex';
+    waterfall.style.display = 'none';
+    banner.style.cssText = `display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 16px;background:${C.bg2};border-bottom:1px solid ${C.line}`;
+    banner.innerHTML = `<span style="width:8px;height:8px;border-radius:4px;background:${C.info}"></span>
+      <div class="flex-1 min-w-0"><div class="truncate" style="font-size:12.5px;font-weight:600;color:${C.ink}">${esc(state.source.name)}</div>
+        <div style="font-size:11px;color:${C.dim};margin-top:2px">Read-only capture · ${state.rows.length} requests · ${fmtBytes(metadata.size)} · ${metadata.https_decrypted ? 'HTTPS decrypted' : 'HTTPS passthrough'} · timestamps unavailable</div></div>
+      <button data-action="back-to-live" style="display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:8px;border:1px solid ${C.mint};background:${C.mint};color:${C.onAccent};font-family:Inter;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 3px 10px ${C.mint}35">
+        <span aria-hidden="true" style="font-size:14px;line-height:1">●</span> Back to live
+      </button>`;
+  }
+
+  async function fetchJSON(url) {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      const message = (await response.text()).trim();
+      throw new Error(message || `HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
+  async function loadCaptureFiles() {
+    if (state.captures.loading) return;
+    state.captures.loading = true; state.captures.error = null;
+    renderCaptureSessions();
+    try {
+      const files = await fetchJSON('/api/captures');
+      state.captures.files = Array.isArray(files) ? files : [];
+      state.captures.loaded = true;
+    } catch (error) {
+      state.captures.error = `Could not list captures: ${error.message}`;
+    } finally {
+      state.captures.loading = false;
+      renderCaptureSessions();
+    }
+  }
+
+  function captureHeaders(headers) {
+    return Array.isArray(headers) ? headers.map((header) => [header.name || '', header.value || '']) : [];
+  }
+
+  function captureHeader(headers, name) {
+    const match = (headers || []).find((header) => String(header.name || '').toLowerCase() === name.toLowerCase());
+    return match ? match.value : '';
+  }
+
+  function capturedBody(record, contentType) {
+    return {
+      loaded: true,
+      loading: false,
+      available: !!record.body_available,
+      skipped: !!record.body_skipped,
+      contentType: contentType || '',
+      bodyBase64: record.body_base64 || '',
+    };
+  }
+
+  function captureRequestLocation(request) {
+    const raw = request.url || '/';
+    const hostHeader = captureHeader(request.headers, 'host');
+    if (request.method === 'CONNECT') return { scheme: 'https', host: raw, path: raw };
+    try {
+      const parsed = new URL(raw);
+      return { scheme: parsed.protocol.replace(':', ''), host: parsed.host, path: parsed.pathname + parsed.search };
+    } catch (error) {
+      return { scheme: 'http', host: hostHeader, path: raw.startsWith('/') ? raw : '/' + raw };
+    }
+  }
+
+  function captureRows(records, metadata) {
+    const byRequestID = new Map();
+    const rows = [];
+    for (const item of records) {
+      if (item.type === 'request' && item.request) {
+        const request = item.request;
+        const location = captureRequestLocation(request);
+        const requestContentType = captureHeader(request.headers, 'content-type');
+        const row = {
+          id: rows.length + 1, ts: null, method: request.method || 'GET',
+          scheme: location.scheme, host: location.host, path: location.path,
+          version: request.http_version || '', status: null, statusText: '', mime: '', mimeColor: 'bin',
+          size: null, ms: null, stream: false, bodyAvailable: false, bodySkipped: false,
+          tls: location.scheme === 'https' || request.method === 'CONNECT', decrypted: !!metadata.https_decrypted,
+          correlationId: request.request_id || '',
+          detail: { request: { httpVersion: request.http_version || '', headers: captureHeaders(request.headers) }, response: null },
+          bodies: { request: capturedBody(request, requestContentType), response: { loaded: true, loading: false, available: false } },
+        };
+        rows.push(row);
+        byRequestID.set(request.request_id, row);
+      } else if (item.type === 'response' && item.response) {
+        const response = item.response;
+        const row = byRequestID.get(response.request_id);
+        if (!row) continue;
+        const contentType = captureHeader(response.headers, 'content-type');
+        row.status = Number(response.status || 0) || null;
+        row.statusText = response.status_text || '';
+        row.mime = contentType;
+        row.mimeColor = mimeCategory(contentType, contentType.toLowerCase().startsWith('text/event-stream'));
+        row.stream = row.mimeColor === 'stream';
+        row.size = Number(response.body_size || 0);
+        row.bodyAvailable = !!response.body_available;
+        row.bodySkipped = !!response.body_skipped;
+        row.detail.response = { httpVersion: response.http_version || '', headers: captureHeaders(response.headers) };
+        row.bodies.response = capturedBody(response, contentType);
+      }
+    }
+    return rows;
+  }
+
+  async function openCapture(name) {
+    const token = Symbol(name);
+    state.captures.openToken = token;
+    state.captures.opening = name; state.captures.error = null;
+    renderCaptureSessions();
+    try {
+      const encoded = encodeURIComponent(name);
+      const metadata = await fetchJSON(`/api/captures/${encoded}/metadata`);
+      const records = [];
+      let offset = 0;
+      do {
+        const page = await fetchJSON(`/api/captures/${encoded}/records?offset=${offset}&limit=500`);
+        records.push(...(page.records || []));
+        if (!page.has_more) break;
+        if (page.next_offset <= offset) throw new Error('Capture pagination did not advance.');
+        offset = page.next_offset;
+      } while (state.captures.openToken === token);
+      if (state.captures.openToken !== token) return;
+      state.source = { kind: 'capture', name, metadata };
+      state.rows = captureRows(records, metadata);
+      state.selId = null; state.sidebar = 'all';
+      renderToolbar(); renderList(); renderDetail(); renderSourceBanner();
+    } catch (error) {
+      if (state.captures.openToken === token) state.captures.error = `Could not open ${name}: ${error.message}`;
+    } finally {
+      if (state.captures.openToken === token) {
+        state.captures.opening = false;
+        renderCaptureSessions();
+      }
+    }
+  }
+
+  function backToLive() {
+    state.captures.openToken = null;
+    state.source = { kind: 'live', name: '', metadata: null };
+    state.rows = state.liveRows;
+    state.selId = null;
+    renderToolbar(); renderList(); renderDetail(); renderSourceBanner();
   }
 
   // ─── request list ────────────────────────────────────────
@@ -160,6 +383,8 @@
     renderWaterfall();
     renderSidebarCounts();
     renderStatusBar();
+    renderCaptureSessions();
+    renderSourceBanner();
   }
 
   function appendRow(r) {
@@ -211,11 +436,16 @@
 
   function appendExternalRow(r) {
     const row = normalizeExternalRow(r);
-    state.rows.push(row);
-    if (state.rows.length > 220) {
-      const dropped = state.rows.shift();
+    state.liveRows.push(row);
+    if (state.liveRows.length > 220) {
+      const dropped = state.liveRows.shift();
       if (dropped && dropped.id === state.selId) { state.selId = null; renderDetail(); }
     }
+    if (state.source.kind !== 'live') {
+      renderCaptureSessions();
+      return row.id;
+    }
+    state.rows = state.liveRows;
     appendRow(row);
     return row.id;
   }
@@ -224,7 +454,7 @@
   // (falls back to id) since the response event carries no sequence number.
   function updateExternalRow(r) {
     const cid = r.correlationId || '';
-    const row = state.rows.find((x) => (cid && x.correlationId === cid) || (r.id != null && x.id === Number(r.id)));
+    const row = state.liveRows.find((x) => (cid && x.correlationId === cid) || (r.id != null && x.id === Number(r.id)));
     if (!row) return -1;
     if (r.status != null) row.status = Number(r.status);
     if (r.statusText != null) row.statusText = r.statusText;
@@ -235,6 +465,7 @@
     if (r.ms != null) row.ms = Number(r.ms);
     row.bodyAvailable = !!r.bodyAvailable;
     row.bodySkipped = !!r.bodySkipped;
+    if (state.source.kind !== 'live') return row.id;
     // Re-render just this row in the list (cheapest correct option is a
     // targeted DOM swap; fall back to a full list render when it isn't visible).
     const el = document.querySelector(`#list [data-row="${row.id}"]`);
@@ -477,8 +708,8 @@
       const reqLine = `${r.method} ${r.path} ${(d.request && d.request.httpVersion) || r.version || 'HTTP/1.1'}`;
       const hdrs = reqH.map(([k, v]) => `${k}: ${v}`).join('\n');
       const rb = r.bodies.response;
-      const bodyText = rb && rb.available ? rb.text : '';
-      body = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">${esc(`${reqLine}\nhost: ${r.host}\n${hdrs}\n\n${bodyText}`)}</pre>`;
+      const rawBody = rb && rb.available ? bodyText(rb) : '';
+      body = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">${esc(`${reqLine}\nhost: ${r.host}\n${hdrs}\n\n${rawBody}`)}</pre>`;
     }
 
     wrap.innerHTML = `
@@ -508,6 +739,7 @@
     $('#statusbar').innerHTML = `
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px 0 14px;color:${state.proxyRunning ? C.mint : C.danger}">proxy ${state.proxyRunning ? 'running' : 'stopped'}</span>
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.capturing ? C.mint : C.faint}"><span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'recording' : 'recording stopped'}</span>
+      ${state.source.kind === 'capture' ? `<span style="padding:0 10px;color:${C.info}">read-only capture</span>` : ''}
       <span style="padding:0 10px;color:${C.dim}">${rows.length} req</span>
       <span style="padding:0 10px;color:${C.dim}">${err} errors</span>
       <span style="padding:0 10px;color:${C.dim}">avg ${avg}ms</span>
@@ -529,6 +761,15 @@
     cap.innerHTML = `<span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'Stop recording' : 'Start recording'}`;
     cap.style.color = state.capturing ? C.mint : C.dim;
     cap.style.background = state.capturing ? C.bg3 : 'transparent';
+
+    const clear = $('[data-action="clear"]');
+    const archived = state.source.kind === 'capture';
+    if (clear) {
+      clear.disabled = archived;
+      clear.title = archived ? 'Saved captures are read-only' : 'Clear the live session';
+      clear.style.opacity = archived ? '.45' : '1';
+      clear.style.cursor = archived ? 'not-allowed' : 'pointer';
+    }
 
     const dec = $('#btn-decrypt');
     dec.innerHTML = `${lock(state.decryption)} HTTPS decryption · ${state.decryption ? 'On' : 'Off'}`;
@@ -907,6 +1148,9 @@
       const side = e.target.closest('[data-side]');
       if (side) { state.sidebar = side.dataset.side; renderList(); return; }
 
+      const capture = e.target.closest('[data-open-capture]');
+      if (capture) { openCapture(decodeURIComponent(capture.dataset.openCapture)); return; }
+
       const tab = e.target.closest('[data-tab]');
       if (tab) { state.detailTab = tab.dataset.tab; renderDetail(); return; }
 
@@ -952,12 +1196,13 @@
 
     $('#filter').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); });
     $('#filter-clear').addEventListener('click', () => { $('#filter').value = ''; state.filter = ''; renderList(); });
+    $('#theme-select').addEventListener('change', (e) => applyTheme(e.target.value));
 
     $$('[data-density]').forEach((b) => b.addEventListener('click', () => {
       state.density = b.dataset.density;
       $$('[data-density]').forEach((x) => {
         const on = x.dataset.density === state.density;
-        x.style.background = on ? C.white : 'transparent';
+        x.style.background = on ? C.bg1 : 'transparent';
         x.style.color = on ? C.mint : C.dim;
         x.style.border = on ? `1px solid ${C.line}` : 'none';
         x.style.fontWeight = on ? '600' : '500';
@@ -1035,9 +1280,12 @@
         proxyAction(state.proxyRunning ? 'stop' : 'start');
         break;
       case 'clear':
+        if (state.source.kind !== 'live') break;
         captureAction('clear');
-        state.rows = []; state.selId = null; renderList(); renderDetail();
+        state.liveRows = []; state.rows = state.liveRows; state.selId = null; renderList(); renderDetail();
         break;
+      case 'back-to-live': backToLive(); break;
+      case 'refresh-captures': loadCaptureFiles(); break;
       case 'toggle-decrypt':
         if (state.decryption) decryptHttps(false);
         else openCert();
@@ -1045,7 +1293,6 @@
       case 'open-upstream': openSettings('upstream'); break;
       case 'open-access': openSettings('access'); break;
       case 'open-settings': openSettings('body'); break;
-      case 'toggle-theme': applyTheme(themeName === 'dark' ? 'light' : 'dark'); break;
       case 'close-modal': closeModal(); break;
       case 'close-detail': state.selId = null; renderList(); renderDetail(); break;
       case 'cert-generate':
@@ -1069,19 +1316,33 @@
   }
 
   // ─── theme ───────────────────────────────────────────────
-  function themeIcon() {
-    // icon shows the mode you'll switch TO
-    return themeName === 'dark'
-      ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.3" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`
-      : `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.4 9.5A5.4 5.4 0 016.5 2.6 5.5 5.5 0 108.8 13.5a5.4 5.4 0 004.6-4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+  function setThemeVariables(colors) {
+    const root = document.documentElement;
+    root.style.colorScheme = themeName.endsWith('-dark') || themeName === 'dark' ? 'dark' : 'light';
+    const variables = {
+      '--desk': colors.desk, '--panel': colors.bg1, '--sidebar': colors.sidebar,
+      '--bg0': colors.bg0, '--bg2': colors.bg2, '--bg3': colors.bg3,
+      '--line': colors.line, '--lineSoft': colors.lineSoft,
+      '--ink': colors.ink, '--dim': colors.dim, '--faint': colors.faint,
+      '--mint': colors.mint, '--warn': colors.warn, '--danger': colors.danger,
+      '--info': colors.info, '--pink': colors.pink, '--success': colors.success,
+      '--pill-bg': colors.bg1, '--pill-border': colors.line,
+      '--pill-shadow': themeName.endsWith('-dark') || themeName === 'dark' ? 'none' : '0 1px 2px rgba(0,0,0,.04)',
+      '--scroll-thumb': colors.scroll, '--scroll-thumb-hover': colors.scrollHover,
+      '--brand-shadow': `0 2px 8px ${colors.mint}55`,
+    };
+    Object.entries(variables).forEach(([name, value]) => root.style.setProperty(name, value));
   }
+
   function applyTheme(name) {
+    if (!PALETTES[name]) return;
     themeName = name;
     C = PALETTES[name];
-    METHOD_COLOR = METHODS_BY_THEME[name];
+    METHOD_COLOR = methodColors(C);
     document.documentElement.dataset.theme = name;
+    setThemeVariables(C);
     try { localStorage.setItem('hsl-theme', name); } catch (e) {}
-    const t = $('#btn-theme'); if (t) t.innerHTML = themeIcon();
+    const select = $('#theme-select'); if (select) select.value = name;
     renderToolbar(); renderList(); renderDetail(); renderStatusBar();
     if (modalKind === 'settings') renderSettings();
     else if (modalKind === 'cert') renderCert();
@@ -1167,13 +1428,13 @@
 
   // ─── detail / body results (from /api/..., via WASM) ─────
   function setDetail(correlationId, detail) {
-    const row = state.rows.find((x) => x.correlationId === correlationId);
+    const row = state.liveRows.find((x) => x.correlationId === correlationId);
     if (!row) return;
     row.detail = detail || { error: 'Detail not found.' };
     if (row.id === state.selId) renderDetail();
   }
   function setBody(correlationId, side, body) {
-    const row = state.rows.find((x) => x.correlationId === correlationId);
+    const row = state.liveRows.find((x) => x.correlationId === correlationId);
     if (!row) return;
     row.bodies[side] = Object.assign({ loaded: true, loading: false }, body || {});
     if (row.id === state.selId && state.detailTab === 'body' && side === 'response') renderDetail();
@@ -1182,11 +1443,13 @@
   // ─── boot ────────────────────────────────────────────────
   function boot() {
     document.documentElement.dataset.theme = themeName;
-    $('#btn-theme').innerHTML = themeIcon();
+    setThemeVariables(C);
+    $('#theme-select').value = themeName;
     wire();
     renderToolbar();
     renderList();
     renderDetail();
+    loadCaptureFiles();
   }
 
   // Contract with the WASM layer: WASM pushes data in through these; the row
@@ -1201,7 +1464,11 @@
     setCertificate: setCertificate,     // B6 CA status/actions
     setAccessControl: setAccessControl, // B5.3 access settings
     setUpstream: setUpstream,           // B5.2 upstream settings
-    clear: () => { state.rows = []; state.selId = null; renderList(); renderDetail(); },
+    clear: () => {
+      state.liveRows = [];
+      if (state.source.kind === 'live') { state.rows = state.liveRows; state.selId = null; renderList(); renderDetail(); }
+      else renderCaptureSessions();
+    },
     rowHTML: (r) => rowHTML(normalizeExternalRow(r)),
   };
 

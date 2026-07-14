@@ -80,6 +80,9 @@
   .theme-toggle { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:9px;
     border:1px solid var(--line); background:var(--bg2); color:var(--dim); cursor:pointer; transition:background .12s, color .12s; }
   .theme-toggle:hover { background:var(--bg3); color:var(--ink); }
+  .theme-select { height:34px; max-width:154px; padding:0 28px 0 10px; border-radius:9px; border:1px solid var(--line);
+    background:var(--bg2); color:var(--ink); font:500 11.5px Inter,system-ui,sans-serif; cursor:pointer; }
+  .theme-select:hover { background:var(--bg3); }
 </style>
 </head>
 <body>
@@ -103,7 +106,7 @@
       </div>
       <div class="flex flex-col" style="line-height:1.15">
         <span class="font-bold" style="font-size:15px;letter-spacing:-.2px">HttpStackLens</span>
-        <span class="text-faint" style="font-size:11px">Local session</span>
+        <span id="source-subtitle" class="text-faint" style="font-size:11px">Live session</span>
       </div>
     </div>
     <div class="flex-1"></div>
@@ -113,7 +116,24 @@
       <button data-density="normal" class="hsl-density" style="height:24px;padding:0 10px;border-radius:6px;font-size:11.5px;font-family:Inter;font-weight:600;cursor:pointer;background:var(--pill-bg);color:var(--mint);border:1px solid var(--pill-border);box-shadow:var(--pill-shadow)">Normal</button>
       <button data-density="comfy" class="hsl-density" style="height:24px;padding:0 10px;border-radius:6px;font-size:11.5px;font-family:Inter;font-weight:500;cursor:pointer;background:transparent;color:var(--dim);border:none">Comfy</button>
     </div>
-    <button id="btn-theme" class="theme-toggle" data-action="toggle-theme" title="Toggle theme"></button>
+    <select id="theme-select" class="theme-select" aria-label="Colour theme" title="Colour theme">
+      <optgroup label="Light themes">
+        <option value="light">Original light</option>
+        <option value="rose-light">Rose light</option>
+        <option value="yellow-light">Yellow light</option>
+        <option value="green-light">Green light</option>
+        <option value="blue-light">Blue light</option>
+        <option value="contrast-light">High contrast light</option>
+      </optgroup>
+      <optgroup label="Dark themes">
+        <option value="dark">Original dark</option>
+        <option value="rose-dark">Rose dark</option>
+        <option value="yellow-dark">Yellow dark</option>
+        <option value="green-dark">Green dark</option>
+        <option value="blue-dark">Blue dark</option>
+        <option value="contrast-dark">High contrast dark</option>
+      </optgroup>
+    </select>
     <button class="hsl-tb" data-action="open-settings">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.3"/><path d="M8 1.3v2M8 12.7v2M14.7 8h-2M3.3 8h-2M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4M12.8 12.8l-1.4-1.4M4.6 4.6L3.2 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
       Settings
@@ -145,9 +165,21 @@
   <div class="flex flex-1 min-h-0">
 
     <!-- sidebar -->
-    <div class="flex flex-col flex-shrink-0" style="width:232px;background:var(--sidebar);border-right:1px solid var(--line)">
+    <div class="flex flex-col flex-shrink-0 min-h-0" style="width:232px;background:var(--sidebar);border-right:1px solid var(--line)">
+      <div class="flex-1 min-h-0 overflow-y-auto hsl-scroll">
       <div style="padding:16px 10px 4px">
-        <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;padding:0 10px 8px">Session</div>
+        <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;padding:0 10px 8px">Sessions</div>
+        <button id="live-session" data-action="back-to-live" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500">
+          <span class="rec-dot"></span><span class="flex-1">Live traffic</span><span id="live-session-count" class="text-faint" style="font-size:11.5px;font-weight:500">0</span>
+        </button>
+        <div class="flex items-center" style="padding:14px 10px 6px">
+          <span class="text-faint flex-1" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600">Saved captures</span>
+          <button data-action="refresh-captures" title="Refresh captures" style="border:0;background:transparent;color:var(--faint);cursor:pointer;font-size:15px;line-height:1;padding:2px">↻</button>
+        </div>
+        <div id="capture-sessions" class="hsl-scroll" style="max-height:190px;overflow:auto"></div>
+      </div>
+      <div style="padding:12px 10px 4px;border-top:1px solid var(--lineSoft);margin-top:8px">
+        <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;padding:0 10px 8px">Filters</div>
         <div class="grid gap-[2px]">
           <button data-side="all" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500"><span style="width:8px;height:8px;border-radius:4px;background:var(--faint)"></span><span class="flex-1">All traffic</span><span class="side-count text-faint" style="font-size:11.5px;font-weight:500">0</span></button>
           <button data-side="2xx" class="flex items-center gap-[10px] w-full text-left rounded-[8px]" style="padding:8px 10px;border:none;cursor:pointer;font-family:Inter;font-size:13px;font-weight:500;color:var(--dim)"><span style="width:8px;height:8px;border-radius:4px;background:var(--success)"></span><span class="flex-1">Success</span><span class="side-count text-faint" style="font-size:11.5px;font-weight:500">0</span></button>
@@ -160,12 +192,14 @@
         <div class="text-faint" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:600;padding:0 10px 8px">Hosts</div>
         <div id="hosts" class="grid gap-[2px]"></div>
       </div>
-      <div class="flex-1"></div>
+      </div>
       <div id="proxy-summary" style="padding:14px 16px;border-top:1px solid var(--line);background:var(--bg2)"></div>
     </div>
 
     <!-- content -->
     <div class="flex flex-col flex-1 min-w-0" style="background:var(--bg0)">
+      <!-- identifies the read-only archive currently displayed -->
+      <div id="source-banner" class="flex-shrink-0" style="display:none"></div>
       <!-- waterfall -->
       <div id="waterfall" class="flex items-end gap-[2px] flex-shrink-0 overflow-hidden" style="height:52px;background:var(--panel);border-bottom:1px solid var(--line);padding:8px 16px"></div>
 
