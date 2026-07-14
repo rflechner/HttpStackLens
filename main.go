@@ -26,8 +26,12 @@ var (
 )
 
 // repoURL is the GitHub repository the Web UI status bar links to for the
-// currently running commit.
-const repoURL = "https://github.com/rflechner/HttpStackLens"
+// currently running commit; repoSlug is the "owner/name" form used to query the
+// releases API for update checks.
+const (
+	repoURL  = "https://github.com/rflechner/HttpStackLens"
+	repoSlug = "rflechner/HttpStackLens"
+)
 
 // buildInfo assembles the version metadata for the Web UI. CommitURL is only
 // set when commit holds a real hash (release builds), so dev builds don't render
@@ -116,6 +120,7 @@ func main() {
 		Proxy:                 proxyCtl,
 		Commands:              runtimeCommands,
 		Build:                 buildInfo(),
+		GitHubRepo:            repoSlug,
 	})
 
 	// Streams request/response events to the Web UI over SSE. Created before the

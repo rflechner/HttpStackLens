@@ -187,6 +187,20 @@ type BuildInfoDto struct {
 	CommitURL string `json:"commit_url"`
 }
 
+// UpdateCheckDto reports whether a newer release is available on GitHub.
+// Checked is false when the check couldn't run (dev build, or GitHub was
+// unreachable) — the Web UI then simply shows no badge. AssetURL points at the
+// download for the current OS/arch when one is published, otherwise empty and
+// the UI falls back to ReleaseURL.
+type UpdateCheckDto struct {
+	Checked         bool   `json:"checked"`
+	UpdateAvailable bool   `json:"update_available"`
+	CurrentVersion  string `json:"current_version"`
+	LatestVersion   string `json:"latest_version"`
+	ReleaseURL      string `json:"release_url"`
+	AssetURL        string `json:"asset_url"`
+}
+
 // CaptureDecryptStateDto reports whether HTTPS decryption (MITM) is currently on,
 // so the status bar can show "decrypted" vs "passthrough".
 type CaptureDecryptStateDto struct {
