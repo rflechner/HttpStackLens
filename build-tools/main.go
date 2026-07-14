@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 var allTargets = []string{"webui", "app"}
@@ -181,7 +182,7 @@ func buildApp(projectRoot string) error {
 		output += ".exe"
 	}
 
-	cmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", output, ".")
+	cmd := exec.Command("go", "build", "-ldflags", versionLdflags(projectRoot), "-o", output, ".")
 	cmd.Dir = projectRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -190,6 +191,35 @@ func buildApp(projectRoot string) error {
 	}
 	fmt.Printf("✓ App built → %s\n", output)
 	return nil
+}
+
+// versionLdflags builds the -ldflags value, injecting build metadata into the
+// main package's version/commit/date variables. Version and commit come from
+// git; when git is unavailable (not a repo, not installed) the corresponding -X
+// flags are omitted and main's compiled-in defaults ("dev"/"none") stand.
+func versionLdflags(projectRoot string) string {
+	flags := "-s -w"
+	if version := gitOutput(projectRoot, "describe", "--tags", "--always", "--dirty"); version != "" {
+		flags += " -X main.version=" + version
+	}
+	if commit := gitOutput(projectRoot, "rev-parse", "--short", "HEAD"); commit != "" {
+		flags += " -X main.commit=" + commit
+	}
+	flags += " -X main.date=" + time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	fmt.Printf("  ldflags: %s\n", flags)
+	return flags
+}
+
+// gitOutput runs a git command in projectRoot and returns its trimmed stdout,
+// or "" on any error.
+func gitOutput(projectRoot string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // --- helpers ---
