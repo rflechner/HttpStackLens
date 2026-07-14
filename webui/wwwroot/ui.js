@@ -80,7 +80,7 @@
     density: 'normal',
     detailHeight: savedDetailHeight,
     upstream: { on: true, ntlm: true, host: 'http://proxy.corp.local:8080', domain: 'CORP' },
-    access: { mode: 'loopback', networks: ['192.168.1.0/24'] },
+    access: { mode: 'loopback', networks: [], appliedMode: 'loopback', appliedNetworks: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
     certificate: { loaded: false, loading: false, busy: false, action: '', status: null, error: null },
     // Real body-capture settings (B5.1), fed by WASM from /api/settings/body-capture.
     bodyCapture: { loaded: false, loading: false, defaultMaxBytes: null, mimeTypes: [], error: null, saving: false, saved: false, dirty: false },
@@ -739,18 +739,32 @@
   }
   function accessPanel() {
     const a = state.access;
+    if (!a.loaded) {
+      if (!a.error && !a.loading) {
+        a.loading = true;
+        if (typeof window.hslLoadAccessControl === 'function') setTimeout(() => window.hslLoadAccessControl(), 0);
+        else { a.loading = false; a.error = 'Backend bridge unavailable.'; }
+      }
+      return `<div style="font-size:12px;color:${a.error ? C.danger : C.dim};padding:20px 2px">${esc(a.error || 'Loading access control settings…')}${a.error ? `<div style="margin-top:10px">${btn('Retry', 'access-reload', 'ghost')}</div>` : ''}</div>`;
+    }
     const radio = (mode, title, sub, danger) => `<button data-action="access-mode:${mode}" class="flex items-center gap-3 w-full text-left" style="padding:10px 12px;background:${a.mode === mode ? C.bg3 : C.bg2};border:1px solid ${a.mode === mode ? (danger ? C.danger : C.mint) : C.line};border-radius:4px;cursor:pointer;color:${C.ink};font-family:Inter">
       <span style="width:14px;height:14px;border-radius:7px;flex-shrink:0;border:1.5px solid ${a.mode === mode ? (danger ? C.danger : C.mint) : C.faint};display:inline-flex;align-items:center;justify-content:center">${a.mode === mode ? `<span style="width:6px;height:6px;border-radius:3px;background:${danger ? C.danger : C.mint}"></span>` : ''}</span>
       <div class="flex-1"><div style="font-size:12.5px;font-weight:500;color:${danger && a.mode === mode ? C.danger : C.ink}">${title}</div><div style="font-size:11px;color:${C.dim};margin-top:2px">${sub}</div></div></button>`;
     let networks = '';
     if (a.mode === 'allowlist') {
-      networks = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed networks</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${a.networks.map((network) => `<div class="flex items-center gap-[10px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><span style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};flex:1">${network}</span></div>`).join('')}<div style="padding:8px;background:${C.bg1}">${btn('+ Add network', 'noop', 'ghost')}</div></div></div>`;
+      const rows = a.networks.length
+        ? a.networks.map((network, i) => `<div class="flex items-center gap-[8px]" style="padding:7px 10px;border-bottom:1px solid ${C.lineSoft};background:${C.bg2}"><input data-access-network="${i}" value="${String(network || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" placeholder="192.168.1.0/24" style="font-family:'JetBrains Mono';font-size:11.5px;color:${C.ink};background:${C.bg1};border:1px solid ${C.line};border-radius:3px;padding:5px 7px;flex:1;outline:none"><button data-action="access-remove-network:${i}" title="Remove network" style="background:transparent;border:1px solid ${C.line};color:${C.dim};border-radius:3px;cursor:pointer;height:27px;width:30px">×</button></div>`).join('')
+        : `<div style="padding:10px;color:${C.warn};font-size:11.5px;background:${C.bg2}">Add at least one network in CIDR notation.</div>`;
+      networks = `<div><div style="font-size:11.5px;color:${C.dim};margin-bottom:6px;font-family:Inter">Allowed networks</div><div style="border:1px solid ${C.line};border-radius:4px;overflow:hidden">${rows}<div style="padding:8px;background:${C.bg1}">${btn('+ Add network', 'access-add-network', 'ghost')}</div></div></div>`;
     }
+    const status = a.error ? `<span style="color:${C.danger}">${esc(a.error)}</span>` : a.saving ? '<span>Applying…</span>' : a.dirty ? `<span style="color:${C.warn}">Not applied yet</span>` : a.saved ? `<span style="color:${C.mint}">Applied ✓</span>` : '';
     return `<div class="grid gap-[14px]">
       <div style="font-size:12px;color:${C.dim};line-height:1.6">Control which machines can connect to this proxy. By default only loopback (127.0.0.1) is accepted — safer when the machine is on an untrusted network.</div>
       <div class="grid gap-2">${radio('loopback', 'Loopback only', '127.0.0.1 and ::1 · recommended')}${radio('lan', 'Private LAN', 'RFC 1918 — 10/8 · 172.16/12 · 192.168/16')}${radio('allowlist', 'Explicit allowlist', 'Only the networks below')}${radio('open', 'Open — any source', 'Dangerous on untrusted networks', true)}</div>
       ${networks}
-      <div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono';padding:8px 10px;background:${C.bg2};border-radius:3px;border:1px solid ${C.line}">listening on <span style="color:${C.mint}">0.0.0.0:8823</span> · <span style="color:${C.ink}">${a.mode}</span></div></div>`;
+      ${a.dirty ? `<div style="padding:9px 11px;background:${C.warn}12;border:1px solid ${C.warn}40;border-radius:4px;color:${C.ink};font-size:11.5px">These changes are only a draft. They will not affect active connections until you click <b>Apply</b>.</div>` : ''}
+      <div class="flex items-center gap-2">${btn('Apply', 'access-apply', 'primary')}${a.dirty ? btn('Revert', 'access-revert', 'ghost') : ''}<span style="font-size:11.5px;margin-left:4px">${status}</span></div>
+      <div style="font-size:11px;color:${C.dim};font-family:'JetBrains Mono';padding:8px 10px;background:${C.bg2};border-radius:3px;border:1px solid ${C.line}">mode <span style="color:${C.ink}">${a.mode}</span> · applies to proxy and Web UI</div></div>`;
   }
 
   // ─── capture control ─────────────────────────────────────
@@ -768,7 +782,7 @@
   }
 
   function setAccessMode(accessMode) {
-    const fn = window.hslSetAccessMode;
+    const fn = window.hslSaveAccessControl;
     if (typeof fn === 'function') fn(JSON.stringify({
       mode: accessMode.mode,
       networks: accessMode.networks || [],
@@ -884,6 +898,11 @@
     document.addEventListener('input', (e) => {
       const name = e.target.closest('[data-bc-name]');
       if (name) { const r = state.bodyCapture.mimeTypes[Number(name.dataset.bcName)]; if (r) { r.name = name.value; bcMarkDirty(); } }
+      const network = e.target.closest('[data-access-network]');
+      if (network) {
+        state.access.networks[Number(network.dataset.accessNetwork)] = network.value;
+        state.access.dirty = true; state.access.saved = false; state.access.error = null;
+      }
     });
 
     $('#filter').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); });
@@ -914,10 +933,14 @@
   function handleAction(a) {
     if (a.startsWith('access-mode:')) {
       state.access.mode = a.slice('access-mode:'.length);
-      setAccessMode(state.access);
+      state.access.dirty = true; state.access.saved = false; state.access.error = null;
       renderSettings();
-      renderToolbar();
-      renderStatusBar();
+      return;
+    }
+    if (a.startsWith('access-remove-network:')) {
+      state.access.networks.splice(Number(a.slice('access-remove-network:'.length)), 1);
+      state.access.dirty = true; state.access.saved = false; state.access.error = null;
+      renderSettings();
       return;
     }
     if (a.startsWith('body-remove-rule:')) {
@@ -940,6 +963,33 @@
         state.bodyCapture.error = null;
         renderSettings();
         break;
+      case 'access-add-network':
+        state.access.networks.push(''); state.access.dirty = true; state.access.saved = false; state.access.error = null; renderSettings();
+        setTimeout(() => { const inputs = $$('[data-access-network]'); if (inputs.length) inputs[inputs.length - 1].focus(); }, 0);
+        break;
+      case 'access-apply': {
+        if (!state.access.dirty || state.access.saving) break;
+        const networks = state.access.networks.map((n) => n.trim());
+        if (state.access.mode === 'allowlist' && (!networks.length || networks.some((n) => !n))) {
+          state.access.error = 'Allowlist mode requires at least one non-empty CIDR network.'; renderSettings(); break;
+        }
+        const warning = state.access.mode === 'open'
+          ? 'Apply OPEN access to both the proxy and Web UI? Any machine that can reach this computer may connect.'
+          : state.access.mode === 'allowlist'
+            ? 'Apply this allowlist to both the proxy and Web UI? If your current address is not included, this page will disconnect immediately.'
+            : state.access.mode === 'loopback'
+              ? 'Apply loopback-only access to both the proxy and Web UI? Any current remote session will disconnect immediately.'
+              : 'Apply private-LAN access to both the proxy and Web UI? Clients outside private networks will disconnect.';
+        if (!window.confirm(warning)) break;
+        state.access.networks = networks.filter(Boolean); state.access.saving = true; state.access.error = null; state.access.saved = false; renderSettings(); setAccessMode(state.access);
+        break;
+      }
+      case 'access-revert':
+        state.access.mode = state.access.appliedMode;
+        state.access.networks = state.access.appliedNetworks.slice();
+        state.access.dirty = false; state.access.saved = false; state.access.error = null; renderSettings();
+        break;
+      case 'access-reload': state.access.error = null; state.access.loaded = false; renderSettings(); break;
       case 'toggle-capture':
         // Optimistic flip; the capture_state event will confirm/correct it.
         captureAction(state.capturing ? 'pause' : 'resume');
@@ -1004,7 +1054,7 @@
       if (typeof s.upstream.enabled === 'boolean') state.upstream.on = s.upstream.enabled;
       if (typeof s.upstream.ntlm === 'boolean') state.upstream.ntlm = s.upstream.ntlm;
     }
-    if (s.access && s.access.mode) state.access.mode = s.access.mode;
+    if (s.access && s.access.mode && !state.access.dirty) state.access.mode = s.access.mode;
     renderToolbar();
     renderStatusBar();
   }
@@ -1038,6 +1088,20 @@
     else { ca.loaded = true; ca.status = s; ca.error = null; if (s.available && modalKind === 'cert') cert.step = 2; }
     if (modalKind === 'cert') renderCert();
     else if (modalKind === 'settings' && settingsTab === 'cert') renderSettings();
+  }
+
+  function setAccessControl(s) {
+    const a = state.access;
+    a.loading = false; a.saving = false;
+    if (!s) return;
+    if (s.error) a.error = s.error;
+    else {
+      a.loaded = true; a.error = null; a.mode = s.mode || 'loopback';
+      a.networks = Array.isArray(s.networks) ? s.networks.slice() : [];
+      a.appliedMode = a.mode; a.appliedNetworks = a.networks.slice();
+      a.dirty = false; a.saved = !!s.saved;
+    }
+    if (modalKind === 'settings' && settingsTab === 'access') renderSettings();
   }
 
   // ─── detail / body results (from /api/..., via WASM) ─────
@@ -1074,6 +1138,7 @@
     setCaptureState: setCaptureState,   // capture_state event
     setBodyCapture: setBodyCapture,     // /api/settings/body-capture result
     setCertificate: setCertificate,     // B6 CA status/actions
+    setAccessControl: setAccessControl, // B5.3 access settings
     clear: () => { state.rows = []; state.selId = null; renderList(); renderDetail(); },
     rowHTML: (r) => rowHTML(normalizeExternalRow(r)),
   };

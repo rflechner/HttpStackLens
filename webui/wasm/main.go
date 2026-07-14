@@ -443,7 +443,11 @@ func (m *StateModel) registerBridges() {
 		return nil
 	}))
 
-	js.Global().Set("hslSetAccessMode", js.FuncOf(func(this js.Value, args []js.Value) any {
+	js.Global().Set("hslLoadAccessControl", js.FuncOf(func(this js.Value, args []js.Value) any {
+		m.loadAccessControl()
+		return nil
+	}))
+	js.Global().Set("hslSaveAccessControl", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) >= 1 {
 			var payload shared.AccessControlConfigDto
 			if err := json.Unmarshal([]byte(args[0].String()), &payload); err != nil {
@@ -650,10 +654,51 @@ func (m *StateModel) saveAccessMode(accessMode shared.AccessControlConfigDto) {
 	}
 	if err := sendAjaxRequest("/api/settings/access-control", "PUT", payload,
 		js.FuncOf(func(this js.Value, args []js.Value) any {
+			res := args[0]
+			status := res.Get("status").Int()
+			res.Call("text").Call("then", js.FuncOf(func(this js.Value, textArgs []js.Value) any {
+				body := textArgs[0].String()
+				if status < 200 || status >= 300 {
+					if body == "" {
+						body = "Could not save access control settings."
+					}
+					callMockup("setAccessControl", map[string]any{"error": body})
+					return nil
+				}
+				var dto shared.AccessControlSettingsDto
+				if err := json.Unmarshal([]byte(body), &dto); err != nil {
+					callMockup("setAccessControl", map[string]any{"error": "Could not read saved access control settings."})
+					return nil
+				}
+				out := accessControlToJS(dto.Proxy)
+				out["saved"] = true
+				callMockup("setAccessControl", out)
+				return nil
+			}))
 			return nil
 		})); err != nil {
-		consoleLog("Could not serialize AccessControlConfigDto: " + err.Error())
+		callMockup("setAccessControl", map[string]any{"error": "Could not serialize access control settings."})
 	}
+}
+
+func accessControlToJS(config shared.AccessControlConfigDto) map[string]any {
+	networks := make([]any, len(config.Networks))
+	for i, network := range config.Networks {
+		networks[i] = network
+	}
+	return map[string]any{"mode": config.Mode, "networks": networks}
+}
+
+func (m *StateModel) loadAccessControl() {
+	fetchText("/api/settings/access-control", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var dto shared.AccessControlSettingsDto
+		if err := json.Unmarshal([]byte(args[0].String()), &dto); err != nil {
+			callMockup("setAccessControl", map[string]any{"error": "Could not load access control settings."})
+			return nil
+		}
+		callMockup("setAccessControl", accessControlToJS(dto.Proxy))
+		return nil
+	}))
 }
 
 func capture(action string) {
