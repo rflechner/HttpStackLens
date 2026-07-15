@@ -21,6 +21,15 @@ type CertInstaller interface {
 	// user's personal certificate store.
 	InstallDomainCert(domainCertFile string) error
 
+	// CleanupStore removes from the OS trust store every certificate this
+	// application added, identifying them by marker (the CA common-name
+	// signature): root CAs whose Subject contains it and leaf certificates whose
+	// Issuer contains it. It reports how many root and leaf certificates were
+	// removed, and whether automatic store cleanup is supported on this operating
+	// system (false means nothing was touched and the caller should fall back to
+	// manual removal for the trust store).
+	CleanupStore(marker string) (rootRemoved int, domainRemoved int, supported bool, err error)
+
 	// IsSupported reports whether certificate installation is implemented for
 	// the current operating system.
 	IsSupported() bool
@@ -33,6 +42,9 @@ type noopInstaller struct{}
 func (noopInstaller) InstallCACert(string) error     { return nil }
 func (noopInstaller) InstallDomainCert(string) error { return nil }
 func (noopInstaller) IsSupported() bool              { return false }
+func (noopInstaller) CleanupStore(string) (int, int, bool, error) {
+	return 0, 0, false, nil
+}
 func (noopInstaller) IsCACertInstalled(string) (bool, error) {
 	return false, nil
 }

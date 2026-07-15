@@ -353,6 +353,20 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	mux.HandleFunc("/api/certificates/ca/generate", certificateGenerateHandler(config.DecryptHttps.CertManager, certInstaller))
 	mux.HandleFunc("/api/certificates/ca/install", certificateInstallHandler(config.DecryptHttps.CertManager, certInstaller))
 	mux.HandleFunc("/api/certificates/ca/export", certificateExportHandler(config.DecryptHttps.CertManager))
+	// disableDecryptForCleanup turns HTTPS decryption off through the runtime so
+	// the in-memory CertStore (and its cache) is dropped before we purge the
+	// trust store. It reports whether it actually changed state.
+	disableDecryptForCleanup := func() (bool, error) {
+		if deps.Commands == nil || decryptHttpsSettings == nil || !decryptHttpsSettings.Get().Enabled {
+			return false, nil
+		}
+		if _, err := updateDecryptHttps(false); err != nil {
+			return false, err
+		}
+		broadcastCaptureState()
+		return true, nil
+	}
+	mux.HandleFunc("/api/certificates/cleanup", certificateCleanupHandler(config.DecryptHttps.CertManager, certInstaller, disableDecryptForCleanup))
 
 	access := configuration.NormalizeAccessControl(config.WebUi.AccessControl, config.WebUi.EnableRemoteConnection)
 	if accessControlSettings != nil {
@@ -619,6 +633,54 @@ func certificateInstallHandler(certConfig configuration.CertManagerConfig, insta
 			return
 		}
 		writeJSON(w, certificatesInfosDto(certConfig, installer))
+	}
+}
+
+// certificateCleanupHandler removes the app's certificates from the OS trust
+// store and deletes the local CA files and per-domain certificates folder. It
+// first turns HTTPS decryption off (via disableDecrypt) so the in-memory
+// CertStore is dropped and no in-flight request re-signs or re-installs a domain
+// certificate while we clean — which would immediately repopulate the store we
+// are about to purge. It is deliberately destructive, so it only accepts POST.
+func certificateCleanupHandler(certConfig configuration.CertManagerConfig, installer certManager.CertInstaller, disableDecrypt func() (bool, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var warnings []string
+		decryptionDisabled := false
+		if disableDecrypt != nil {
+			disabled, err := disableDecrypt()
+			if err != nil {
+				log.Printf("Cleanup: could not disable HTTPS decryption: %v", err)
+				warnings = append(warnings, fmt.Sprintf("could not disable HTTPS decryption before cleanup: %v", err))
+			}
+			decryptionDisabled = disabled
+		}
+
+		report, err := certManager.CleanupAppCertificates(certConfig, installer)
+		if err != nil {
+			log.Printf("Error cleaning up certificates: %v", err)
+			http.Error(w, "could not clean up certificates", http.StatusInternalServerError)
+			return
+		}
+		warnings = append(warnings, report.Warnings...)
+		if len(warnings) > 0 {
+			log.Printf("Certificate cleanup completed with warnings: %s", strings.Join(warnings, "; "))
+		}
+		writeJSON(w, shared.CertificatesCleanupResultDto{
+			StoreCleanupSupported: report.StoreCleanupSupported,
+			RootCertsRemoved:      report.RootCertsRemoved,
+			DomainCertsRemoved:    report.DomainCertsRemoved,
+			RemovedFiles:          report.RemovedFiles,
+			DomainFolderRemoved:   report.DomainFolderRemoved,
+			DecryptionDisabled:    decryptionDisabled,
+			Warnings:              warnings,
+			Certificates:          certificatesInfosDto(certConfig, installer),
+		})
 	}
 }
 

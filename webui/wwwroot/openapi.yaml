@@ -111,6 +111,28 @@ paths:
           $ref: "#/components/responses/MethodNotAllowed"
         "500":
           $ref: "#/components/responses/InternalServerError"
+  /api/certificates/cleanup:
+    post:
+      tags: [Runtime]
+      summary: Remove all HttpStackLens certificates and local CA artifacts
+      description: >-
+        Deletes every certificate this application added to the OS trust store —
+        the debug root CA(s) and every per-domain leaf they signed, identified by
+        the CA common-name signature so unrelated certificates are never touched —
+        then removes the local CA certificate/key files and the per-domain
+        certificates folder. Destructive: HTTPS decryption needs a fresh CA
+        afterwards.
+      responses:
+        "200":
+          description: Summary of what was removed, plus the refreshed CA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificatesCleanupResult"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
   /api/settings/body-capture:
     get:
       tags: [Runtime]
@@ -1030,6 +1052,45 @@ components:
           type: boolean
           default: false
           description: Explicitly overwrite an existing CA certificate and key when true.
+    CertificatesCleanupResult:
+      type: object
+      required:
+        - store_cleanup_supported
+        - root_certs_removed
+        - domain_certs_removed
+        - domain_folder_removed
+        - certificates
+      properties:
+        store_cleanup_supported:
+          type: boolean
+          description: False when automatic OS trust-store cleanup is not implemented for this OS; on-disk cleanup still ran.
+        root_certs_removed:
+          type: integer
+          description: Number of root CA certificates removed from the OS trust store.
+        domain_certs_removed:
+          type: integer
+          description: Number of per-domain leaf certificates removed from the OS trust store.
+        removed_files:
+          type: array
+          items:
+            type: string
+          description: CA certificate/key files deleted from disk.
+        domain_folder_removed:
+          type: boolean
+          description: Whether the per-domain certificates folder was deleted.
+        decryption_disabled:
+          type: boolean
+          description: >-
+            True when cleanup turned HTTPS decryption off (dropping the in-memory
+            CertStore so it cannot repopulate the purged store). False when
+            decryption was already off or no runtime was available.
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Non-fatal problems encountered during cleanup.
+        certificates:
+          $ref: "#/components/schemas/CertificatesInfos"
     AppConfig:
       type: object
       required: [proxy, web_ui, decrypt_https]

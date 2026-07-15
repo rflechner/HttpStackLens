@@ -624,6 +624,26 @@ func certificateInfosToJS(dto shared.CertificatesInfosDto) map[string]any {
 	}
 }
 
+func cleanupResultToJS(dto shared.CertificatesCleanupResultDto) map[string]any {
+	files := make([]any, len(dto.RemovedFiles))
+	for i, f := range dto.RemovedFiles {
+		files[i] = f
+	}
+	warnings := make([]any, len(dto.Warnings))
+	for i, wn := range dto.Warnings {
+		warnings[i] = wn
+	}
+	return map[string]any{
+		"store_cleanup_supported": dto.StoreCleanupSupported,
+		"root_certs_removed":      dto.RootCertsRemoved,
+		"domain_certs_removed":    dto.DomainCertsRemoved,
+		"domain_folder_removed":   dto.DomainFolderRemoved,
+		"decryption_disabled":     dto.DecryptionDisabled,
+		"removed_files":           files,
+		"warnings":                warnings,
+	}
+}
+
 func (m *StateModel) loadBodyCapture() {
 	fetchText("/api/settings/body-capture", js.FuncOf(func(this js.Value, args []js.Value) any {
 		var dto shared.BodyCaptureSettingsDto
@@ -846,6 +866,10 @@ func (m *StateModel) certificateAction(action string) {
 		url = "/api/certificates/ca/install"
 		method = "POST"
 		options = map[string]any{"method": method}
+	case "cleanup":
+		url = "/api/certificates/cleanup"
+		method = "POST"
+		options = map[string]any{"method": method}
 	default:
 		callMockup("setCertificate", map[string]any{"requestError": "Unknown certificate action."})
 		return
@@ -867,6 +891,18 @@ func (m *StateModel) certificateAction(action string) {
 					body = fmt.Sprintf("Certificate request failed (HTTP %d).", status)
 				}
 				callMockup("setCertificate", map[string]any{"requestError": body})
+				return nil
+			}
+			if action == "cleanup" {
+				var dto shared.CertificatesCleanupResultDto
+				if err := json.Unmarshal([]byte(body), &dto); err != nil {
+					callMockup("setCertificate", map[string]any{"requestError": "Could not read cleanup result."})
+					return nil
+				}
+				// Refresh the CA status (the CA files were deleted) and surface the
+				// cleanup summary in one shot.
+				callMockup("setCertificate", certificateInfosToJS(dto.Certificates))
+				callMockup("setCertificateCleanup", cleanupResultToJS(dto))
 				return nil
 			}
 			var dto shared.CertificatesInfosDto
