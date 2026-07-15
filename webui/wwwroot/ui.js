@@ -639,8 +639,25 @@
     } catch (e) { return null; }
   }
 
+  function bytesToBase64(bytes) {
+    let binary = '';
+    // Chunked: String.fromCharCode blows the argument stack on large bodies.
+    for (let i = 0; i < bytes.length; i += 8192) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    }
+    return btoa(binary);
+  }
+
+  // The bytes every view renders: the decompressed payload once we have it,
+  // the wire bytes otherwise. Every view agrees, so Pretty / Raw / Hex always
+  // describe the same thing.
+  function viewBytes(body) {
+    if (body && body.inflate && body.inflate.state === 'done') return body.inflate.bytes;
+    return bodyBytes(body);
+  }
+
   function bodyText(body) {
-    const bytes = bodyBytes(body);
+    const bytes = viewBytes(body);
     if (!bytes) return body && body.text ? body.text : '';
     try { return new TextDecoder('utf-8').decode(bytes); }
     catch (e) { return Array.from(bytes).map((b) => String.fromCharCode(b)).join(''); }
@@ -653,14 +670,20 @@
 
   function imagePreview(body, side) {
     const mime = imageContentType(body.contentType);
-    if (!mime || !body.bodyBase64) return '';
+    // Decompressed images have to be re-encoded for the data URI; cache it, the
+    // pane re-renders on every tab switch.
+    if (body.inflate && body.inflate.state === 'done' && !body.inflate.base64) {
+      body.inflate.base64 = bytesToBase64(body.inflate.bytes);
+    }
+    const b64 = (body.inflate && body.inflate.base64) || body.bodyBase64;
+    if (!mime || !b64) return '';
     return `<div class="flex items-center justify-center" style="min-height:100%;padding:18px;background:${C.bg2}">
-      <img src="data:${mime};base64,${body.bodyBase64}" alt="Captured ${side} image" style="display:block;max-width:100%;max-height:100%;object-fit:contain;border:1px solid ${C.line};background:${C.bg1};box-shadow:0 4px 16px rgba(0,0,0,.08)">
+      <img src="data:${mime};base64,${b64}" alt="Captured ${side} image" style="display:block;max-width:100%;max-height:100%;object-fit:contain;border:1px solid ${C.line};background:${C.bg1};box-shadow:0 4px 16px rgba(0,0,0,.08)">
     </div>`;
   }
 
   function hexDump(body) {
-    const bytes = bodyBytes(body);
+    const bytes = viewBytes(body);
     const src = bytes ? bytes.slice(0, 512) : Uint8Array.from(bodyText(body).slice(0, 512), (ch) => ch.charCodeAt(0));
     let out = '';
     for (let i = 0; i < src.length; i += 16) {
@@ -766,26 +789,84 @@
     return enc === 'identity' ? '' : enc;
   }
 
-  // Bodies are stored exactly as they crossed the wire, so a compressed one is
-  // compressed bytes. Say so rather than rendering mojibake — roughly half of
-  // real request bodies are gzip'd.
-  function encodingBanner(enc) {
-    return `<div style="display:flex;align-items:center;gap:7px;padding:6px 14px;background:${C.warn}14;border-bottom:1px solid ${C.warn}40;color:${C.warn};font-family:Inter;font-size:11px">
-      <span aria-hidden="true">⚠</span>Compressed with ${esc(enc)} — these are the raw wire bytes, not the decoded payload.</div>`;
+  // Content-Encoding → DecompressionStream format. The browser gives us gzip and
+  // deflate natively; "deflate" is ambiguous in the wild (RFC 1950 zlib-wrapped
+  // vs raw RFC 1951), so both are tried in order. Brotli and zstd are not
+  // implemented by DecompressionStream, so those bodies stay as wire bytes.
+  const INFLATE_FORMATS = {
+    gzip: ['gzip'], 'x-gzip': ['gzip'], deflate: ['deflate', 'deflate-raw'],
+  };
+
+  async function inflateBytes(bytes, formats) {
+    let last;
+    for (const format of formats) {
+      try {
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      } catch (e) { last = e; }
+    }
+    throw last || new Error('no format');
+  }
+
+  // Bodies are stored exactly as they crossed the wire, so a compressed body is
+  // compressed bytes — about half of real request bodies are gzip'd. Inflate it
+  // once per body and re-render; `inflate.state` also stops us retrying forever.
+  function ensureInflated(r, side) {
+    const b = r.bodies[side];
+    if (!b || !b.available || b.inflate) return;
+    // The encoding lives in this side's headers, which can still be in flight —
+    // a body can arrive first. Decide on a later render rather than caching
+    // "not compressed" from headers we haven't seen.
+    if ((r.detail || {}).loading) return;
+    const enc = sideEncoding(r, side);
+    if (!enc) { b.inflate = { state: 'none' }; return; }
+    const formats = INFLATE_FORMATS[enc];
+    if (!formats || typeof DecompressionStream === 'undefined') {
+      b.inflate = { state: 'unsupported', enc };
+      return;
+    }
+    const wire = bodyBytes(b);
+    if (!wire || !wire.length) { b.inflate = { state: 'failed', enc }; return; }
+    b.inflate = { state: 'pending', enc };
+    inflateBytes(wire, formats)
+      .then((bytes) => { b.inflate = { state: 'done', enc, bytes, wireSize: wire.length }; })
+      .catch(() => { b.inflate = { state: 'failed', enc }; })
+      .finally(() => { if (r.id === state.selId) renderDetail(); });
+  }
+
+  function inflateBanner(inflate) {
+    const st = inflate.state;
+    if (st === 'none' || st === 'pending') return '';
+    if (st === 'done') {
+      return `<div style="display:flex;align-items:center;gap:7px;padding:5px 14px;background:${C.mint}14;border-bottom:1px solid ${C.mint}40;color:${C.mint};font-family:Inter;font-size:11px">
+        <span aria-hidden="true">✓</span>Decompressed from ${esc(inflate.enc)} · ${fmtBytes(inflate.wireSize)} on the wire → ${fmtBytes(inflate.bytes.length)}</div>`;
+    }
+    const why = st === 'unsupported'
+      ? `${inflate.enc} is not supported by this browser`
+      : `the ${inflate.enc} stream could not be decoded`;
+    return `<div style="display:flex;align-items:center;gap:7px;padding:5px 14px;background:${C.warn}14;border-bottom:1px solid ${C.warn}40;color:${C.warn};font-family:Inter;font-size:11px">
+      <span aria-hidden="true">⚠</span>Showing raw wire bytes — ${esc(why)}.</div>`;
   }
 
   function bodyContent(r, b, side) {
     const mode = state.bodyMode;
-    if (mode === 'hex') return hexDump(b);
-    const enc = sideEncoding(r, side);
+    ensureInflated(r, side);
+    const inflate = b.inflate || { state: 'none' };
+    if (inflate.state === 'pending') return detailNote(`Decompressing ${inflate.enc}…`);
+    const banner = inflateBanner(inflate);
+    // Once inflated, every view shows the decoded payload; only an undecodable
+    // body still renders as wire bytes.
+    const decoded = inflate.state === 'done' || inflate.state === 'none';
+
+    if (mode === 'hex') return banner + hexDump(b);
     const text = bodyText(b);
-    if (mode === 'pretty' && !enc) {
-      if (imageContentType(b.contentType)) return imagePreview(b, side);
+    if (mode === 'pretty' && decoded) {
+      if (imageContentType(b.contentType)) return banner + imagePreview(b, side);
       if (mimeCategory(b.contentType) === 'json') {
-        return `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(text)}</pre>`;
+        return banner + `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(text)}</pre>`;
       }
     }
-    return (enc ? encodingBanner(enc) : '') +
+    return banner +
       `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all;overflow:auto">${esc(text)}</pre>`;
   }
 
@@ -855,8 +936,13 @@
 
     const b = r.bodies[side];
     let bodyText_ = '';
-    if (b && b.loaded && b.available) bodyText_ = bodyText(b);
-    else if (b && b.loading) bodyText_ = '⋯ loading body';
+    if (b && b.loaded && b.available) {
+      ensureInflated(r, side);
+      const st = (b.inflate || {}).state;
+      if (st === 'pending') bodyText_ = `⋯ decompressing ${b.inflate.enc}`;
+      else if (st === 'unsupported' || st === 'failed') bodyText_ = `⋯ ${b.inflate.enc} body — ${fmtBytes(bodySizeOf(b))} of undecodable wire bytes`;
+      else bodyText_ = bodyText(b);
+    } else if (b && b.loading) bodyText_ = '⋯ loading body';
     else {
       const meta = sideBodyMeta(r, side);
       if (meta && meta.bodySkipped) bodyText_ = '⋯ body skipped (over the capture size limit)';
