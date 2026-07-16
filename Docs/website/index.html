@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HttpStackLens — a local HTTP/HTTPS debugging proxy</title>
+  <meta name="description" content="HttpStackLens is a local HTTP/HTTPS debugging proxy with a live Web UI, opt-in HTTPS decryption and upstream-proxy authentication." />
+  <link rel="icon" href="assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/main.js"></script>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="index.html"><img src="assets/logo.png" alt="" /> HttpStackLens</a>
+      <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+      <div class="nav-links" id="nav-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Getting started</a>
+        <a href="tutorial-upstream-proxy.html">Replace PX</a>
+        <a href="tutorial-https-decrypt.html">HTTPS decryption</a>
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
+        <span class="lang-switch">
+          <a href="index.html" class="lang-link active">EN</a>
+          <a href="fr/index.html" class="lang-link">FR</a>
+        </span>
+        <button class="icon-btn theme-btn" id="theme-btn" aria-label="Toggle theme">🌙</button>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <img class="hero-logo" src="assets/logo.png" alt="HttpStackLens logo" />
+      <h1>See through your HTTP stack.</h1>
+      <p class="lead">
+        HttpStackLens is a local HTTP/HTTPS debugging proxy with a live Web UI. Inspect traffic in real
+        time, decrypt HTTPS on demand, and forward through an authenticated corporate proxy — all from
+        a single Go binary.
+      </p>
+      <div class="badges">
+        <span class="badge">🖥️ Windows · macOS · Linux</span>
+        <span class="badge">⚡ Single Go binary</span>
+        <span class="badge">🔒 Opt-in HTTPS decryption</span>
+        <span class="badge">🧩 WASM + Tailwind UI</span>
+      </div>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="getting-started.html">Get started →</a>
+        <a class="btn btn-ghost" href="features.html">Explore features</a>
+      </div>
+      <div class="note warn" style="margin-top:2.2rem;max-width:680px">
+        <span class="note-title">⚠️ For local development only</span>
+        <p>HttpStackLens is a debugging tool for your own machine. It is not built for production use or shared networks.</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <h2>What it does</h2>
+    <p class="section-lead">A focused set of tools for understanding what your applications actually send over the wire.</p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="feature-ico">🔀</div>
+        <h3>Forward proxy</h3>
+        <p>Listens on <code>localhost:3128</code>, tunnels HTTPS via <code>CONNECT</code>, and streams requests and responses bidirectionally.</p>
+      </div>
+      <div class="card">
+        <div class="feature-ico">🔓</div>
+        <h3>HTTPS decryption</h3>
+        <p>Opt-in local MITM. Generates per-domain certificates from a debug root CA so you can read encrypted bodies.</p>
+      </div>
+      <div class="card">
+        <div class="feature-ico">📡</div>
+        <h3>Live Web UI</h3>
+        <p>A WASM + Tailwind interface streams traffic over SSE: request list, timings, body decoding and inline image previews.</p>
+      </div>
+      <div class="card">
+        <div class="feature-ico">🏢</div>
+        <h3>Upstream proxy auth</h3>
+        <p>Forward to a corporate proxy with NTLM, Kerberos and Negotiate on Windows — plus a 401-compatibility mode.</p>
+      </div>
+      <div class="card">
+        <div class="feature-ico">💾</div>
+        <h3>Capture &amp; replay</h3>
+        <p>Record sessions to a binary <code>.capture</code> format, browse saved captures and query traffic through a REST API.</p>
+      </div>
+      <div class="card">
+        <div class="feature-ico">🧹</div>
+        <h3>Clean certificate teardown</h3>
+        <p>One click removes the debug CA and every leaf it signed from your OS trust store — nothing left behind.</p>
+      </div>
+    </div>
+
+    <h2>Two things people use it for</h2>
+    <p class="section-lead">Follow a guided, step-by-step tutorial for each.</p>
+
+    <div class="grid">
+      <a class="card" href="tutorial-upstream-proxy.html" style="text-decoration:none">
+        <h3>🏢 Replace PX behind a corporate proxy</h3>
+        <p>Point your tools at HttpStackLens and let it handle the authenticated upstream proxy — a drop-in stand-in for <code>px</code>/cntlm on your dev box.</p>
+        <p style="margin-top:.8rem;color:var(--accent-strong);font-weight:600">Read the tutorial →</p>
+      </a>
+      <a class="card" href="tutorial-https-decrypt.html" style="text-decoration:none">
+        <h3>🔍 Debug HTTPS, then clean up</h3>
+        <p>Turn on decryption, inspect encrypted traffic, then remove every certificate so your OS trust store stays pristine.</p>
+        <p style="margin-top:.8rem;color:var(--accent-strong);font-weight:600">Read the tutorial →</p>
+      </a>
+    </div>
+
+    <h2>Quick start</h2>
+    <pre><code><span class="tok-c"># Build everything (WASM + CSS + native binary)</span>
+go run ./build-tools/main.go
+
+<span class="tok-c"># Run the proxy + Web UI</span>
+go run .
+
+<span class="tok-c"># Send a request through it</span>
+curl -x http://localhost:3128 http://example.com</code></pre>
+    <p>The proxy listens on <code>localhost:3128</code> and the Web UI on <code>localhost:9000</code>. See <a href="getting-started.html">Getting started</a> for prerequisites and build details.</p>
+  </main>
+
+  <footer>
+    <div class="container foot-inner">
+      <div>HttpStackLens — a Go learning project &amp; local HTTP debugging proxy.</div>
+      <div class="foot-links">
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub</a>
+        <a href="getting-started.html">Getting started</a>
+        <a href="features.html">Features</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

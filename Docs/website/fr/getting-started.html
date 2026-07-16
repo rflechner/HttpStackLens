@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Démarrage — HttpStackLens</title>
+  <meta name="description" content="Prérequis, construction et lancement de HttpStackLens." />
+  <link rel="icon" href="../assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/style.css" />
+  <script src="../js/main.js"></script>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" /> HttpStackLens</a>
+      <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+      <div class="nav-links" id="nav-links">
+        <a href="index.html">Accueil</a>
+        <a href="features.html">Fonctionnalités</a>
+        <a href="getting-started.html">Démarrage</a>
+        <a href="tutorial-upstream-proxy.html">Remplacer PX</a>
+        <a href="tutorial-https-decrypt.html">Déchiffrement HTTPS</a>
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
+        <span class="lang-switch">
+          <a href="../getting-started.html" class="lang-link">EN</a>
+          <a href="getting-started.html" class="lang-link active">FR</a>
+        </span>
+        <button class="icon-btn theme-btn" id="theme-btn" aria-label="Changer de thème">🌙</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-head">
+      <div class="eyebrow">Guide</div>
+      <h1>Démarrage</h1>
+      <p>Construisez le binaire, lancez le proxy et ouvrez l'interface web en quelques minutes.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <h2>Prérequis</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Outil</th><th>Pourquoi</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://go.dev/dl/" target="_blank" rel="noopener">Go 1.26.1+</a></td><td>Compile le proxy et l'interface web WASM.</td></tr>
+          <tr><td><a href="https://nodejs.org/" target="_blank" rel="noopener">Node.js</a></td><td>Construit le CSS Tailwind de l'interface web.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Construction</h2>
+    <p>Un outil de build en Go dans <code>build-tools/</code> exécute tout le pipeline — npm install, compilation WASM, génération CSS et binaire natif. C'est la voie recommandée.</p>
+    <pre><code><span class="tok-c"># Depuis la racine du projet — tout construire</span>
+go run ./build-tools/main.go
+
+<span class="tok-c"># Ou des cibles individuelles</span>
+go run ./build-tools/main.go webui   <span class="tok-c"># Interface web seule (WASM + CSS)</span>
+go run ./build-tools/main.go app     <span class="tok-c"># Binaire natif seul</span>
+go run ./build-tools/main.go --help  <span class="tok-c"># Usage</span></code></pre>
+    <p>L'outil de build détecte automatiquement votre plateforme et produit <code>httpStackLens.exe</code> sous Windows ou <code>httpStackLens</code> sous macOS/Linux.</p>
+
+    <h2>Lancement</h2>
+    <ol class="steps">
+      <li>
+        <h3>Démarrer HttpStackLens</h3>
+        <p>Depuis la racine du projet :</p>
+        <pre><code>go run .</code></pre>
+        <p>Au premier lancement, un <code>config.yaml</code> est généré avec des valeurs par défaut sensées.</p>
+      </li>
+      <li>
+        <h3>Ouvrir l'interface web</h3>
+        <p>Rendez-vous sur <a href="http://localhost:9000" target="_blank" rel="noopener">http://localhost:9000</a> pour observer le trafic en direct et piloter le proxy.</p>
+      </li>
+      <li>
+        <h3>Faire passer du trafic par le proxy</h3>
+        <p>Pointez n'importe quel client vers <code>localhost:3128</code> :</p>
+        <pre><code>curl -x http://localhost:3128 http://example.com</code></pre>
+      </li>
+    </ol>
+
+    <div class="note">
+      <span class="note-title">🔑 Ports par défaut</span>
+      <p>Proxy → <code>3128</code>, interface web → <code>9000</code>. Les deux sont restreints au loopback par défaut. Modifiez-les sous <code>proxy.port</code> / <code>webui.port</code> dans <code>config.yaml</code>.</p>
+    </div>
+
+    <h2>Pour aller plus loin</h2>
+    <div class="grid">
+      <a class="card" href="tutorial-upstream-proxy.html" style="text-decoration:none">
+        <h3>🏢 Remplacer PX</h3>
+        <p>Se placer derrière un proxy d'entreprise authentifié sans <code>px</code> ni <code>cntlm</code>.</p>
+      </a>
+      <a class="card" href="tutorial-https-decrypt.html" style="text-decoration:none">
+        <h3>🔍 Déboguer le HTTPS &amp; nettoyer</h3>
+        <p>Déchiffrez le HTTPS, inspectez-le, puis effacez chaque certificat de votre OS.</p>
+      </a>
+    </div>
+
+    <div class="pager">
+      <a href="features.html"><div class="dir">Précédent</div><div class="ttl">← Fonctionnalités</div></a>
+      <a href="tutorial-upstream-proxy.html"><div class="dir">Suivant</div><div class="ttl">Remplacer PX →</div></a>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container foot-inner">
+      <div>HttpStackLens — un projet d'apprentissage Go &amp; un proxy de débogage HTTP local.</div>
+      <div class="foot-links">
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub</a>
+        <a href="features.html">Fonctionnalités</a>
+        <a href="index.html">Accueil</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

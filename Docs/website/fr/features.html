@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fonctionnalités — HttpStackLens</title>
+  <meta name="description" content="Toutes les fonctionnalités de HttpStackLens : proxy direct, déchiffrement HTTPS, interface web temps réel, auth du proxy amont, capture et contrôle d'accès." />
+  <link rel="icon" href="../assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/style.css" />
+  <script src="../js/main.js"></script>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" /> HttpStackLens</a>
+      <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+      <div class="nav-links" id="nav-links">
+        <a href="index.html">Accueil</a>
+        <a href="features.html">Fonctionnalités</a>
+        <a href="getting-started.html">Démarrage</a>
+        <a href="tutorial-upstream-proxy.html">Remplacer PX</a>
+        <a href="tutorial-https-decrypt.html">Déchiffrement HTTPS</a>
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
+        <span class="lang-switch">
+          <a href="../features.html" class="lang-link">EN</a>
+          <a href="features.html" class="lang-link active">FR</a>
+        </span>
+        <button class="icon-btn theme-btn" id="theme-btn" aria-label="Changer de thème">🌙</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-head">
+      <div class="eyebrow">Référence</div>
+      <h1>Fonctionnalités</h1>
+      <p>Ce que HttpStackLens sait faire aujourd'hui, et comment chaque brique s'articule. Glissez vos propres captures dans les emplacements prévus au fil de l'eau.</p>
+    </div>
+
+    <div class="toc">
+      <strong>Sur cette page</strong>
+      <ol>
+        <li><a href="#proxy">Proxy direct &amp; tunneling CONNECT</a></li>
+        <li><a href="#decrypt">Interception &amp; déchiffrement HTTPS</a></li>
+        <li><a href="#ui">Interface web temps réel</a></li>
+        <li><a href="#upstream">Authentification du proxy amont</a></li>
+        <li><a href="#capture">Capture &amp; stockage du trafic</a></li>
+        <li><a href="#access">Contrôle d'accès</a></li>
+        <li><a href="#config">Configuration &amp; mises à jour</a></li>
+      </ol>
+    </div>
+  </div>
+
+  <main class="container">
+    <section id="proxy">
+      <h2>🔀 Proxy direct &amp; tunneling CONNECT</h2>
+      <p class="section-lead">
+        À la base, HttpStackLens est un proxy direct (forward proxy). Il écoute les connexions entrantes
+        sur un port local (par défaut <code>3128</code>), gère les tunnels HTTPS via la méthode
+        <code>CONNECT</code> et relaie requêtes et réponses de façon bidirectionnelle. Il analyse les corps
+        de réponse en <code>chunked</code> comme en <code>Content-Length</code>.
+      </p>
+      <pre><code>curl -x http://localhost:3128 http://example.com</code></pre>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Ajoutez ici une capture de la liste des requêtes
+          <div><code>assets/screenshots/request-list.png</code></div>
+        </div>
+        <figcaption>La liste des requêtes en direct, les plus récentes en premier.</figcaption>
+      </figure>
+    </section>
+
+    <section id="decrypt">
+      <h2>🔓 Interception &amp; déchiffrement HTTPS</h2>
+      <p class="section-lead">
+        Lorsque <code>decrypt_https.enabled</code> est activé, HttpStackLens réalise un MITM local
+        optionnel. Un gestionnaire de certificats intégré génère un <strong>CA racine</strong> de débogage,
+        l'installe dans le magasin Windows / le trousseau macOS, et émet un <strong>certificat par
+        domaine</strong> pour chaque hôte visité. Le déchiffrement se bascule à chaud depuis l'interface —
+        aucun redémarrage requis.
+      </p>
+      <p>
+        Des règles par type MIME dans la config décident quels corps sont capturés et jusqu'à quelle
+        taille, pour éviter de bufferiser un téléchargement vidéo de 4&nbsp;Go juste pour lire un JSON.
+      </p>
+      <div class="note">
+        <span class="note-title">🔐 Sûr par conception</span>
+        <p>Chaque certificat créé par l'application porte un marqueur distinctif dans son sujet
+        (<code>My Local CA for debugging HTTPS</code>). Le nettoyage se base sur ce marqueur, il ne retire
+        donc que les certificats installés par l'application elle-même. Voir le
+        <a href="tutorial-https-decrypt.html">tutoriel de déchiffrement HTTPS</a>.</p>
+      </div>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Ajoutez ici une capture d'un corps de requête déchiffré
+          <div><code>assets/screenshots/decrypted-body.png</code></div>
+        </div>
+        <figcaption>Une réponse HTTPS déchiffrée, en-têtes et corps en clair.</figcaption>
+      </figure>
+    </section>
+
+    <section id="ui">
+      <h2>📡 Interface web temps réel</h2>
+      <p class="section-lead">
+        Une interface WASM + Tailwind diffuse le trafic via Server-Sent Events. Elle offre une liste des
+        requêtes (les plus récentes en premier), l'inspection détaillée requête/réponse avec timings, le
+        décodage base64 des corps avec aperçu d'images en ligne, et un panneau de détail redimensionnable
+        et persistant, en thème clair ou sombre.
+      </p>
+      <p>
+        L'interface fait aussi office de panneau de contrôle : démarrer/arrêter le proxy, gérer
+        l'enregistrement, et modifier les réglages du proxy amont, de la capture des corps et du contrôle
+        d'accès — sans toucher au fichier de config ni redémarrer le binaire.
+      </p>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Ajoutez ici une capture des panneaux requête/réponse côte à côte
+          <div><code>assets/screenshots/split-panes.png</code></div>
+        </div>
+        <figcaption>Requête et réponse côte à côte, avec bascule de focus.</figcaption>
+      </figure>
+    </section>
+
+    <section id="upstream">
+      <h2>🏢 Authentification du proxy amont</h2>
+      <p class="section-lead">
+        HttpStackLens peut tout relayer vers un autre proxy défini par <code>output_proxy_uri</code>.
+        Sous Windows, il peut injecter les identifiants de la session en cours via NTLM, Kerberos ou
+        Negotiate (<code>add_windows_authentication_to_output_proxy</code>), et embarque un mode de
+        compatibilité pour les proxys amont qui s'authentifient par des défis <code>407</code>/<code>401</code>.
+      </p>
+      <p>
+        Cette combinaison lui permet de remplacer des outils comme <code>px</code> ou <code>cntlm</code>
+        sur un poste de dev situé derrière un proxy d'entreprise authentifié — voir le
+        <a href="tutorial-upstream-proxy.html">tutoriel Remplacer PX</a>.
+      </p>
+      <figure>
+        <img src="../assets/upstream-proxy-401-compatibility-flow.png" alt="Schéma du flux de compatibilité 401 du proxy amont" />
+        <figcaption>Le flux de compatibilité 401/407 du proxy amont.</figcaption>
+      </figure>
+    </section>
+
+    <section id="capture">
+      <h2>💾 Capture &amp; stockage du trafic</h2>
+      <p class="section-lead">
+        Enregistrez des sessions dans un format binaire <code>.capture</code>, parcourez les captures
+        sauvegardées dans l'interface et interrogez le trafic via une API REST (<code>/api/requests/…</code>).
+        Un tampon mémoire borné conserve les requêtes les plus récentes même quand le stockage est désactivé.
+      </p>
+      <figure>
+        <img src="../assets/capture-file-format-datagram.png" alt="Datagramme du format de fichier capture" />
+        <figcaption>La structure du datagramme <code>.capture</code> sur disque.</figcaption>
+      </figure>
+    </section>
+
+    <section id="access">
+      <h2>🛡️ Contrôle d'accès</h2>
+      <p class="section-lead">
+        Les connexions distantes sont restreintes par défaut. Le proxy comme l'interface web supportent les
+        modes <code>loopback</code>, LAN et liste d'autorisation, pour décider exactement qui peut les atteindre.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Mode</th><th>Qui peut se connecter</th></tr></thead>
+          <tbody>
+            <tr><td><code>loopback</code></td><td>Uniquement cette machine (127.0.0.1 / ::1). Le défaut.</td></tr>
+            <tr><td><code>lan</code></td><td>Les plages d'adresses privées / LAN.</td></tr>
+            <tr><td><code>allowlist</code></td><td>Uniquement les réseaux listés sous <code>networks</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="config">
+      <h2>⚙️ Configuration &amp; mises à jour</h2>
+      <p class="section-lead">
+        Un unique <code>config.yaml</code> avec des valeurs par défaut sensées est généré au premier
+        lancement. Le binaire indique sa version en cours avec un lien vers son commit, et peut
+        optionnellement vérifier une nouvelle version sur GitHub au démarrage (opt-in via
+        <code>updates.check_enabled</code>).
+      </p>
+      <pre><code><span class="tok-k">proxy</span>:
+  <span class="tok-k">port</span>: <span class="tok-s">3128</span>
+  <span class="tok-k">output_proxy_uri</span>:
+  <span class="tok-k">add_windows_authentication_to_output_proxy</span>: <span class="tok-s">false</span>
+<span class="tok-k">webui</span>:
+  <span class="tok-k">port</span>: <span class="tok-s">9000</span>
+<span class="tok-k">decrypt_https</span>:
+  <span class="tok-k">enabled</span>: <span class="tok-s">false</span>  <span class="tok-c"># intercepte &amp; déchiffre le HTTPS (génère + installe un certificat par domaine)</span></code></pre>
+    </section>
+
+    <div class="pager">
+      <a href="getting-started.html"><div class="dir">Suivant</div><div class="ttl">Démarrage →</div></a>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container foot-inner">
+      <div>HttpStackLens — un projet d'apprentissage Go &amp; un proxy de débogage HTTP local.</div>
+      <div class="foot-links">
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub</a>
+        <a href="getting-started.html">Démarrage</a>
+        <a href="index.html">Accueil</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

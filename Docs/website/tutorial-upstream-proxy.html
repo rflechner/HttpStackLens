@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tutorial — Replace PX behind a corporate proxy — HttpStackLens</title>
+  <meta name="description" content="Use HttpStackLens as a drop-in replacement for px/cntlm: forward local traffic through an authenticated corporate proxy." />
+  <link rel="icon" href="assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/main.js"></script>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="index.html"><img src="assets/logo.png" alt="" /> HttpStackLens</a>
+      <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+      <div class="nav-links" id="nav-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Getting started</a>
+        <a href="tutorial-upstream-proxy.html">Replace PX</a>
+        <a href="tutorial-https-decrypt.html">HTTPS decryption</a>
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
+        <span class="lang-switch">
+          <a href="tutorial-upstream-proxy.html" class="lang-link active">EN</a>
+          <a href="fr/tutorial-upstream-proxy.html" class="lang-link">FR</a>
+        </span>
+        <button class="icon-btn theme-btn" id="theme-btn" aria-label="Toggle theme">🌙</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-head">
+      <div class="eyebrow">Tutorial · 1 of 2</div>
+      <h1>Replace PX behind a corporate proxy</h1>
+      <p>
+        Behind an authenticated corporate proxy, tools that can't do NTLM/Kerberos themselves usually rely
+        on a local helper like <a href="https://github.com/genotrance/px" target="_blank" rel="noopener">px</a>
+        or <code>cntlm</code>. HttpStackLens can play that role — and let you watch the traffic while it does.
+      </p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="note">
+      <span class="note-title">🎯 What you'll set up</span>
+      <p>Your apps → <strong>HttpStackLens</strong> (<code>localhost:3128</code>) → your company's authenticated proxy → the internet. HttpStackLens adds the authentication your tools can't, so they only ever see a plain, unauthenticated local proxy.</p>
+    </div>
+
+    <div class="toc">
+      <strong>Steps</strong>
+      <ol>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#configure">Point HttpStackLens at the upstream proxy</a></li>
+        <li><a href="#windows-auth">Add Windows authentication</a></li>
+        <li><a href="#compat">Handle 401/407 upstream proxies</a></li>
+        <li><a href="#clients">Point your tools at HttpStackLens</a></li>
+        <li><a href="#verify">Verify it works</a></li>
+      </ol>
+    </div>
+
+    <section id="how">
+      <h2>1. How it works</h2>
+      <p>
+        A corporate proxy typically demands NTLM, Kerberos or Negotiate authentication. Many CLIs, package
+        managers and SDKs can't perform that handshake — they just get a <code>407 Proxy Authentication
+        Required</code> and give up. <code>px</code> solves this by running a local proxy that authenticates
+        upstream on their behalf.
+      </p>
+      <p>
+        HttpStackLens does the same: it exposes an <strong>unauthenticated</strong> local proxy on
+        <code>localhost:3128</code>, forwards everything to your <strong>upstream</strong> corporate proxy,
+        and injects your Windows credentials on the way out. As a bonus, every request flows through the
+        live Web UI so you can see exactly what your tools are doing.
+      </p>
+      <figure>
+        <img src="assets/forward-proxy-server-with-windows-authentication.png" alt="Forward proxy with Windows authentication flow" />
+        <figcaption>HttpStackLens forwarding to an upstream proxy with Windows authentication.</figcaption>
+      </figure>
+    </section>
+
+    <section id="configure">
+      <h2>2. Point HttpStackLens at the upstream proxy</h2>
+      <p>Open <code>config.yaml</code> and set <code>output_proxy_uri</code> to your corporate proxy:</p>
+      <pre><code><span class="tok-k">proxy</span>:
+  <span class="tok-k">port</span>: <span class="tok-s">3128</span>
+  <span class="tok-c"># The corporate proxy everything is forwarded to</span>
+  <span class="tok-k">output_proxy_uri</span>: <span class="tok-s">http://proxy.corp.example.com:8080</span>
+  <span class="tok-k">no_proxy</span>:
+    - <span class="tok-s">"localhost"</span>
+    - <span class="tok-s">"127.0.0.1"</span>
+    - <span class="tok-s">".local"</span>
+    - <span class="tok-s">"host.docker.internal"</span></code></pre>
+      <p>
+        Hosts under <code>no_proxy</code> are reached directly, bypassing the upstream proxy — keep your
+        internal and loopback hosts there. You can also edit the upstream settings live from the Web UI's
+        settings panel, without restarting.
+      </p>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Add a screenshot of the upstream-proxy settings panel here
+          <div><code>assets/screenshots/upstream-settings.png</code></div>
+        </div>
+        <figcaption>Editing the upstream proxy from the Web UI.</figcaption>
+      </figure>
+    </section>
+
+    <section id="windows-auth">
+      <h2>3. Add Windows authentication</h2>
+      <div class="note warn">
+        <span class="note-title">🪟 Windows only</span>
+        <p>Injecting the logged-in user's credentials relies on the Windows SSPI API (<code>secur32.dll</code>). These options are compiled in only when targeting Windows and return an error elsewhere.</p>
+      </div>
+      <p>Enable credential injection so HttpStackLens answers the upstream proxy's auth challenge for you:</p>
+      <pre><code><span class="tok-k">proxy</span>:
+  <span class="tok-k">output_proxy_uri</span>: <span class="tok-s">http://proxy.corp.example.com:8080</span>
+  <span class="tok-c"># Inject the current Windows user's credentials toward the upstream proxy</span>
+  <span class="tok-k">add_windows_authentication_to_output_proxy</span>: <span class="tok-s">true</span></code></pre>
+      <p>
+        HttpStackLens uses the current session's credentials over NTLM, Kerberos or Negotiate — it prefers
+        NTLM when both are offered. You never type or store a password; the OS provides the token.
+      </p>
+      <p>The same behaviour is available as a command-line flag when you run the binary directly:</p>
+      <pre><code>httpStackLens.exe --output-proxy-add-windows-auth</code></pre>
+    </section>
+
+    <section id="compat">
+      <h2>4. Handle 401/407 upstream proxies</h2>
+      <p>
+        Some upstream proxies challenge with a status the client doesn't expect, or expect the auth on a
+        specific step of the handshake. HttpStackLens ships a compatibility mode for these
+        <code>401</code>/<code>407</code>-based flows so the negotiation completes cleanly.
+      </p>
+      <figure>
+        <img src="assets/upstream-proxy-401-compatibility-flow.png" alt="Upstream proxy 401 compatibility flow" />
+        <figcaption>The 401/407 compatibility handshake with the upstream proxy.</figcaption>
+      </figure>
+    </section>
+
+    <section id="clients">
+      <h2>5. Point your tools at HttpStackLens</h2>
+      <p>Now aim your tools at the local proxy — no credentials needed on their side:</p>
+      <pre><code><span class="tok-c"># Shell (macOS / Linux)</span>
+export http_proxy=http://localhost:3128
+export https_proxy=http://localhost:3128
+
+<span class="tok-c"># Shell (Windows PowerShell)</span>
+$env:HTTP_PROXY  = "http://localhost:3128"
+$env:HTTPS_PROXY = "http://localhost:3128"
+
+<span class="tok-c"># git</span>
+git config --global http.proxy http://localhost:3128
+
+<span class="tok-c"># npm</span>
+npm config set proxy http://localhost:3128
+npm config set https-proxy http://localhost:3128</code></pre>
+      <div class="note">
+        <span class="note-title">🐳 Containers &amp; Docker</span>
+        <p>Point containers at <code>http://host.docker.internal:3128</code> and make sure that host is in HttpStackLens's <code>no_proxy</code> list so it isn't forwarded back upstream.</p>
+      </div>
+    </section>
+
+    <section id="verify">
+      <h2>6. Verify it works</h2>
+      <ol class="steps">
+        <li>
+          <h3>Send a request</h3>
+          <pre><code>curl -x http://localhost:3128 https://example.com -I</code></pre>
+        </li>
+        <li>
+          <h3>Watch it in the Web UI</h3>
+          <p>Open <a href="http://localhost:9000" target="_blank" rel="noopener">http://localhost:9000</a>. The request should appear in the live list with a <code>2xx</code> status — proof it reached the internet through the authenticated upstream proxy.</p>
+        </li>
+        <li>
+          <h3>Retire PX</h3>
+          <p>Once traffic flows, you can stop your old <code>px</code>/<code>cntlm</code> instance. HttpStackLens now handles the authentication <em>and</em> gives you full visibility into the traffic.</p>
+        </li>
+      </ol>
+      <div class="note success">
+        <span class="note-title">✅ Done</span>
+        <p>Your tools talk to a simple local proxy while HttpStackLens does the corporate-proxy authentication — with every request visible in the UI.</p>
+      </div>
+    </section>
+
+    <div class="pager">
+      <a href="getting-started.html"><div class="dir">Previous</div><div class="ttl">← Getting started</div></a>
+      <a href="tutorial-https-decrypt.html"><div class="dir">Next tutorial</div><div class="ttl">Debug HTTPS &amp; clean up →</div></a>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container foot-inner">
+      <div>HttpStackLens — a Go learning project &amp; local HTTP debugging proxy.</div>
+      <div class="foot-links">
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub</a>
+        <a href="tutorial-https-decrypt.html">HTTPS decryption</a>
+        <a href="index.html">Home</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tutoriel — Déboguer le HTTPS &amp; nettoyer les certificats — HttpStackLens</title>
+  <meta name="description" content="Activez le déchiffrement HTTPS dans HttpStackLens, inspectez le trafic chiffré, puis retirez chaque certificat de débogage pour garder votre magasin de confiance intact." />
+  <link rel="icon" href="../assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/style.css" />
+  <script src="../js/main.js"></script>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" /> HttpStackLens</a>
+      <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+      <div class="nav-links" id="nav-links">
+        <a href="index.html">Accueil</a>
+        <a href="features.html">Fonctionnalités</a>
+        <a href="getting-started.html">Démarrage</a>
+        <a href="tutorial-upstream-proxy.html">Remplacer PX</a>
+        <a href="tutorial-https-decrypt.html">Déchiffrement HTTPS</a>
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
+        <span class="lang-switch">
+          <a href="../tutorial-https-decrypt.html" class="lang-link">EN</a>
+          <a href="tutorial-https-decrypt.html" class="lang-link active">FR</a>
+        </span>
+        <button class="icon-btn theme-btn" id="theme-btn" aria-label="Changer de thème">🌙</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-head">
+      <div class="eyebrow">Tutoriel · 2 sur 2</div>
+      <h1>Déboguer le HTTPS, puis nettoyer vos certificats</h1>
+      <p>
+        Déchiffrer le HTTPS implique de faire confiance à un CA racine généré localement. Ce tutoriel
+        montre comment activer le déchiffrement, lire le trafic chiffré en clair, et — surtout — retirer
+        ensuite chaque certificat pour ne pas laisser traîner un CA de débogage dans le magasin de
+        confiance de votre OS.
+      </p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="note warn">
+      <span class="note-title">⚠️ Vous installez un CA racine de confiance</span>
+      <p>Le déchiffrement fonctionne en ajoutant un certificat racine de débogage au magasin de confiance de votre OS et en signant un faux certificat pour chaque site visité. C'est puissant pour déboguer et risqué si on l'oublie — quiconque volerait la clé du CA pourrait usurper des sites auprès de votre machine. <strong>Exécutez toujours le nettoyage de la section 4 une fois terminé.</strong> N'utilisez jamais cela sur une machine partagée.</p>
+    </div>
+
+    <div class="toc">
+      <strong>Étapes</strong>
+      <ol>
+        <li><a href="#enable">Activer le déchiffrement HTTPS</a></li>
+        <li><a href="#trust">Générer &amp; faire confiance au CA de débogage</a></li>
+        <li><a href="#inspect">Inspecter le trafic déchiffré</a></li>
+        <li><a href="#cleanup">Nettoyer — retirer chaque certificat</a></li>
+        <li><a href="#verify">Vérifier que votre OS est propre</a></li>
+      </ol>
+    </div>
+
+    <section id="enable">
+      <h2>1. Activer le déchiffrement HTTPS</h2>
+      <p>Le déchiffrement est désactivé par défaut. Vous pouvez l'activer de deux façons.</p>
+
+      <h3>Option A — depuis le fichier de config</h3>
+      <pre><code><span class="tok-k">decrypt_https</span>:
+  <span class="tok-k">enabled</span>: <span class="tok-s">true</span>   <span class="tok-c"># intercepte &amp; déchiffre le HTTPS (génère + installe un certificat par domaine)</span>
+  <span class="tok-k">cert_manager</span>:
+    <span class="tok-k">ca_cert_file</span>: <span class="tok-s">"certificates/debug-https-ca.crt"</span>
+    <span class="tok-k">ca_key_file</span>: <span class="tok-s">"certificates/debug-https-ca.key"</span>
+    <span class="tok-k">domain_certs_folder</span>: <span class="tok-s">"certificates/domains"</span>
+  <span class="tok-k">mime_types</span>:
+    - <span class="tok-k">name</span>: <span class="tok-s">"application/json"</span>
+    - <span class="tok-k">name</span>: <span class="tok-s">"text/*"</span>
+      <span class="tok-k">max_size_kb</span>: <span class="tok-s">10000</span></code></pre>
+      <p>Les règles <code>mime_types</code> décident quels corps de réponse sont capturés et jusqu'à quelle taille — pratique pour éviter de bufferiser de gros téléchargements binaires.</p>
+
+      <h3>Option B — basculer en direct depuis l'interface web</h3>
+      <p>Ouvrez <a href="http://localhost:9000" target="_blank" rel="noopener">http://localhost:9000</a> et actionnez l'interrupteur de déchiffrement. Aucun redémarrage nécessaire — en coulisses, l'interface appelle <code>POST /api/settings/decrypt-https</code>.</p>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Ajoutez ici une capture de l'interrupteur de déchiffrement
+          <div><code>assets/screenshots/decrypt-toggle.png</code></div>
+        </div>
+        <figcaption>Bascule du déchiffrement HTTPS depuis l'interface web.</figcaption>
+      </figure>
+    </section>
+
+    <section id="trust">
+      <h2>2. Générer &amp; faire confiance au CA de débogage</h2>
+      <p>
+        Au premier déchiffrement, HttpStackLens génère un CA racine de débogage et l'installe dans votre
+        magasin Windows / trousseau macOS, puis émet un certificat par domaine pour chaque hôte visité.
+        Depuis l'interface, vous pouvez générer, installer et exporter le CA explicitement :
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Action</th><th>Endpoint</th><th>Rôle</th></tr></thead>
+          <tbody>
+            <tr><td>Générer</td><td><code>/api/certificates/ca/generate</code></td><td>Crée la clé + le certificat du CA racine sur disque.</td></tr>
+            <tr><td>Installer</td><td><code>/api/certificates/ca/install</code></td><td>Ajoute le CA racine au magasin de confiance de l'OS.</td></tr>
+            <tr><td>Exporter</td><td><code>/api/certificates/ca/export</code></td><td>Télécharge le certificat du CA (ex. pour lui faire confiance dans Firefox, qui a son propre magasin).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <span class="note-title">🏷️ Comment le nettoyage reste sûr</span>
+        <p>Chaque CA créé par l'application intègre le marqueur <code>My Local CA for debugging HTTPS</code> dans son sujet, et chaque certificat qu'il signe le porte dans son émetteur (issuer). Le nettoyage se base sur cette chaîne exacte, il ne retire donc que les certificats créés par HttpStackLens — jamais rien d'autre dans votre magasin de confiance.</p>
+      </div>
+    </section>
+
+    <section id="inspect">
+      <h2>3. Inspecter le trafic déchiffré</h2>
+      <p>Envoyez du trafic HTTPS à travers le proxy et observez-le se déchiffrer en direct :</p>
+      <pre><code>curl -x http://localhost:3128 https://api.github.com/zen</code></pre>
+      <p>
+        Dans l'interface web, les requêtes déchiffrées sont signalées comme telles — vous obtenez en-têtes
+        et corps en clair, avec timings, décodage base64 des corps et aperçu d'images en ligne. Les
+        panneaux requête/réponse côte à côte vous laissent vous concentrer sur l'un ou l'autre.
+      </p>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Ajoutez ici une capture d'une requête/réponse HTTPS déchiffrée
+          <div><code>assets/screenshots/decrypted-inspect.png</code></div>
+        </div>
+        <figcaption>Un échange HTTPS déchiffré, entièrement lisible dans l'interface.</figcaption>
+      </figure>
+    </section>
+
+    <section id="cleanup">
+      <h2>4. Nettoyer — retirer chaque certificat</h2>
+      <p>
+        C'est la partie importante : <strong>ne laissez pas le CA de débogage installé.</strong> Une fois
+        le débogage terminé, lancez le nettoyage. Dans l'interface web, utilisez l'action de nettoyage des
+        certificats ; elle appelle <code>POST /api/certificates/cleanup</code>, qui, en une seule fois :
+      </p>
+      <ul>
+        <li>Désactive le déchiffrement HTTPS.</li>
+        <li>Retire le CA racine de débogage — et chaque certificat par domaine qu'il a signé — du magasin de confiance de l'OS (identifiés par le marqueur).</li>
+        <li>Supprime le dossier des certificats par domaine (<code>certificates/domains</code>).</li>
+        <li>Supprime le certificat et la clé du CA racine du disque.</li>
+      </ul>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Ajoutez ici une capture du récapitulatif de nettoyage
+          <div><code>assets/screenshots/cert-cleanup.png</code></div>
+        </div>
+        <figcaption>Le récapitulatif de nettoyage : CA racines et certificats de domaine retirés.</figcaption>
+      </figure>
+      <div class="note warn">
+        <span class="note-title">🖥️ Note par plateforme</span>
+        <p>Le nettoyage automatique du magasin de confiance de l'OS est implémenté par plateforme. Là où il n'est pas disponible, le récapitulatif vous le signale et les fichiers sur disque sont tout de même supprimés — vous retirez alors le CA racine à la main du magasin de confiance de votre OS. Le sujet du CA contient <code>My Local CA for debugging HTTPS</code>, il est donc facile à repérer.</p>
+      </div>
+    </section>
+
+    <section id="verify">
+      <h2>5. Vérifier que votre OS est propre</h2>
+      <ol class="steps">
+        <li>
+          <h3>Vérifier le rapport de nettoyage</h3>
+          <p>L'interface indique combien de certificats racine et de domaine ont été retirés. Vérifiez que les compteurs sont cohérents et qu'il n'y a pas d'avertissement.</p>
+        </li>
+        <li>
+          <h3>Recontrôler le magasin de confiance</h3>
+          <p>Cherchez le CA de débogage dans le magasin de confiance de votre OS pour confirmer sa disparition :</p>
+          <pre><code><span class="tok-c"># macOS — ne devrait rien afficher</span>
+security find-certificate -a -c "My Local CA for debugging HTTPS" \
+  ~/Library/Keychains/login.keychain-db
+
+<span class="tok-c"># Windows (PowerShell) — ne devrait rien afficher</span>
+Get-ChildItem Cert:\CurrentUser\Root |
+  Where-Object { $_.Subject -like "*My Local CA for debugging HTTPS*" }</code></pre>
+        </li>
+        <li>
+          <h3>Confirmer que les fichiers ont disparu</h3>
+          <pre><code>ls certificates/            <span class="tok-c"># .crt / .key du CA retirés</span>
+ls certificates/domains/    <span class="tok-c"># dossier supprimé</span></code></pre>
+        </li>
+      </ol>
+      <div class="note success">
+        <span class="note-title">✅ OS propre</span>
+        <p>Le déchiffrement est désactivé, le CA de débogage et chaque certificat qu'il a signé ont disparu du disque comme du magasin de confiance de l'OS. Votre machine est revenue exactement à son état initial.</p>
+      </div>
+    </section>
+
+    <div class="pager">
+      <a href="tutorial-upstream-proxy.html"><div class="dir">Tutoriel précédent</div><div class="ttl">← Remplacer PX</div></a>
+      <a href="features.html"><div class="dir">Référence</div><div class="ttl">Toutes les fonctionnalités →</div></a>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container foot-inner">
+      <div>HttpStackLens — un projet d'apprentissage Go &amp; un proxy de débogage HTTP local.</div>
+      <div class="foot-links">
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub</a>
+        <a href="tutorial-upstream-proxy.html">Remplacer PX</a>
+        <a href="index.html">Accueil</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

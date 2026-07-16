@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tutorial — Debug HTTPS &amp; clean up certificates — HttpStackLens</title>
+  <meta name="description" content="Turn on HTTPS decryption in HttpStackLens, inspect encrypted traffic, then remove every debug certificate so your OS trust store stays clean." />
+  <link rel="icon" href="assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/main.js"></script>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="index.html"><img src="assets/logo.png" alt="" /> HttpStackLens</a>
+      <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu">☰</button>
+      <div class="nav-links" id="nav-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Getting started</a>
+        <a href="tutorial-upstream-proxy.html">Replace PX</a>
+        <a href="tutorial-https-decrypt.html">HTTPS decryption</a>
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
+        <span class="lang-switch">
+          <a href="tutorial-https-decrypt.html" class="lang-link active">EN</a>
+          <a href="fr/tutorial-https-decrypt.html" class="lang-link">FR</a>
+        </span>
+        <button class="icon-btn theme-btn" id="theme-btn" aria-label="Toggle theme">🌙</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-head">
+      <div class="eyebrow">Tutorial · 2 of 2</div>
+      <h1>Debug HTTPS, then clean up your certificates</h1>
+      <p>
+        Decrypting HTTPS means trusting a locally generated root CA. This tutorial shows how to turn
+        decryption on, read encrypted traffic in the clear, and — crucially — remove every certificate
+        afterwards so you don't leave a debugging CA lying around in your OS trust store.
+      </p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="note warn">
+      <span class="note-title">⚠️ You are installing a trusted root CA</span>
+      <p>Decryption works by adding a debug root certificate to your OS trust store and signing a fake certificate for each site you visit. That's powerful for debugging and risky if forgotten — anyone who steals the CA key could impersonate sites to your machine. <strong>Always run the cleanup in section 4 when you're done.</strong> Never use this on a shared machine.</p>
+    </div>
+
+    <div class="toc">
+      <strong>Steps</strong>
+      <ol>
+        <li><a href="#enable">Enable HTTPS decryption</a></li>
+        <li><a href="#trust">Generate &amp; trust the debug CA</a></li>
+        <li><a href="#inspect">Inspect decrypted traffic</a></li>
+        <li><a href="#cleanup">Clean up — remove every certificate</a></li>
+        <li><a href="#verify">Verify your OS is clean</a></li>
+      </ol>
+    </div>
+
+    <section id="enable">
+      <h2>1. Enable HTTPS decryption</h2>
+      <p>Decryption is off by default. You can turn it on two ways.</p>
+
+      <h3>Option A — from the config file</h3>
+      <pre><code><span class="tok-k">decrypt_https</span>:
+  <span class="tok-k">enabled</span>: <span class="tok-s">true</span>   <span class="tok-c"># intercept &amp; decrypt HTTPS (generates + installs a per-domain cert)</span>
+  <span class="tok-k">cert_manager</span>:
+    <span class="tok-k">ca_cert_file</span>: <span class="tok-s">"certificates/debug-https-ca.crt"</span>
+    <span class="tok-k">ca_key_file</span>: <span class="tok-s">"certificates/debug-https-ca.key"</span>
+    <span class="tok-k">domain_certs_folder</span>: <span class="tok-s">"certificates/domains"</span>
+  <span class="tok-k">mime_types</span>:
+    - <span class="tok-k">name</span>: <span class="tok-s">"application/json"</span>
+    - <span class="tok-k">name</span>: <span class="tok-s">"text/*"</span>
+      <span class="tok-k">max_size_kb</span>: <span class="tok-s">10000</span></code></pre>
+      <p>The <code>mime_types</code> rules decide which response bodies are captured and up to what size — handy to avoid buffering large binary downloads.</p>
+
+      <h3>Option B — toggle it live from the Web UI</h3>
+      <p>Open <a href="http://localhost:9000" target="_blank" rel="noopener">http://localhost:9000</a> and flip the decryption toggle. No restart needed — under the hood the UI calls <code>POST /api/settings/decrypt-https</code>.</p>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Add a screenshot of the decryption toggle here
+          <div><code>assets/screenshots/decrypt-toggle.png</code></div>
+        </div>
+        <figcaption>Toggling HTTPS decryption from the Web UI.</figcaption>
+      </figure>
+    </section>
+
+    <section id="trust">
+      <h2>2. Generate &amp; trust the debug CA</h2>
+      <p>
+        The first time decryption runs, HttpStackLens generates a debug root CA and installs it into your
+        Windows store / macOS keychain, then mints a per-domain certificate for each host you browse. From
+        the UI you can generate, install and export the CA explicitly:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Action</th><th>Endpoint</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Generate</td><td><code>/api/certificates/ca/generate</code></td><td>Creates the root CA key + certificate on disk.</td></tr>
+            <tr><td>Install</td><td><code>/api/certificates/ca/install</code></td><td>Adds the root CA to the OS trust store.</td></tr>
+            <tr><td>Export</td><td><code>/api/certificates/ca/export</code></td><td>Downloads the CA certificate (e.g. to trust it in Firefox, which uses its own store).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <span class="note-title">🏷️ How cleanup stays safe</span>
+        <p>Every CA this app creates embeds the marker <code>My Local CA for debugging HTTPS</code> in its subject, and every leaf it signs carries it in the issuer. Cleanup matches on that exact string, so it only removes certificates HttpStackLens created — never anything else in your trust store.</p>
+      </div>
+    </section>
+
+    <section id="inspect">
+      <h2>3. Inspect decrypted traffic</h2>
+      <p>Send some HTTPS traffic through the proxy and watch it decrypt live:</p>
+      <pre><code>curl -x http://localhost:3128 https://api.github.com/zen</code></pre>
+      <p>
+        In the Web UI, decrypted requests are flagged as such — you get headers and body in the clear,
+        with timings, base64 body decoding and inline image previews. The request/response split panes let
+        you focus either side.
+      </p>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Add a screenshot of a decrypted HTTPS request/response here
+          <div><code>assets/screenshots/decrypted-inspect.png</code></div>
+        </div>
+        <figcaption>A decrypted HTTPS exchange, fully readable in the UI.</figcaption>
+      </figure>
+    </section>
+
+    <section id="cleanup">
+      <h2>4. Clean up — remove every certificate</h2>
+      <p>
+        This is the important part: <strong>don't leave the debug CA installed.</strong> When you're
+        finished debugging, run the cleanup. In the Web UI, use the certificate cleanup action; it calls
+        <code>POST /api/certificates/cleanup</code>, which in one shot:
+      </p>
+      <ul>
+        <li>Turns HTTPS decryption <strong>off</strong>.</li>
+        <li>Removes the debug root CA — and every per-domain leaf it signed — from the OS trust store (matched by the marker).</li>
+        <li>Deletes the per-domain certificates folder (<code>certificates/domains</code>).</li>
+        <li>Deletes the root CA certificate and key files from disk.</li>
+      </ul>
+      <figure>
+        <div class="shot-placeholder">
+          <span class="ph-ico">🖼️</span>
+          Add a screenshot of the cleanup summary here
+          <div><code>assets/screenshots/cert-cleanup.png</code></div>
+        </div>
+        <figcaption>The cleanup summary: root CAs and domain leaves removed.</figcaption>
+      </figure>
+      <div class="note warn">
+        <span class="note-title">🖥️ Platform note</span>
+        <p>Automatic OS trust-store cleanup is implemented per platform. Where it isn't available, the cleanup summary tells you so and the on-disk files are still removed — you then remove the root CA by hand from your OS trust store. The CA's subject contains <code>My Local CA for debugging HTTPS</code>, so it's easy to spot.</p>
+      </div>
+    </section>
+
+    <section id="verify">
+      <h2>5. Verify your OS is clean</h2>
+      <ol class="steps">
+        <li>
+          <h3>Check the cleanup report</h3>
+          <p>The UI shows how many root and domain certificates were removed. Confirm the counts look right and there are no warnings.</p>
+        </li>
+        <li>
+          <h3>Double-check the trust store</h3>
+          <p>Search your OS trust store for the debug CA to confirm it's gone:</p>
+          <pre><code><span class="tok-c"># macOS — should print nothing</span>
+security find-certificate -a -c "My Local CA for debugging HTTPS" \
+  ~/Library/Keychains/login.keychain-db
+
+<span class="tok-c"># Windows (PowerShell) — should print nothing</span>
+Get-ChildItem Cert:\CurrentUser\Root |
+  Where-Object { $_.Subject -like "*My Local CA for debugging HTTPS*" }</code></pre>
+        </li>
+        <li>
+          <h3>Confirm the files are gone</h3>
+          <pre><code>ls certificates/            <span class="tok-c"># CA .crt / .key removed</span>
+ls certificates/domains/    <span class="tok-c"># folder removed</span></code></pre>
+        </li>
+      </ol>
+      <div class="note success">
+        <span class="note-title">✅ Clean OS</span>
+        <p>Decryption is off, the debug CA and every certificate it signed are gone from both disk and the OS trust store. Your machine is back to exactly where it started.</p>
+      </div>
+    </section>
+
+    <div class="pager">
+      <a href="tutorial-upstream-proxy.html"><div class="dir">Previous tutorial</div><div class="ttl">← Replace PX</div></a>
+      <a href="features.html"><div class="dir">Reference</div><div class="ttl">All features →</div></a>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container foot-inner">
+      <div>HttpStackLens — a Go learning project &amp; local HTTP debugging proxy.</div>
+      <div class="foot-links">
+        <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub</a>
+        <a href="tutorial-upstream-proxy.html">Replace PX</a>
+        <a href="index.html">Home</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
