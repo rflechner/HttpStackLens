@@ -104,6 +104,9 @@
     build: { version: null, commit: null, commitUrl: null },
     update: { available: false, latest: null, url: null },
     filter: '', sidebar: 'all', detailTab: 'overview', bodyMode: 'pretty',
+    // Request/response split panes: null shows both, otherwise the named side is
+    // expanded and the other collapses to a clickable rail.
+    detailFocus: null,
     density: savedDensity,
     detailHeight: savedDetailHeight,
     upstream: { on: false, ntlm: false, host: '', noProxy: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
@@ -613,8 +616,8 @@
   function headersTable(rows) {
     if (!rows || !rows.length) return detailNote('No headers.');
     return `<div style="font-family:'JetBrains Mono';font-size:11.5px;line-height:1.6">` + rows.map(([k, v]) =>
-      `<div class="grid gap-4" style="grid-template-columns:200px 1fr;padding:3px 14px;border-bottom:1px solid ${C.lineSoft}">
-        <span style="color:${k.startsWith(':') ? C.pink : C.info}">${esc(k)}</span>
+      `<div class="grid gap-3" style="grid-template-columns:minmax(0,130px) minmax(0,1fr);padding:3px 14px;border-bottom:1px solid ${C.lineSoft}">
+        <span style="color:${k.startsWith(':') ? C.pink : C.info};word-break:break-all">${esc(k)}</span>
         <span style="color:${C.ink};word-break:break-all">${esc(v)}</span></div>`).join('') + `</div>`;
   }
 
@@ -636,8 +639,25 @@
     } catch (e) { return null; }
   }
 
+  function bytesToBase64(bytes) {
+    let binary = '';
+    // Chunked: String.fromCharCode blows the argument stack on large bodies.
+    for (let i = 0; i < bytes.length; i += 8192) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    }
+    return btoa(binary);
+  }
+
+  // The bytes every view renders: the decompressed payload once we have it,
+  // the wire bytes otherwise. Every view agrees, so Pretty / Raw / Hex always
+  // describe the same thing.
+  function viewBytes(body) {
+    if (body && body.inflate && body.inflate.state === 'done') return body.inflate.bytes;
+    return bodyBytes(body);
+  }
+
   function bodyText(body) {
-    const bytes = bodyBytes(body);
+    const bytes = viewBytes(body);
     if (!bytes) return body && body.text ? body.text : '';
     try { return new TextDecoder('utf-8').decode(bytes); }
     catch (e) { return Array.from(bytes).map((b) => String.fromCharCode(b)).join(''); }
@@ -648,16 +668,22 @@
     return /^image\/[a-z0-9.+-]+$/.test(mime) ? mime : '';
   }
 
-  function imagePreview(body) {
+  function imagePreview(body, side) {
     const mime = imageContentType(body.contentType);
-    if (!mime || !body.bodyBase64) return '';
+    // Decompressed images have to be re-encoded for the data URI; cache it, the
+    // pane re-renders on every tab switch.
+    if (body.inflate && body.inflate.state === 'done' && !body.inflate.base64) {
+      body.inflate.base64 = bytesToBase64(body.inflate.bytes);
+    }
+    const b64 = (body.inflate && body.inflate.base64) || body.bodyBase64;
+    if (!mime || !b64) return '';
     return `<div class="flex items-center justify-center" style="min-height:100%;padding:18px;background:${C.bg2}">
-      <img src="data:${mime};base64,${body.bodyBase64}" alt="Captured response image" style="display:block;max-width:100%;max-height:100%;object-fit:contain;border:1px solid ${C.line};background:${C.bg1};box-shadow:0 4px 16px rgba(0,0,0,.08)">
+      <img src="data:${mime};base64,${b64}" alt="Captured ${side} image" style="display:block;max-width:100%;max-height:100%;object-fit:contain;border:1px solid ${C.line};background:${C.bg1};box-shadow:0 4px 16px rgba(0,0,0,.08)">
     </div>`;
   }
 
   function hexDump(body) {
-    const bytes = bodyBytes(body);
+    const bytes = viewBytes(body);
     const src = bytes ? bytes.slice(0, 512) : Uint8Array.from(bodyText(body).slice(0, 512), (ch) => ch.charCodeAt(0));
     let out = '';
     for (let i = 0; i < src.length; i += 16) {
@@ -672,31 +698,260 @@
     return `<div style="padding:12px 14px;font-family:'JetBrains Mono';font-size:11px;line-height:1.55">${out}</div>`;
   }
 
+  // ─── request / response split panes ──────────────────────
+  // Headers, Body and Raw all show both sides at once, each under a persistent
+  // colour-coded header, so "which side am I looking at?" can never come up.
+  // Clicking a side header focuses it and collapses the other to a rail.
+  const SKIPPED_NOTE = 'Body skipped — it exceeded the capture size limit for this content type.';
+  const sideAccent = (side) => (side === 'request' ? C.info : C.success);
+  const sideLabel = (side) => (side === 'request' ? 'Request' : 'Response');
+
+  // Per-side body metadata, preferring the detail DTO (authoritative for both
+  // sides) and falling back to the row's response-only SSE flags.
+  function sideBodyMeta(r, side) {
+    const d = r.detail || {};
+    if (d[side]) return d[side];
+    if (side === 'response') return { bodyAvailable: !!r.bodyAvailable, bodySkipped: !!r.bodySkipped, bodySize: r.size };
+    return null;
+  }
+
+  // Byte length of a loaded body without decoding it: base64 is 4 chars per
+  // 3 bytes, minus the '=' padding.
+  function bodySizeOf(b) {
+    if (!b || !b.available) return null;
+    const b64 = b.bodyBase64 || '';
+    if (!b64) return b.text ? b.text.length : null;
+    const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+    return (b64.length / 4) * 3 - pad;
+  }
+
+  function sideSummary(r, side) {
+    const b = r.bodies[side];
+    const meta = sideBodyMeta(r, side);
+    const loaded = bodySizeOf(b);
+    const bytes = loaded != null ? loaded : (meta && meta.bodySize != null ? meta.bodySize : null);
+    const head = side === 'request' ? r.method : (r.status != null ? String(r.status) : 'pending…');
+    const ct = (b && b.contentType) || (side === 'response' ? r.mime : '');
+    const mime = (ct || '').split(';')[0].trim();
+    return [head, mime, bytes ? fmtBytes(bytes) : null].filter(Boolean).join(' · ');
+  }
+
+  function sideHeader(r, side) {
+    const c = sideAccent(side);
+    const focused = state.detailFocus === side;
+    return `<button data-focus="${side}" title="${focused ? 'Show both sides' : `Focus the ${side}`}"
+      style="display:flex;align-items:center;gap:7px;width:100%;text-align:left;flex-shrink:0;padding:5px 12px;
+      background:${c}14;border:none;border-bottom:1px solid ${c}55;color:${c};cursor:pointer;
+      font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase">
+      <span aria-hidden="true" style="font-size:12px;line-height:1">${side === 'request' ? '↑' : '↓'}</span>${sideLabel(side)}
+      <span style="margin-left:auto;font-family:'JetBrains Mono';font-weight:500;text-transform:none;letter-spacing:0;color:${C.dim}">${esc(sideSummary(r, side))}</span>
+      <span aria-hidden="true" style="color:${c};opacity:.65;font-size:11px">${focused ? '⤢' : '⤡'}</span></button>`;
+  }
+
+  function sideRail(side) {
+    const c = sideAccent(side);
+    return `<button data-focus="${side}" title="Show both sides" aria-label="Expand ${side}"
+      style="display:flex;align-items:center;justify-content:center;height:100%;width:100%;padding:0;
+      background:${c}14;border:none;border-left:1px solid ${c}55;border-right:1px solid ${c}55;cursor:pointer;color:${c};
+      font-family:Inter;font-size:10.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase">
+      <span style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap">${side === 'request' ? '↑' : '↓'} ${sideLabel(side)}</span></button>`;
+  }
+
+  // Lays out the two sides according to state.detailFocus. `render(side)` returns
+  // the scrollable content for one side.
+  function splitPane(r, render) {
+    const focus = state.detailFocus;
+    const cols = focus === 'request' ? 'minmax(0,1fr) 30px'
+      : focus === 'response' ? '30px minmax(0,1fr)'
+      : 'minmax(0,1fr) minmax(0,1fr)';
+    const col = (side) => {
+      if (focus && focus !== side) return sideRail(side);
+      return `<div class="flex flex-col min-h-0 min-w-0" style="${side === 'request' ? `border-right:1px solid ${C.line}` : ''}">
+        ${sideHeader(r, side)}
+        <div class="flex-1 min-h-0 overflow-auto hsl-scroll" style="background:${C.bg1}">${render(side)}</div></div>`;
+    };
+    return `<div class="grid h-full min-h-0" style="grid-template-columns:${cols}">${col('request')}${col('response')}</div>`;
+  }
+
+  function bodyEmptyNote(r, side) {
+    if (side === 'request') return 'No request body — this request was sent without one.';
+    if (r.stream) return 'Streaming response — the body is never captured, only frame metadata.';
+    if (r.status == null) return 'Waiting for the response…';
+    return 'No response body was captured.';
+  }
+
+  // Content-Encoding for one side, read from that side's own headers.
+  function sideEncoding(r, side) {
+    const d = r.detail || {};
+    const headers = (d[side] && d[side].headers) || [];
+    const hit = headers.find(([k]) => k.toLowerCase() === 'content-encoding');
+    const enc = hit ? String(hit[1]).toLowerCase().trim() : '';
+    return enc === 'identity' ? '' : enc;
+  }
+
+  // Content-Encoding → DecompressionStream format. The browser gives us gzip and
+  // deflate natively; "deflate" is ambiguous in the wild (RFC 1950 zlib-wrapped
+  // vs raw RFC 1951), so both are tried in order. Brotli and zstd are not
+  // implemented by DecompressionStream, so those bodies stay as wire bytes.
+  const INFLATE_FORMATS = {
+    gzip: ['gzip'], 'x-gzip': ['gzip'], deflate: ['deflate', 'deflate-raw'],
+  };
+
+  async function inflateBytes(bytes, formats) {
+    let last;
+    for (const format of formats) {
+      try {
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      } catch (e) { last = e; }
+    }
+    throw last || new Error('no format');
+  }
+
+  // Bodies are stored exactly as they crossed the wire, so a compressed body is
+  // compressed bytes — about half of real request bodies are gzip'd. Inflate it
+  // once per body and re-render; `inflate.state` also stops us retrying forever.
+  function ensureInflated(r, side) {
+    const b = r.bodies[side];
+    if (!b || !b.available || b.inflate) return;
+    // The encoding lives in this side's headers, which can still be in flight —
+    // a body can arrive first. Decide on a later render rather than caching
+    // "not compressed" from headers we haven't seen.
+    if ((r.detail || {}).loading) return;
+    const enc = sideEncoding(r, side);
+    if (!enc) { b.inflate = { state: 'none' }; return; }
+    const formats = INFLATE_FORMATS[enc];
+    if (!formats || typeof DecompressionStream === 'undefined') {
+      b.inflate = { state: 'unsupported', enc };
+      return;
+    }
+    const wire = bodyBytes(b);
+    if (!wire || !wire.length) { b.inflate = { state: 'failed', enc }; return; }
+    b.inflate = { state: 'pending', enc };
+    inflateBytes(wire, formats)
+      .then((bytes) => { b.inflate = { state: 'done', enc, bytes, wireSize: wire.length }; })
+      .catch(() => { b.inflate = { state: 'failed', enc }; })
+      .finally(() => { if (r.id === state.selId) renderDetail(); });
+  }
+
+  function inflateBanner(inflate) {
+    const st = inflate.state;
+    if (st === 'none' || st === 'pending') return '';
+    if (st === 'done') {
+      return `<div style="display:flex;align-items:center;gap:7px;padding:5px 14px;background:${C.mint}14;border-bottom:1px solid ${C.mint}40;color:${C.mint};font-family:Inter;font-size:11px">
+        <span aria-hidden="true">✓</span>Decompressed from ${esc(inflate.enc)} · ${fmtBytes(inflate.wireSize)} on the wire → ${fmtBytes(inflate.bytes.length)}</div>`;
+    }
+    const why = st === 'unsupported'
+      ? `${inflate.enc} is not supported by this browser`
+      : `the ${inflate.enc} stream could not be decoded`;
+    return `<div style="display:flex;align-items:center;gap:7px;padding:5px 14px;background:${C.warn}14;border-bottom:1px solid ${C.warn}40;color:${C.warn};font-family:Inter;font-size:11px">
+      <span aria-hidden="true">⚠</span>Showing raw wire bytes — ${esc(why)}.</div>`;
+  }
+
+  function bodyContent(r, b, side) {
+    const mode = state.bodyMode;
+    ensureInflated(r, side);
+    const inflate = b.inflate || { state: 'none' };
+    if (inflate.state === 'pending') return detailNote(`Decompressing ${inflate.enc}…`);
+    const banner = inflateBanner(inflate);
+    // Once inflated, every view shows the decoded payload; only an undecodable
+    // body still renders as wire bytes.
+    const decoded = inflate.state === 'done' || inflate.state === 'none';
+
+    if (mode === 'hex') return banner + hexDump(b);
+    const text = bodyText(b);
+    if (mode === 'pretty' && decoded) {
+      if (imageContentType(b.contentType)) return banner + imagePreview(b, side);
+      if (mimeCategory(b.contentType) === 'json') {
+        return banner + `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(text)}</pre>`;
+      }
+    }
+    return banner +
+      `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all;overflow:auto">${esc(text)}</pre>`;
+  }
+
+  // Resolves one side's body to markup, kicking the lazy fetch when the metadata
+  // says there is something to fetch. Capture rows arrive with both sides already
+  // loaded, so they short-circuit on the first branch.
+  function bodySide(r, side) {
+    const b = r.bodies[side];
+    if (b && b.loaded) {
+      if (b.error) return detailNote(b.error);
+      if (b.skipped) return detailNote(SKIPPED_NOTE);
+      if (!b.available) return detailNote(bodyEmptyNote(r, side));
+      return bodyContent(r, b, side);
+    }
+    if (b && b.loading) return detailNote('Loading body…');
+
+    const d = r.detail || {};
+    if (side === 'response') {
+      if (r.stream) return detailNote('Streaming response — the body is never captured, only frame metadata.');
+      if (r.bodySkipped) return detailNote(SKIPPED_NOTE);
+      if (r.status == null) return detailNote('Waiting for the response…');
+      if (!r.bodyAvailable) return detailNote('No response body was captured.');
+    } else {
+      if (d.loading) return detailNote('Loading…');
+      if (d.error) return detailNote(d.error);
+      const meta = d.request;
+      if (!meta) return detailNote('Request detail unavailable.');
+      if (meta.bodySkipped) return detailNote(SKIPPED_NOTE);
+      if (!meta.bodyAvailable) return detailNote(bodyEmptyNote(r, side));
+    }
+    ensureBody(r, side);
+    return detailNote('Loading body…');
+  }
+
   function bodyPane(r) {
     const mode = state.bodyMode;
     const tab = (id, label) => `<button data-bodymode="${id}" style="background:transparent;border:none;cursor:pointer;padding:8px 12px 7px;font-size:11.5px;font-family:Inter;font-weight:500;color:${mode === id ? C.ink : C.dim};border-bottom:2px solid ${mode === id ? C.mint : 'transparent'};margin-bottom:-1px">${label}</button>`;
-
-    let content;
-    if (r.stream) content = detailNote('Streaming response — the body is never captured, only frame metadata.');
-    else if (r.bodySkipped) content = detailNote('Body skipped — it exceeded the capture size limit for this content type.');
-    else if (r.status != null && !r.bodyAvailable) content = detailNote('No response body was captured.');
-    else {
-      ensureBody(r, 'response');
-      const b = r.bodies.response;
-      if (!b || b.loading) content = detailNote('Loading body…');
-      else if (b.error) content = detailNote(b.error);
-      else if (!b.available) content = detailNote('No response body was captured.');
-      else {
-        const text = bodyText(b);
-        if (mode === 'pretty' && imageContentType(b.contentType)) content = imagePreview(b);
-        else if (mode === 'pretty' && r.mimeColor === 'json') content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.ink};white-space:pre;overflow:auto">${jsonHighlight(text)}</pre>`;
-        else if (mode === 'hex') content = hexDump(b);
-        else content = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all;overflow:auto">${esc(text)}</pre>`;
-      }
-    }
     return `<div class="flex flex-col h-full min-h-0">
       <div class="flex" style="border-bottom:1px solid ${C.line};background:${C.bg1};padding-left:6px;flex-shrink:0">${tab('pretty', 'Pretty')}${tab('raw', 'Raw')}${tab('hex', 'Hex')}</div>
-      <div class="flex-1 min-h-0 overflow-auto hsl-scroll" style="background:${C.bg1}">${content}</div></div>`;
+      <div class="flex-1 min-h-0">${splitPane(r, (side) => bodySide(r, side))}</div></div>`;
+  }
+
+  // A real, self-contained HTTP message per side — start line, that side's own
+  // headers, blank line, that side's own body.
+  function rawSide(r, side) {
+    const d = r.detail || {};
+    if (d.loading) return detailNote('Loading…');
+    if (d.error) return detailNote(d.error);
+
+    let start, headers;
+    if (side === 'request') {
+      const version = (d.request && d.request.httpVersion) || r.version || 'HTTP/1.1';
+      start = `${r.method} ${r.path} ${version}`;
+      headers = (d.request && d.request.headers) || [];
+      // Go hoists Host out of the header map onto Request.Host, so it never
+      // reaches us as a captured header. Put it back, or the message we print
+      // isn't a valid HTTP/1.1 request.
+      if (r.host && !headers.some(([k]) => k.toLowerCase() === 'host')) {
+        headers = [['Host', r.host]].concat(headers);
+      }
+    } else {
+      if (r.status == null) return detailNote('Waiting for the response…');
+      const version = (d.response && d.response.httpVersion) || r.version || 'HTTP/1.1';
+      start = `${version} ${r.status}${r.statusText ? ' ' + r.statusText : ''}`;
+      headers = (d.response && d.response.headers) || [];
+    }
+
+    const b = r.bodies[side];
+    let bodyText_ = '';
+    if (b && b.loaded && b.available) {
+      ensureInflated(r, side);
+      const st = (b.inflate || {}).state;
+      if (st === 'pending') bodyText_ = `⋯ decompressing ${b.inflate.enc}`;
+      else if (st === 'unsupported' || st === 'failed') bodyText_ = `⋯ ${b.inflate.enc} body — ${fmtBytes(bodySizeOf(b))} of undecodable wire bytes`;
+      else bodyText_ = bodyText(b);
+    } else if (b && b.loading) bodyText_ = '⋯ loading body';
+    else {
+      const meta = sideBodyMeta(r, side);
+      if (meta && meta.bodySkipped) bodyText_ = '⋯ body skipped (over the capture size limit)';
+      else if (meta && meta.bodyAvailable) { ensureBody(r, side); bodyText_ = '⋯ loading body'; }
+    }
+
+    const head = `${start}\n${headers.map(([k, v]) => `${k}: ${v}`).join('\n')}`;
+    return `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">` +
+      `<span style="color:${C.ink}">${esc(head)}</span>\n\n${esc(bodyText_)}</pre>`;
   }
 
   // Real per-phase timing from the backend (TimingDto, milliseconds). Present
@@ -759,21 +1014,16 @@
     } else if (t === 'headers') {
       if (d.loading) body = detailNote('Loading headers…');
       else if (d.error) body = detailNote(d.error);
-      else {
-        const sectionHead = (l, n) => `<div style="padding:6px 14px;font-size:10.5px;color:${C.faint};text-transform:uppercase;letter-spacing:.7px;font-weight:600;background:${C.bg2};border-bottom:1px solid ${C.line}">${l} headers · ${n}</div>`;
-        body = sectionHead('Request', reqH.length) + headersTable(reqH) + sectionHead('Response', resH.length) + headersTable(resH);
-      }
+      else body = splitPane(r, (side) => headersTable(side === 'request' ? reqH : resH));
     } else if (t === 'body') {
       body = bodyPane(r);
     } else if (t === 'timing') {
       body = timingBar(r);
     } else if (t === 'raw') {
-      const reqLine = `${r.method} ${r.path} ${(d.request && d.request.httpVersion) || r.version || 'HTTP/1.1'}`;
-      const hdrs = reqH.map(([k, v]) => `${k}: ${v}`).join('\n');
-      const rb = r.bodies.response;
-      const rawBody = rb && rb.available ? bodyText(rb) : '';
-      body = `<pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono';font-size:11.5px;line-height:1.55;color:${C.dim};white-space:pre-wrap;word-break:break-all">${esc(`${reqLine}\nhost: ${r.host}\n${hdrs}\n\n${rawBody}`)}</pre>`;
+      body = splitPane(r, (side) => rawSide(r, side));
     }
+    // The split tabs scroll inside each column; the others scroll as one block.
+    const split = t === 'headers' || t === 'body' || t === 'raw';
 
     wrap.innerHTML = `
       <div data-detail-resizer class="detail-resizer" title="Drag to resize · double-click to reset" aria-label="Resize request detail panel"></div>
@@ -787,7 +1037,7 @@
       </div>
       <div class="flex" style="border-bottom:1px solid ${C.line};background:${C.bg1};padding-left:6px;flex-shrink:0">
         ${tab('overview', 'Overview')}${tab('headers', 'Headers', headerCount)}${tab('body', 'Body')}${tab('timing', 'Timing')}${tab('raw', 'Raw')}</div>
-      <div class="flex-1 min-h-0 overflow-auto hsl-scroll">${body}</div>`;
+      <div class="flex-1 min-h-0 ${split ? 'overflow-hidden' : 'overflow-auto hsl-scroll'}">${body}</div>`;
   }
 
   // ─── status bar ──────────────────────────────────────────
@@ -1270,6 +1520,13 @@
       const bm = e.target.closest('[data-bodymode]');
       if (bm) { state.bodyMode = bm.dataset.bodymode; renderDetail(); return; }
 
+      const focus = e.target.closest('[data-focus]');
+      if (focus) {
+        state.detailFocus = state.detailFocus === focus.dataset.focus ? null : focus.dataset.focus;
+        renderDetail();
+        return;
+      }
+
       const settab = e.target.closest('[data-settab]');
       if (settab) { settingsTab = settab.dataset.settab; renderSettings(); return; }
 
@@ -1554,7 +1811,7 @@
     const row = state.liveRows.find((x) => x.correlationId === correlationId);
     if (!row) return;
     row.bodies[side] = Object.assign({ loaded: true, loading: false }, body || {});
-    if (row.id === state.selId && state.detailTab === 'body' && side === 'response') renderDetail();
+    if (row.id === state.selId && (state.detailTab === 'body' || state.detailTab === 'raw')) renderDetail();
   }
 
   // ─── boot ────────────────────────────────────────────────
