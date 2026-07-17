@@ -267,6 +267,12 @@ footer {
 }
 .foot-inner { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; align-items: center; }
 .foot-links { display: flex; gap: 1.2rem; flex-wrap: wrap; }
+.made-in {
+  margin-top: 1.4rem; padding-top: 1.2rem; border-top: 1px solid var(--border);
+  text-align: center; color: var(--dim); font-size: .85rem;
+  display: flex; justify-content: center; align-items: center; gap: .45rem;
+}
+.made-in .flags { font-size: 1.05rem; line-height: 1; }
 
 /* ---------- Next / prev ---------- */
 .pager { display: flex; gap: 1rem; margin-top: 3rem; flex-wrap: wrap; }
