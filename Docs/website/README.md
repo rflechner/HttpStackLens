@@ -11,7 +11,7 @@ Docs/website/
 ├── index.html                     # Home / overview            (English)
 ├── features.html                  # Every feature explained
 ├── getting-started.html           # Prerequisites, build & run
-├── tutorial-upstream-proxy.html   # Tutorial 1 — replace PX behind a corporate proxy
+├── tutorial-upstream-proxy.html   # Tutorial 1 — authenticate behind a corporate proxy
 ├── tutorial-https-decrypt.html    # Tutorial 2 — debug HTTPS + clean up certificates
 ├── fr/                            # French translations (same 5 pages)
 │   ├── index.html

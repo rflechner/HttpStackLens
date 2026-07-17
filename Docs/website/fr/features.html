@@ -20,7 +20,7 @@
         <a href="index.html">Accueil</a>
         <a href="features.html">Fonctionnalités</a>
         <a href="getting-started.html">Démarrage</a>
-        <a href="tutorial-upstream-proxy.html">Remplacer PX</a>
+        <a href="tutorial-upstream-proxy.html">Proxy d'entreprise</a>
         <a href="tutorial-https-decrypt.html">Déchiffrement HTTPS</a>
         <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
         <span class="lang-switch">
@@ -135,9 +135,9 @@
         compatibilité pour les proxys amont qui s'authentifient par des défis <code>407</code>/<code>401</code>.
       </p>
       <p>
-        Cette combinaison lui permet de remplacer des outils comme <code>px</code> ou <code>cntlm</code>
+        Cette combinaison lui permet de remplacer un assistant d'authentification local dédié
         sur un poste de dev situé derrière un proxy d'entreprise authentifié — voir le
-        <a href="tutorial-upstream-proxy.html">tutoriel Remplacer PX</a>.
+        <a href="tutorial-upstream-proxy.html">tutoriel dédié au proxy d'entreprise</a>.
       </p>
       <figure>
         <img src="../assets/upstream-proxy-401-compatibility-flow.png" alt="Schéma du flux de compatibilité 401 du proxy amont" />
@@ -170,9 +170,28 @@
           <tbody>
             <tr><td><code>loopback</code></td><td>Uniquement cette machine (127.0.0.1 / ::1). Le défaut.</td></tr>
             <tr><td><code>lan</code></td><td>Les plages d'adresses privées / LAN.</td></tr>
-            <tr><td><code>allowlist</code></td><td>Uniquement les réseaux listés sous <code>networks</code>.</td></tr>
+            <tr><td><code>allowlist</code></td><td>Uniquement les réseaux précis listés sous <code>networks</code>.</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="note">
+        <span class="note-title">📱 Déboguer un container ou un appareil mobile</span>
+        <p>C'est là que <code>allowlist</code> brille. Pour inspecter le trafic d'une application qui tourne
+        dans un <strong>container Docker</strong> ou sur un <strong>téléphone / une tablette</strong>, ce
+        client doit joindre le proxy depuis une adresse non-loopback — mais l'ouvrir à tout le LAN est
+        excessif. À la place, autorisez uniquement la source qui vous intéresse : le réseau bridge du
+        container (ex. <code>172.17.0.0/16</code>) ou l'IP de votre appareil (ex.
+        <code>192.168.1.42/32</code>). Pointez ensuite le container / l'appareil vers l'IP de votre machine
+        sur <code>:3128</code> et observez ses requêtes en direct.</p>
+      </div>
+      <div class="note warn">
+        <span class="note-title">🔧 Deux contrôles d'accès distincts</span>
+        <p>Le <strong>proxy</strong> et l'<strong>interface web</strong> ont chacun leur propre bloc
+        <code>access_control</code> dans <code>config.yaml</code> (<code>proxy.access_control</code> et
+        <code>webui.access_control</code>) — ils se configurent indépendamment. En ouvrir un ne touche pas
+        l'autre : si vous voulez à la fois envoyer du trafic <em>et</em> ouvrir l'UI depuis un autre
+        appareil, réglez le mode sur les <strong>deux</strong>. Une configuration courante est un
+        <code>allowlist</code> sur le proxy pendant que l'UI reste en <code>loopback</code>.</p>
       </div>
     </section>
 

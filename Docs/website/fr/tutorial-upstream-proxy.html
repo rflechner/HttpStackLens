@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tutoriel — Remplacer PX derrière un proxy d'entreprise — HttpStackLens</title>
-  <meta name="description" content="Utilisez HttpStackLens comme remplaçant de px/cntlm : relayez le trafic local à travers un proxy d'entreprise authentifié." />
+  <title>Tutoriel — S'authentifier derrière un proxy d'entreprise — HttpStackLens</title>
+  <meta name="description" content="Utilisez HttpStackLens pour relayer le trafic local à travers un proxy d'entreprise authentifié — sans assistant d'authentification séparé." />
   <link rel="icon" href="../assets/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -20,7 +20,7 @@
         <a href="index.html">Accueil</a>
         <a href="features.html">Fonctionnalités</a>
         <a href="getting-started.html">Démarrage</a>
-        <a href="tutorial-upstream-proxy.html">Remplacer PX</a>
+        <a href="tutorial-upstream-proxy.html">Proxy d'entreprise</a>
         <a href="tutorial-https-decrypt.html">Déchiffrement HTTPS</a>
         <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">GitHub ↗</a>
         <span class="lang-switch">
@@ -35,12 +35,11 @@
   <div class="container">
     <div class="page-head">
       <div class="eyebrow">Tutoriel · 1 sur 2</div>
-      <h1>Remplacer PX derrière un proxy d'entreprise</h1>
+      <h1>S'authentifier derrière un proxy d'entreprise</h1>
       <p>
         Derrière un proxy d'entreprise authentifié, les outils incapables de faire du NTLM/Kerberos
-        s'appuient souvent sur un assistant local comme
-        <a href="https://github.com/genotrance/px" target="_blank" rel="noopener">px</a>
-        ou <code>cntlm</code>. HttpStackLens peut jouer ce rôle — et vous laisser observer le trafic au passage.
+        s'appuient souvent sur un petit proxy local qui réalise l'authentification à leur place.
+        HttpStackLens peut jouer ce rôle — et vous laisser observer le trafic au passage.
       </p>
     </div>
   </div>
@@ -68,9 +67,24 @@
       <p>
         Un proxy d'entreprise exige généralement une authentification NTLM, Kerberos ou Negotiate. De
         nombreux CLI, gestionnaires de paquets et SDK ne savent pas réaliser ce handshake — ils reçoivent
-        un <code>407 Proxy Authentication Required</code> et abandonnent. <code>px</code> résout cela en
+        un <code>407 Proxy Authentication Required</code> et abandonnent. Un assistant dédié résout cela en
         faisant tourner un proxy local qui s'authentifie en amont à leur place.
       </p>
+      <div class="note">
+        <span class="note-title">🧩 À qui ça s'adresse</span>
+        <p>Cela aide surtout les outils qui parlent le proxy HTTP standard mais <strong>n'implémentent pas</strong>
+        NTLM, Kerberos ni Negotiate, et échouent donc avec un <code>407</code> derrière un proxy authentifié
+        Windows. Exemples courants :</p>
+        <ul style="margin:.6rem 0 0;color:var(--muted)">
+          <li><strong>Node.js</strong> &amp; <strong>npm / yarn / pnpm</strong></li>
+          <li><strong>Python</strong> — <code>pip</code>, <code>requests</code>, <code>conda</code></li>
+          <li><strong>Modules Go</strong> (<code>go get</code>), <strong>Rust</strong> <code>cargo</code></li>
+          <li><strong>Java</strong> — Maven, Gradle ; <strong>Ruby</strong> — <code>gem</code>, Bundler ; <strong>PHP</strong> — Composer</li>
+          <li><strong>Docker</strong> &amp; les gestionnaires de paquets de conteneurs (<code>apt</code>, <code>apk</code>)</li>
+          <li>De nombreux CLI cloud / CI et extensions de serveur de langage / IDE</li>
+        </ul>
+        <p style="margin-top:.6rem">Pointez n'importe lequel vers <code>localhost:3128</code> et HttpStackLens réalise l'authentification à leur place.</p>
+      </div>
       <p>
         HttpStackLens fait la même chose : il expose un proxy local <strong>non authentifié</strong> sur
         <code>localhost:3128</code>, relaie tout vers votre proxy d'entreprise <strong>amont</strong> et
@@ -179,8 +193,8 @@ npm config set https-proxy http://localhost:3128</code></pre>
           <p>Ouvrez <a href="http://localhost:9000" target="_blank" rel="noopener">http://localhost:9000</a>. La requête doit apparaître dans la liste en direct avec un statut <code>2xx</code> — preuve qu'elle a atteint Internet via le proxy amont authentifié.</p>
         </li>
         <li>
-          <h3>Mettre PX à la retraite</h3>
-          <p>Une fois le trafic établi, vous pouvez arrêter votre ancienne instance <code>px</code>/<code>cntlm</code>. HttpStackLens gère désormais l'authentification <em>et</em> vous offre une visibilité complète sur le trafic.</p>
+          <h3>Mettre l'ancien assistant à la retraite</h3>
+          <p>Une fois le trafic établi, vous pouvez arrêter le proxy d'authentification local que vous utilisiez auparavant. HttpStackLens gère désormais l'authentification <em>et</em> vous offre une visibilité complète sur le trafic.</p>
         </li>
       </ol>
       <div class="note success">

@@ -34,12 +34,21 @@
       });
     }
 
-    // Highlight active nav link
-    const here = location.pathname.split('/').pop() || 'index.html';
+    // Highlight active nav link. Compare page basenames without the ".html"
+    // extension so it works whether the URL is served as /features, /features.html
+    // or /features/ (GitHub Pages accepts all three).
+    function pageKey(path) {
+      let p = path.split('#')[0].split('?')[0];
+      p = p.substring(p.lastIndexOf('/') + 1);
+      p = p.replace(/\.html$/, '');
+      return p === '' ? 'index' : p;
+    }
+    const here = pageKey(location.pathname);
     document.querySelectorAll('#nav-links a').forEach(function (a) {
       if (a.classList.contains('lang-link')) return; // language switch keeps its hard-coded state
       const href = a.getAttribute('href');
-      if (href === here) a.classList.add('active');
+      if (/^[a-z]+:/i.test(href)) return;            // skip external / mailto links
+      if (pageKey(href) === here) a.classList.add('active');
     });
 
     // Copy buttons on code blocks
