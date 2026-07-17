@@ -3,6 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    // This directory-index page can be reached as …/fr/, …/fr/index.html, or
+    // (when a browser strips "index.html") …/fr — the last form makes relative
+    // links resolve against the parent folder and land on the English pages.
+    // Pin the document base to this page's own folder so links stay in /fr/.
+    (function () {
+      var dir = location.pathname.replace(/\/index(\.html)?$/, '/');
+      if (!/\/$/.test(dir)) dir += '/';
+      if (document.baseURI.replace(location.origin, '') !== dir) {
+        var b = document.createElement('base');
+        b.href = dir;
+        document.head.appendChild(b);
+      }
+    })();
+  </script>
   <title>HttpStackLens — un proxy de débogage HTTP/HTTPS local</title>
   <meta name="description" content="HttpStackLens est un proxy de débogage HTTP/HTTPS local avec une interface web temps réel, un déchiffrement HTTPS optionnel et l'authentification vers un proxy amont." />
   <link rel="icon" href="../assets/logo.png" />
