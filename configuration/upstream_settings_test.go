@@ -134,5 +134,5 @@ func readConfigFromPath(t *testing.T, path string) AppConfig {
 		t.Fatalf("chdir: %v", err)
 	}
 	defer func() { _ = os.Chdir(cwd) }()
-	return ReadConfiguration()
+	return ReadOrCreateConfigurationIfNotExists()
 }

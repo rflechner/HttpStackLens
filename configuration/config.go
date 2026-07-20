@@ -2,12 +2,8 @@ package configuration
 
 import (
 	"httpStackLens/webui/wasm/shared"
-	"log"
-	"os"
 	"strings"
 	"sync"
-
-	"github.com/goccy/go-yaml"
 )
 
 type AppConfig struct {
@@ -234,22 +230,6 @@ func DefaultAppConfig() AppConfig {
 			CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
 		},
 	}
-}
-
-func ReadConfiguration() AppConfig {
-	configData, err := os.ReadFile("config.yaml")
-	if err != nil {
-		log.Printf("Failed to parse configuration file: %v\n", err)
-		return DefaultAppConfig()
-	}
-	var conf AppConfig
-	err = yaml.Unmarshal(configData, &conf)
-	if err != nil {
-		log.Printf("Failed to parse configuration file: %v\n", err)
-		return DefaultAppConfig()
-	}
-
-	return conf
 }
 
 func (c *AppConfig) ToDto() shared.AppConfigDto {

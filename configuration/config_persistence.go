@@ -2,12 +2,50 @@ package configuration
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/goccy/go-yaml"
 )
 
 const defaultConfigPath = "config.yaml"
+
+func ReadConfiguration() (AppConfig, error) {
+	configData, err := os.ReadFile(defaultConfigPath)
+	if err != nil {
+		log.Printf("Failed to parse configuration file: %v\n", err)
+		return DefaultAppConfig(), fmt.Errorf("failed to read configuration file: %v", err)
+	}
+	var conf AppConfig
+	err = yaml.Unmarshal(configData, &conf)
+	if err != nil {
+		log.Printf("Failed to parse configuration file: %v\n", err)
+		return DefaultAppConfig(), fmt.Errorf("failed to parse configuration file: %v", err)
+	}
+
+	return conf, nil
+}
+
+func ReadOrCreateConfigurationIfNotExists() AppConfig {
+	conf, e := ReadConfiguration()
+	if e != nil {
+		log.Printf("Creating default configuration file")
+		conf = DefaultAppConfig()
+		bytes, err := yaml.Marshal(conf)
+		if err != nil {
+			log.Printf("Failed to marshal default configuration: %v\n", err)
+			return conf
+		}
+		err = os.WriteFile(defaultConfigPath, bytes, 0644)
+		if err != nil {
+			log.Printf("Failed to write default configuration file: %v\n", err)
+			return conf
+		}
+	}
+	return conf
+}
 
 // PersistStorageEnabled updates storage.enable in config.yaml while preserving
 // the rest of the file as-is. The Web UI uses this for pause/resume so capture

@@ -55,7 +55,7 @@ func main() {
 		}
 	}
 
-	config := configuration.ReadConfiguration()
+	config := configuration.ReadOrCreateConfigurationIfNotExists()
 
 	// Registered here but parsed inside CreateOsSpecificProxyPipeline (which
 	// calls flag.Parse on the shared default flag set).
