@@ -22,7 +22,7 @@ services:
       - sh
       - -c
       - |
-        npm install -g --no-audit --no-fund hugo-extended@${HUGO_VERSION} && \
+        npm install -g --no-audit --no-fund hugo-extended@$${HUGO_VERSION} && \
         hugo mod get github.com/google/docsy/theme && \
         hugo mod npm pack && \
         npm install --no-audit --no-fund && \

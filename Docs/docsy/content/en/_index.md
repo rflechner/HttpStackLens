@@ -2,7 +2,7 @@
 title: HttpStackLens
 ---
 
-{{< blocks/cover title="See through your HTTP stack." image_anchor="top" height="med" color="dark" >}}
+{{< blocks/cover title="See through your HTTP stack." image_anchor="top" height="med" color="white" >}}
 <div class="mx-auto">
   <p class="lead mt-5">
     A local HTTP/HTTPS debugging proxy with a live Web UI. Inspect traffic in real time,
@@ -12,7 +12,7 @@ title: HttpStackLens
   <a class="btn btn-lg btn-primary me-3 mb-4" href="docs/getting-started/">
     Get started <i class="fas fa-arrow-alt-circle-right ms-2"></i>
   </a>
-  <a class="btn btn-lg btn-secondary me-3 mb-4" href="docs/features/">
+  <a class="btn btn-lg btn-outline-primary me-3 mb-4" href="docs/features/">
     Explore features
   </a>
 </div>

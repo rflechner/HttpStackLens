@@ -1,0 +1,29 @@
+// HttpStackLens brand — mirrors the app's "slate" theme (webui/src/input.css),
+// the same palette used by the hand-written site in Docs/website/.
+// This is Docsy's intended customization hook: it is imported BEFORE Bootstrap,
+// so these values retint the whole theme without touching any theme HTML.
+
+// ── Typography: Inter, like the reference site ──────────────────────────────
+$td-enable-google-fonts: true;
+$td-google-font-name: 'Inter';
+$td-google-font-family: 'Inter:400,500,600,700';
+$font-family-sans-serif:
+  'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+  Arial, sans-serif;
+
+// ── Palette (Bootstrap theme colors) ────────────────────────────────────────
+$primary:   #0284c7; // sky-600  — accent-strong (links, buttons, active states)
+$secondary: #64748b; // slate-500
+$success:   #10b981;
+$info:      #0ea5e9; // sky-500  — accent
+$warning:   #d97706;
+$danger:    #e11d48;
+$dark:      #0f172a; // slate-900
+$light:     #f1f5f9; // slate-100
+
+$body-color: #0f172a; // slate-900 text
+
+// ── Softer, rounder surfaces (reference uses ~14px radii) ───────────────────
+$border-radius:    0.6rem;
+$border-radius-sm: 0.4rem;
+$border-radius-lg: 0.9rem;

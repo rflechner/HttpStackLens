@@ -1,0 +1,53 @@
+// HttpStackLens — custom touches on top of the retinted Docsy theme.
+// Imported AFTER Bootstrap, so it can safely override finished rules.
+
+// ── Landing cover: the reference site's light sky/emerald glow ──────────────
+.td-cover-block {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(1000px 400px at 80% -10%, rgba(14, 165, 233, 0.16), transparent 70%),
+    radial-gradient(800px 400px at 0% 10%, rgba(16, 185, 129, 0.10), transparent 65%);
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+
+  // Docsy darkens covers with a dark overlay (meant for photo backgrounds);
+  // remove it so the light gradient and dark text show through.
+  &.-bg-white::after,
+  &.td-overlay--dark::after {
+    background: none;
+  }
+
+  h1,
+  .display-1,
+  .display-2,
+  .display-3,
+  .display-4 {
+    color: #0f172a;
+  }
+  .lead {
+    color: #475569; // slate-600 muted lead
+  }
+}
+
+// ── Inline code: light slate chip, like the reference site ──────────────────
+.td-content :not(pre) > code {
+  color: #0f172a;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.3rem;
+  padding: 0.12em 0.4em;
+}
+
+// ── Rounder screenshots / diagrams ──────────────────────────────────────────
+.td-content img,
+.td-content figure img {
+  border-radius: 0.75rem;
+}
+
+// ── Always-dark code blocks (config sets style=github-dark, noClasses) ──────
+// Keep the dark background in light mode too, matching Docs/website.
+.td-content pre,
+.td-content .highlight pre {
+  border: 1px solid #1e293b;
+  border-radius: 0.6rem;
+}

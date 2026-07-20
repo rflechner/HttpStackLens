@@ -12,6 +12,9 @@ Docs/docsy/
 ├── hugo.toml                 # site config: theme module, EN/FR languages, menus, UI
 ├── go.mod                    # declares the Docsy theme as a Hugo module
 ├── package.hugo.json         # PostCSS toolchain (merged with Docsy's npm assets)
+├── assets/scss/              # brand overrides (Docsy's intended theming hooks)
+│   ├── _variables_project.scss   #   palette + Inter font (before Bootstrap)
+│   └── _styles_project.scss      #   hero glow, inline-code chip (after Bootstrap)
 ├── Dockerfile                # production build → static site served by nginx
 ├── docker-compose.yml        # local dev server with live reload
 ├── content/
@@ -95,6 +98,23 @@ docker rm "$id"
   `![alt](/images/screenshots/request-list.png)`.
 - **Keep EN and FR in sync** — same file name in `content/en/docs/` and
   `content/fr/docs/`.
+
+## Matching the app's look
+
+The theme is retinted to mirror the hand-written site in `Docs/website/` (the app's
+"slate" palette, the Inter font, dark code blocks) **using only Docsy's supported
+hooks** — no theme HTML is overridden, so it survives theme updates:
+
+- `assets/scss/_variables_project.scss` — sets the Bootstrap theme colors
+  (`$primary: #0284c7` sky, `$dark: #0f172a` slate, …) and switches the Google
+  font to Inter. Imported *before* Bootstrap.
+- `assets/scss/_styles_project.scss` — the landing hero's sky/emerald glow and the
+  light inline-code chip. Imported *after* Bootstrap.
+- `hugo.toml` — dark code blocks (`[markup.highlight] noClasses + style`) and the
+  per-language `copyright` line ("Made in France and Switzerland").
+
+To push the resemblance further you'd have to override theme *layouts* (e.g. a
+bespoke navbar or card grid) — that's where you'd start leaving Docsy behind.
 
 ## Relationship to `Docs/website/`
 

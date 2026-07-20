@@ -20,7 +20,10 @@ disableKinds = ["taxonomy", "term"]
   [markup.goldmark.renderer]
     unsafe = true
   [markup.highlight]
-    noClasses = false
+    # Inline styles from a dark Chroma theme → dark code blocks in both light and
+    # dark mode, matching the hand-written site in Docs/website.
+    noClasses = true
+    style = "github-dark"
     guessSyntax = true
 
 # ── Docsy theme, pulled in as a Hugo module ──────────────────────────────────
@@ -41,6 +44,7 @@ disableKinds = ["taxonomy", "term"]
     [languages.en.params]
       title = "HttpStackLens"
       description = "A local HTTP/HTTPS debugging proxy with a live Web UI, opt-in HTTPS decryption and upstream-proxy authentication."
+      copyright = "The HttpStackLens authors · Made in France and Switzerland 🇫🇷 🇨🇭"
     [languages.en.menus]
       [[languages.en.menus.main]]
         name = "Documentation"
@@ -59,6 +63,7 @@ disableKinds = ["taxonomy", "term"]
     [languages.fr.params]
       title = "HttpStackLens"
       description = "Un proxy de débogage HTTP/HTTPS local avec une interface web temps réel, un déchiffrement HTTPS optionnel et l'authentification vers un proxy amont."
+      copyright = "Les auteurs de HttpStackLens · Fait en France et en Suisse 🇫🇷 🇨🇭"
     [languages.fr.menus]
       [[languages.fr.menus.main]]
         name = "Documentation"
