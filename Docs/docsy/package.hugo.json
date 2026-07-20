@@ -1,0 +1,10 @@
+{
+  "name": "httpstacklens-docs",
+  "private": true,
+  "description": "HttpStackLens documentation site (Hugo + Docsy).",
+  "devDependencies": {
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "postcss-cli": "^11.0.0"
+  }
+}

@@ -1,0 +1,29 @@
+# Local development server with live reload.
+#
+#   docker compose -f Docs/docsy/docker-compose.yml up
+#   → http://localhost:1313      (English)
+#   → http://localhost:1313/fr/  (Français)
+#
+# The first start downloads the Docsy theme and npm assets into this folder
+# (node_modules/, resources/, package.json — all git-ignored); later starts are
+# fast. Edits to any Markdown file reload the browser automatically.
+
+services:
+  docs:
+    image: hugomods/hugo:debian-exts
+    working_dir: /src
+    environment:
+      HUGO_VERSION: "0.164.0"
+    volumes:
+      - ./:/src
+    ports:
+      - "1313:1313"
+    command:
+      - sh
+      - -c
+      - |
+        npm install -g --no-audit --no-fund hugo-extended@${HUGO_VERSION} && \
+        hugo mod get github.com/google/docsy/theme && \
+        hugo mod npm pack && \
+        npm install --no-audit --no-fund && \
+        hugo server --bind=0.0.0.0 --port=1313 --baseURL=http://localhost:1313/ --appendPort=false --disableFastRender

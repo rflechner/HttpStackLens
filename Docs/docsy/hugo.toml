@@ -1,0 +1,93 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# HttpStackLens documentation — Hugo + Docsy configuration
+# The HTML/CSS template comes from the Docsy theme (a Hugo module); every page
+# under content/ is plain Markdown. Build it with Docker — see README.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+baseURL = "/"
+title = "HttpStackLens"
+
+enableRobotsTXT = true
+enableGitInfo = false
+
+# Multilingual: English at the root, French under /fr/.
+defaultContentLanguage = "en"
+defaultContentLanguageInSubdir = false
+disableKinds = ["taxonomy", "term"]
+
+# Docsy needs unsafe HTML (shortcodes emit raw markup) and nice code highlighting.
+[markup]
+  [markup.goldmark.renderer]
+    unsafe = true
+  [markup.highlight]
+    noClasses = false
+    guessSyntax = true
+
+# ── Docsy theme, pulled in as a Hugo module ──────────────────────────────────
+[module]
+  proxy = "direct"
+  [module.hugoVersion]
+    extended = true
+    min = "0.110.0"
+  [[module.imports]]
+    path = "github.com/google/docsy/theme"
+
+# ── Languages ────────────────────────────────────────────────────────────────
+[languages]
+  [languages.en]
+    label = "English"
+    weight = 1
+    contentDir = "content/en"
+    [languages.en.params]
+      title = "HttpStackLens"
+      description = "A local HTTP/HTTPS debugging proxy with a live Web UI, opt-in HTTPS decryption and upstream-proxy authentication."
+    [languages.en.menus]
+      [[languages.en.menus.main]]
+        name = "Documentation"
+        weight = 20
+        url = "/docs/"
+      [[languages.en.menus.main]]
+        name = "GitHub"
+        weight = 50
+        url = "https://github.com/rflechner/HttpStackLens"
+        pre = "<i class='fab fa-github'></i>"
+
+  [languages.fr]
+    label = "Français"
+    weight = 2
+    contentDir = "content/fr"
+    [languages.fr.params]
+      title = "HttpStackLens"
+      description = "Un proxy de débogage HTTP/HTTPS local avec une interface web temps réel, un déchiffrement HTTPS optionnel et l'authentification vers un proxy amont."
+    [languages.fr.menus]
+      [[languages.fr.menus.main]]
+        name = "Documentation"
+        weight = 20
+        url = "/fr/docs/"
+      [[languages.fr.menus.main]]
+        name = "GitHub"
+        weight = 50
+        url = "https://github.com/rflechner/HttpStackLens"
+        pre = "<i class='fab fa-github'></i>"
+
+# ── Docsy UI parameters ──────────────────────────────────────────────────────
+[params]
+  copyright = "The HttpStackLens authors"
+  github_repo = "https://github.com/rflechner/HttpStackLens"
+  github_project_repo = "https://github.com/rflechner/HttpStackLens"
+  offlineSearch = true
+  prism_syntax_highlighting = false
+
+  [params.ui]
+    navbar_logo = false
+    breadcrumb_disable = false
+    sidebar_menu_compact = false
+    sidebar_search_disable = false
+    footer_about_enable = true
+
+  # Footer link groups.
+  [[params.links.developer]]
+    name = "GitHub"
+    url = "https://github.com/rflechner/HttpStackLens"
+    icon = "fab fa-github"
+    desc = "Source code, issues and releases"
