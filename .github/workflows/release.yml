@@ -135,17 +135,10 @@ jobs:
               go build -trimpath -ldflags "$ldflags" -o "$out" .
           done
 
-      # arm64 macOS refuses to run an unsigned binary outright. Ad-hoc only, not
-      # notarized — first launch still needs a Gatekeeper override.
-      - name: Ad-hoc sign macOS binaries
-        if: matrix.goos == 'darwin'
-        run: |
-          set -eu
-          for arch in amd64 arm64; do
-            bin="dist/darwin_${arch}/${APP_NAME}"
-            codesign --force --sign - "$bin"
-            codesign --verify --verbose "$bin"
-          done
+      # No codesign step for darwin: cmd/link already applies an ad-hoc signature
+      # to arm64 Mach-O output (flags=adhoc,linker-signed), which is what Apple
+      # Silicon requires. amd64 needs no signature at all. Notarization would be a
+      # different matter — it needs a Developer ID and is not set up here.
 
       - uses: actions/upload-artifact@v4
         with:
