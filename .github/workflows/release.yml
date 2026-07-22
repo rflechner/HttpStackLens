@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. v0.1.2-alpha). Produces a draft release."
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: httpStackLens
+  # Shipped as config.yaml in every archive — never the repo's own config.yaml,
+  # which may carry local tweaks that must not leak into a release.
+  SAMPLE_CONFIG: .github/config.sample.yaml
+
+jobs:
+  # Resolves the version once so every downstream job stamps the same values,
+  # and fails the run early on a missing/broken sample config.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+      date: ${{ steps.version.outputs.date }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -eu
+          if [ -n "${{ inputs.version }}" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Check sample config
+        run: |
+          set -eu
+          test -f "${SAMPLE_CONFIG}" || {
+            echo "::error::${SAMPLE_CONFIG} is missing — releases ship it as config.yaml"
+            exit 1
+          }
+          # syntax check only — ruby ships with the runner image, PyYAML does not
+          ruby -ryaml -e 'YAML.safe_load(File.read(ARGV[0]))' "${SAMPLE_CONFIG}"
+
+  # Built once and shared: the WASM + CSS output is platform-independent and gets
+  # embedded into every binary via //go:embed, so rebuilding it per platform would
+  # just be a second npm install for an identical result.
+  webui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build Web UI (WASM + Tailwind CSS)
+        run: go run ./build-tools/main.go webui
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/wwwroot
+          retention-days: 1
+
+  build:
+    needs: [prepare, webui]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            goos: windows
+            ext: ".exe"
+          - os: macos-latest
+            goos: darwin
+            ext: ""
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # bash everywhere, so the matrix runs one script instead of two dialects
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/wwwroot
+
+      # Native runners are the point of the matrix: this is what finally exercises
+      # the windows-only files (security/, sspi auth, cert_cleanup_windows_test.go)
+      # and the darwin-only keychain code.
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build binaries
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -eu
+          ldflags="-s -w \
+            -X main.version=${{ needs.prepare.outputs.version }} \
+            -X main.commit=${{ needs.prepare.outputs.commit }} \
+            -X main.date=${{ needs.prepare.outputs.date }}"
+
+          for arch in amd64 arm64; do
+            out="dist/${{ matrix.goos }}_${arch}/${APP_NAME}${{ matrix.ext }}"
+            echo "→ ${{ matrix.goos }}/${arch}"
+            GOOS="${{ matrix.goos }}" GOARCH="${arch}" \
+              go build -trimpath -ldflags "$ldflags" -o "$out" .
+          done
+
+      # arm64 macOS refuses to run an unsigned binary outright. Ad-hoc only, not
+      # notarized — first launch still needs a Gatekeeper override.
+      - name: Ad-hoc sign macOS binaries
+        if: matrix.goos == 'darwin'
+        run: |
+          set -eu
+          for arch in amd64 arm64; do
+            bin="dist/darwin_${arch}/${APP_NAME}"
+            codesign --force --sign - "$bin"
+            codesign --verify --verbose "$bin"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.goos }}
+          path: dist
+          retention-days: 1
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          path: dist
+          merge-multiple: true
+
+      - name: Package archives
+        run: |
+          set -eu
+          version="${{ needs.prepare.outputs.version }}"
+          mkdir -p artifacts
+
+          for target in windows_amd64 windows_arm64 darwin_amd64 darwin_arm64; do
+            cp "${SAMPLE_CONFIG}" "dist/${target}/config.yaml"
+            cp readme.md LICENSE RELEASE.md "dist/${target}/"
+            # upload-artifact does not preserve the Unix executable bit
+            chmod +x "dist/${target}/${APP_NAME}" 2>/dev/null || true
+            (cd "dist/${target}" && zip -qr "../../artifacts/${APP_NAME}_${version}_${target}.zip" .)
+          done
+
+          (cd artifacts && sha256sum *.zip > "checksums_${version}.txt")
+          ls -lh artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: httpstacklens-${{ needs.prepare.outputs.version }}
+          path: artifacts/*
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version="${{ needs.prepare.outputs.version }}"
+          prerelease=""
+          case "$version" in *-alpha*|*-beta*|*-rc*) prerelease="--prerelease" ;; esac
+          draft=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then draft="--draft"; fi
+
+          gh release create "$version" artifacts/* \
+            --title "$version" \
+            --generate-notes \
+            $prerelease $draft
