@@ -71,7 +71,7 @@ func main() {
 	if *verbose {
 		level = slog.LevelDebug
 	}
-	cleanup, err := logging.Setup(level, config.Logging.File)
+	cleanup, err := logging.Setup(level, config.Logging.GetResolvedFile())
 	if err != nil {
 		log.Printf("Failed to set up logging: %v\n", err)
 	} else {
@@ -193,6 +193,7 @@ func logResolvedPaths(config configuration.AppConfig) {
 	certManager := config.DecryptHttps.CertManager
 	slog.Info("Resolved configuration paths",
 		"config", configuration.ResolveConfigPath(),
+		"logFile", config.Logging.GetResolvedFile(),
 		"storageEnabled", config.Storage.Enable,
 		"storageFolder", config.Storage.GetResolvedFolder(),
 		"caCertFile", certManager.GetResolvedCaCertFile(),

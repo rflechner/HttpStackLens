@@ -227,7 +227,14 @@ func (c CertManagerConfig) GetResolvedDomainCertsFolder() string {
 
 type LoggingConfig struct {
 	Level string `yaml:"level"` // debug | info | warn | error
-	File  string `yaml:"file"`  // path to the log file; empty disables the file sink
+	File  string `yaml:"file"`  // path to the log file (relative to the executable, or absolute); empty disables the file sink
+}
+
+// GetResolvedFile returns the log file path resolved relative to the executable
+// (an absolute path is used as-is). An empty File stays empty so it keeps
+// disabling the file sink instead of resolving to the executable's directory.
+func (c LoggingConfig) GetResolvedFile() string {
+	return helpers.ResolveRelativePath(c.File)
 }
 
 type ProxyConfig struct {
