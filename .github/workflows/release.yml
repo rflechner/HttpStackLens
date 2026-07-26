@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+    # TEMPORARY — lets this workflow be exercised before it reaches the default
+    # branch (workflow_dispatch only shows up once the file is on main). The
+    # `release` job is guarded below, so a branch push builds and tests without
+    # publishing anything. Delete this `branches:` block once merged to main.
+    branches:
+      - "devops/build-pipeline"
   workflow_dispatch:
     inputs:
       version:
@@ -37,8 +43,12 @@ jobs:
           set -eu
           if [ -n "${{ inputs.version }}" ]; then
             version="${{ inputs.version }}"
-          else
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME}"
+          else
+            # branch push: a dry run. Never published, and the branch name would
+            # otherwise put a "/" into every archive filename.
+            version="v0.0.0-dev-$(git rev-parse --short HEAD)"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
@@ -146,7 +156,7 @@ jobs:
           path: dist
           retention-days: 1
 
-  release:
+  package:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
@@ -179,6 +189,19 @@ jobs:
         with:
           name: httpstacklens-${{ needs.prepare.outputs.version }}
           path: artifacts/*
+
+  release:
+    needs: [prepare, package]
+    # Only a tag push or a manual dispatch publishes. A branch push stops after
+    # `package`, so the whole pipeline — including the archives — can be tested
+    # without creating a release.
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: httpstacklens-${{ needs.prepare.outputs.version }}
+          path: artifacts
 
       - name: Publish GitHub release
         env:
