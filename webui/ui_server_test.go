@@ -360,7 +360,7 @@ func TestCaptureStateHandlerReturnsState(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/capture/state", nil)
 	rr := httptest.NewRecorder()
-	captureStateHandler(func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
+	captureStateHandler(func() shared.CaptureStateDto { return captureStateDto(ctl, false, store, nil, nil, nil) }).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -377,7 +377,7 @@ func TestCaptureStateHandlerReturnsState(t *testing.T) {
 func TestCaptureStateDtoReportsProxyRuntimeState(t *testing.T) {
 	proxyCtl := storage.NewProxyController(true)
 	proxyCtl.SetAddress("127.0.0.1:8823")
-	got := captureStateDto(nil, nil, nil, nil, nil, proxyCtl)
+	got := captureStateDto(nil, false, nil, nil, nil, nil, proxyCtl)
 	if !got.Proxy.Running {
 		t.Fatal("proxy runtime state should be running")
 	}
@@ -385,7 +385,7 @@ func TestCaptureStateDtoReportsProxyRuntimeState(t *testing.T) {
 		t.Fatalf("proxy address = %q, want 127.0.0.1:8823", got.Proxy.Address)
 	}
 	proxyCtl.SetRunning(false)
-	got = captureStateDto(nil, nil, nil, nil, nil, proxyCtl)
+	got = captureStateDto(nil, false, nil, nil, nil, nil, proxyCtl)
 	if got.Proxy.Running {
 		t.Fatal("proxy runtime state should be stopped")
 	}
@@ -398,7 +398,7 @@ func TestProxyRuntimeHandlerChangesState(t *testing.T) {
 		return running, nil
 	}
 	state := func() shared.CaptureStateDto {
-		return captureStateDto(nil, nil, nil, nil, nil, proxyCtl)
+		return captureStateDto(nil, false, nil, nil, nil, nil, proxyCtl)
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/proxy/stop", nil)
@@ -428,7 +428,7 @@ func TestCaptureStateDtoReportsPipelineStates(t *testing.T) {
 		Proxy: configuration.AccessControlConfig{Mode: configuration.AccessControlLan},
 	})
 
-	got := captureStateDto(ctl, store, decrypt, upstream, access)
+	got := captureStateDto(ctl, false, store, decrypt, upstream, access)
 
 	if !got.Decrypt.Enabled {
 		t.Fatalf("decrypt = %+v, want enabled", got.Decrypt)
@@ -444,7 +444,7 @@ func TestCaptureStateDtoReportsPipelineStates(t *testing.T) {
 func TestCaptureStateDtoUpstreamDisabledWhenNoProxyUri(t *testing.T) {
 	upstream := configuration.NewUpstreamSettingsStore(configuration.UpstreamSettings{OutputProxyUri: "  "})
 
-	got := captureStateDto(nil, nil, nil, upstream, nil)
+	got := captureStateDto(nil, false, nil, nil, upstream, nil)
 
 	if got.Upstream.Enabled {
 		t.Fatalf("upstream = %+v, want disabled for blank proxy uri", got.Upstream)
@@ -456,23 +456,15 @@ func TestCapturePauseResumeHandlersToggleState(t *testing.T) {
 	defer hub.Close()
 	store := storage.NewRequestStore(10)
 	ctl := storage.NewCaptureController(true)
-	var persisted []bool
-	persist := func(enabled bool) error {
-		persisted = append(persisted, enabled)
-		return nil
-	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/capture/pause", nil)
 	rr := httptest.NewRecorder()
-	capturePauseHandler(hub, ctl, persist, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
+	capturePauseHandler(hub, ctl, func() shared.CaptureStateDto { return captureStateDto(ctl, false, store, nil, nil, nil) }).ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("pause status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
 	}
 	if ctl.IsCapturing() {
 		t.Fatal("controller still capturing after pause")
-	}
-	if len(persisted) != 1 || persisted[0] {
-		t.Fatalf("persisted after pause = %v, want [false]", persisted)
 	}
 
 	var paused shared.CaptureStateDto
@@ -485,34 +477,72 @@ func TestCapturePauseResumeHandlersToggleState(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodPost, "/api/capture/resume", nil)
 	rr = httptest.NewRecorder()
-	captureResumeHandler(hub, ctl, persist, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
+	captureResumeHandler(hub, ctl, func() shared.CaptureStateDto { return captureStateDto(ctl, false, store, nil, nil, nil) }).ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("resume status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
 	}
 	if !ctl.IsCapturing() {
 		t.Fatal("controller not capturing after resume")
 	}
-	if len(persisted) != 2 || !persisted[1] {
-		t.Fatalf("persisted after resume = %v, want [false true]", persisted)
+}
+
+func TestStorageToggleHandlerStartsAndStops(t *testing.T) {
+	hub := newHub()
+	defer hub.Close()
+	store := storage.NewRequestStore(10)
+	ctl := storage.NewCaptureController(true)
+	var updates []bool
+	update := func(enabled bool) error {
+		updates = append(updates, enabled)
+		return nil
+	}
+	// storing reflects the last requested state so the response DTO can be checked.
+	storing := false
+	state := func() shared.CaptureStateDto { return captureStateDto(ctl, storing, store, nil, nil, nil) }
+
+	req := httptest.NewRequest(http.MethodPost, "/api/storage/start", nil)
+	rr := httptest.NewRecorder()
+	storageToggleHandler(true, hub, func(enabled bool) error { storing = enabled; return update(enabled) }, state).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("start status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var started shared.CaptureStateDto
+	if err := json.Unmarshal(rr.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+	if !started.Storing {
+		t.Fatalf("start state = %+v, want storing true", started)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/storage/stop", nil)
+	rr = httptest.NewRecorder()
+	storageToggleHandler(false, hub, func(enabled bool) error { storing = enabled; return update(enabled) }, state).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("stop status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	// Recording must be untouched by storage toggles.
+	if !ctl.IsCapturing() {
+		t.Fatal("storage toggle must not change the recording state")
+	}
+	if len(updates) != 2 || updates[0] != true || updates[1] != false {
+		t.Fatalf("storage updates = %v, want [true false]", updates)
 	}
 }
 
-func TestCapturePauseHandlerDoesNotChangeStateWhenPersistenceFails(t *testing.T) {
+func TestStorageToggleHandlerReportsError(t *testing.T) {
 	ctl := storage.NewCaptureController(true)
-	persistErr := errors.New("disk full")
-	req := httptest.NewRequest(http.MethodPost, "/api/capture/pause", nil)
-	rr := httptest.NewRecorder()
-
 	store := storage.NewRequestStore(10)
-	capturePauseHandler(nil, ctl, func(bool) error {
-		return persistErr
-	}, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
+	req := httptest.NewRequest(http.MethodPost, "/api/storage/start", nil)
+	rr := httptest.NewRecorder()
+	storageToggleHandler(true, nil, func(bool) error {
+		return errors.New("disk full")
+	}, func() shared.CaptureStateDto { return captureStateDto(ctl, false, store, nil, nil, nil) }).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
 	}
 	if !ctl.IsCapturing() {
-		t.Fatal("capture state changed despite persistence failure")
+		t.Fatal("recording changed despite storage failure")
 	}
 }
 
@@ -525,7 +555,7 @@ func TestCaptureClearHandlerClearsServerBuffer(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/capture/clear", nil)
 	rr := httptest.NewRecorder()
-	captureClearHandler(hub, store, func() shared.CaptureStateDto { return captureStateDto(ctl, store, nil, nil, nil) }).ServeHTTP(rr, req)
+	captureClearHandler(hub, store, func() shared.CaptureStateDto { return captureStateDto(ctl, false, store, nil, nil, nil) }).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body %q", rr.Code, http.StatusOK, rr.Body.String())
@@ -545,7 +575,7 @@ func TestCaptureClearHandlerClearsServerBuffer(t *testing.T) {
 func TestCapturePauseHandlerRejectsNonPost(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/capture/pause", nil)
 	rr := httptest.NewRecorder()
-	capturePauseHandler(nil, storage.NewCaptureController(true), nil, nil).ServeHTTP(rr, req)
+	capturePauseHandler(nil, storage.NewCaptureController(true), nil).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)

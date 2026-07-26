@@ -25,7 +25,22 @@ type UpdatesConfig struct {
 
 type StorageConfig struct {
 	Enable bool   `yaml:"enable"` // persist captured traffic to .capture files
-	Folder string `yaml:"folder"` // destination folder (relative to cwd, or absolute)
+	Folder string `yaml:"folder"` // destination folder (relative to the executable, or absolute)
+}
+
+// defaultCaptureFolder is used when Storage.Folder is left empty.
+const defaultCaptureFolder = "captures"
+
+// GetResolvedFolder returns the capture destination folder resolved relative to
+// the executable (an absolute path is used as-is). An empty folder falls back
+// to the default "captures", so the write side and the Web UI read side always
+// agree on the same location regardless of the current working directory.
+func (c StorageConfig) GetResolvedFolder() string {
+	folder := strings.TrimSpace(c.Folder)
+	if folder == "" {
+		folder = defaultCaptureFolder
+	}
+	return helpers.ResolveRelativePath(folder)
 }
 
 // DefaultCaptureSizeBytes is the per-MIME-type body size limit used when a rule
