@@ -595,11 +595,11 @@ func certificateGenerateHandler(certConfig configuration.CertManagerConfig, inst
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if !replace && localFileExists(certConfig.CaCertFile) && localFileExists(certConfig.CaKeyFile) {
+		if !replace && localFileExists(certConfig.GetResolvedCaCertFile()) && localFileExists(certConfig.GetResolvedCaKeyFile()) {
 			http.Error(w, "CA already exists; set replace=true to regenerate it", http.StatusConflict)
 			return
 		}
-		if err := certManager.GenerateCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+		if err := certManager.GenerateCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()); err != nil {
 			log.Printf("Error generating local CA: %v", err)
 			http.Error(w, "could not generate CA", http.StatusInternalServerError)
 			return
@@ -623,11 +623,11 @@ func certificateInstallHandler(certConfig configuration.CertManagerConfig, insta
 			http.Error(w, "CA installation is not supported on this operating system", http.StatusServiceUnavailable)
 			return
 		}
-		if _, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+		if _, _, err := certManager.LoadCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()); err != nil {
 			http.Error(w, "CA certificate/key could not be loaded", http.StatusBadRequest)
 			return
 		}
-		if err := installer.InstallCACert(certConfig.CaCertFile); err != nil {
+		if err := installer.InstallCACert(certConfig.GetResolvedCaCertFile()); err != nil {
 			log.Printf("Error installing local CA: %v", err)
 			http.Error(w, "could not install CA", http.StatusInternalServerError)
 			return
@@ -695,17 +695,17 @@ func certificateExportHandler(certConfig configuration.CertManagerConfig) http.H
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if _, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+		if _, _, err := certManager.LoadCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()); err != nil {
 			http.Error(w, "CA certificate/key could not be loaded", http.StatusNotFound)
 			return
 		}
-		data, err := os.ReadFile(certConfig.CaCertFile)
+		data, err := os.ReadFile(certConfig.GetResolvedCaCertFile())
 		if err != nil {
 			log.Printf("Error exporting local CA: %v", err)
 			http.Error(w, "could not export CA", http.StatusInternalServerError)
 			return
 		}
-		name := filepath.Base(certConfig.CaCertFile)
+		name := filepath.Base(certConfig.GetResolvedCaCertFile())
 		w.Header().Set("Content-Type", "application/x-pem-file")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, strings.ReplaceAll(name, `"`, "")))
 		_, _ = w.Write(data)
@@ -747,7 +747,7 @@ func certificatesInfosDto(certConfig configuration.CertManagerConfig, installer 
 		dto.InstallSupported = installer.IsSupported()
 	}
 
-	caCert, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile)
+	caCert, _, err := certManager.LoadCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile())
 	if err != nil {
 		dto.Error = err.Error()
 		return dto
@@ -764,7 +764,7 @@ func certificatesInfosDto(certConfig configuration.CertManagerConfig, installer 
 	dto.Expired = now.Before(caCert.NotBefore) || now.After(caCert.NotAfter)
 
 	if installer != nil && installer.IsSupported() {
-		installed, err := installer.IsCACertInstalled(certConfig.CaCertFile)
+		installed, err := installer.IsCACertInstalled(certConfig.GetResolvedCaCertFile())
 		dto.Installed = installed
 		if err != nil {
 			dto.InstallCheckError = err.Error()

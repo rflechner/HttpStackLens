@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"httpStackLens/configuration"
+	"httpStackLens/helpers"
 	"httpStackLens/logging"
 	"httpStackLens/proxy/middlewares"
 	"httpStackLens/storage"
@@ -188,6 +189,7 @@ func openCaptureWriter(config configuration.AppConfig) storage.CaptureSessionWri
 	if folder == "" {
 		folder = "captures"
 	}
+	folder = helpers.ResolveRelativePath(folder)
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		slog.Warn("Could not create capture folder; captures disabled", "folder", folder, "error", err)
 		return nil

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"httpStackLens/helpers"
 
 	"github.com/goccy/go-yaml"
 )
@@ -14,23 +15,15 @@ import (
 const defaultConfigPath = "config.yaml"
 
 func ResolveConfigPath() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		log.Printf("Failed to resolve executable path: %v\n", err)
-		return defaultConfigPath
-	}
-
-	// os.Executable can return a symlink on some platforms; follow it so the
-	// config is resolved next to the real binary, not the link.
-	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
-		exePath = resolved
-	}
-
-	return filepath.Join(filepath.Dir(exePath), defaultConfigPath)
+	return helpers.ResolveRelativePath(defaultConfigPath)
 }
 
 func ReadConfiguration() (AppConfig, error) {
-	configData, err := os.ReadFile(ResolveConfigPath())
+	return readConfigurationFromPath(ResolveConfigPath())
+}
+
+func readConfigurationFromPath(path string) (AppConfig, error) {
+	configData, err := os.ReadFile(path)
 	if err != nil {
 		log.Printf("Failed to parse configuration file: %v\n", err)
 		return DefaultAppConfig(), fmt.Errorf("failed to read configuration file: %v", err)

@@ -1,6 +1,7 @@
 package configuration
 
 import (
+	"httpStackLens/helpers"
 	"httpStackLens/webui/wasm/shared"
 	"strings"
 	"sync"
@@ -195,6 +196,18 @@ type CertManagerConfig struct {
 	CaCertFile        string `yaml:"ca_cert_file"`
 	CaKeyFile         string `yaml:"ca_key_file"`
 	DomainCertsFolder string `yaml:"domain_certs_folder"`
+}
+
+func (c CertManagerConfig) GetResolvedCaCertFile() string {
+	return helpers.ResolveRelativePath(c.CaCertFile)
+}
+
+func (c CertManagerConfig) GetResolvedCaKeyFile() string {
+	return helpers.ResolveRelativePath(c.CaKeyFile)
+}
+
+func (c CertManagerConfig) GetResolvedDomainCertsFolder() string {
+	return helpers.ResolveRelativePath(c.DomainCertsFolder)
 }
 
 type LoggingConfig struct {

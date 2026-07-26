@@ -68,7 +68,7 @@ func CleanupAppCertificates(certConfig configuration.CertManagerConfig, installe
 	}
 
 	// 2. Per-domain certificates folder.
-	if folder := strings.TrimSpace(certConfig.DomainCertsFolder); folder != "" {
+	if folder := strings.TrimSpace(certConfig.GetResolvedDomainCertsFolder()); folder != "" {
 		removed, err := removeDomainCertsFolder(folder)
 		if err != nil {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("domain certs folder %q: %v", folder, err))
@@ -77,7 +77,7 @@ func CleanupAppCertificates(certConfig configuration.CertManagerConfig, installe
 	}
 
 	// 3. Root CA certificate + key files.
-	for _, file := range []string{certConfig.CaCertFile, certConfig.CaKeyFile} {
+	for _, file := range []string{certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()} {
 		file = strings.TrimSpace(file)
 		if file == "" {
 			continue
