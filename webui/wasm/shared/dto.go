@@ -154,10 +154,14 @@ type CaptureResponseRecordDto struct {
 }
 
 type CaptureStateDto struct {
-	// Capturing is kept for older UI clients. Recording is the preferred name:
-	// it gates inspection/storage but never controls proxy forwarding.
-	Capturing  bool                    `json:"capturing"`
-	Recording  bool                    `json:"recording"`
+	// Capturing is kept for older UI clients. Recording is the preferred name for
+	// the live view: it gates inspection in the UI but never controls proxy
+	// forwarding.
+	Capturing bool `json:"capturing"`
+	Recording bool `json:"recording"`
+	// Storing reports whether traffic is currently persisted to a .capture file.
+	// It is independent from Recording: either can be on without the other.
+	Storing    bool                    `json:"storing"`
 	BufferSize int                     `json:"buffer_size"`
 	Proxy      ProxyRuntimeStateDto    `json:"proxy"`
 	Decrypt    CaptureDecryptStateDto  `json:"decrypt"`

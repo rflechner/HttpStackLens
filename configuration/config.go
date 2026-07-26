@@ -1,13 +1,10 @@
 package configuration
 
 import (
+	"httpStackLens/helpers"
 	"httpStackLens/webui/wasm/shared"
-	"log"
-	"os"
 	"strings"
 	"sync"
-
-	"github.com/goccy/go-yaml"
 )
 
 type AppConfig struct {
@@ -28,7 +25,22 @@ type UpdatesConfig struct {
 
 type StorageConfig struct {
 	Enable bool   `yaml:"enable"` // persist captured traffic to .capture files
-	Folder string `yaml:"folder"` // destination folder (relative to cwd, or absolute)
+	Folder string `yaml:"folder"` // destination folder (relative to the executable, or absolute)
+}
+
+// defaultCaptureFolder is used when Storage.Folder is left empty.
+const defaultCaptureFolder = "captures"
+
+// GetResolvedFolder returns the capture destination folder resolved relative to
+// the executable (an absolute path is used as-is). An empty folder falls back
+// to the default "captures", so the write side and the Web UI read side always
+// agree on the same location regardless of the current working directory.
+func (c StorageConfig) GetResolvedFolder() string {
+	folder := strings.TrimSpace(c.Folder)
+	if folder == "" {
+		folder = defaultCaptureFolder
+	}
+	return helpers.ResolveRelativePath(folder)
 }
 
 // DefaultCaptureSizeBytes is the per-MIME-type body size limit used when a rule
@@ -201,9 +213,28 @@ type CertManagerConfig struct {
 	DomainCertsFolder string `yaml:"domain_certs_folder"`
 }
 
+func (c CertManagerConfig) GetResolvedCaCertFile() string {
+	return helpers.ResolveRelativePath(c.CaCertFile)
+}
+
+func (c CertManagerConfig) GetResolvedCaKeyFile() string {
+	return helpers.ResolveRelativePath(c.CaKeyFile)
+}
+
+func (c CertManagerConfig) GetResolvedDomainCertsFolder() string {
+	return helpers.ResolveRelativePath(c.DomainCertsFolder)
+}
+
 type LoggingConfig struct {
 	Level string `yaml:"level"` // debug | info | warn | error
-	File  string `yaml:"file"`  // path to the log file; empty disables the file sink
+	File  string `yaml:"file"`  // path to the log file (relative to the executable, or absolute); empty disables the file sink
+}
+
+// GetResolvedFile returns the log file path resolved relative to the executable
+// (an absolute path is used as-is). An empty File stays empty so it keeps
+// disabling the file sink instead of resolving to the executable's directory.
+func (c LoggingConfig) GetResolvedFile() string {
+	return helpers.ResolveRelativePath(c.File)
 }
 
 type ProxyConfig struct {
@@ -234,22 +265,6 @@ func DefaultAppConfig() AppConfig {
 			CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},
 		},
 	}
-}
-
-func ReadConfiguration() AppConfig {
-	configData, err := os.ReadFile("config.yaml")
-	if err != nil {
-		log.Printf("Failed to parse configuration file: %v\n", err)
-		return DefaultAppConfig()
-	}
-	var conf AppConfig
-	err = yaml.Unmarshal(configData, &conf)
-	if err != nil {
-		log.Printf("Failed to parse configuration file: %v\n", err)
-		return DefaultAppConfig()
-	}
-
-	return conf
 }
 
 func (c *AppConfig) ToDto() shared.AppConfigDto {

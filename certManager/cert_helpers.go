@@ -41,8 +41,11 @@ func GetHttpsDebugRootCertificates(config configuration.AppConfig) (*x509.Certif
 		return nil, nil, errors.New("CA certificate and key files must be specified in config.yaml")
 	}
 
-	if !fileExists(certConfig.CaCertFile) || !fileExists(certConfig.CaKeyFile) {
-		err := GenerateCA(certConfig.CaCertFile, certConfig.CaKeyFile)
+	caCertFile := certConfig.GetResolvedCaCertFile()
+	caKeyFile := certConfig.GetResolvedCaKeyFile()
+
+	if !fileExists(caCertFile) || !fileExists(caKeyFile) {
+		err := GenerateCA(caCertFile, caKeyFile)
 		if err != nil {
 			log.Printf("Failed to generate CA: %v\n", err)
 			return nil, nil, err
@@ -51,7 +54,7 @@ func GetHttpsDebugRootCertificates(config configuration.AppConfig) (*x509.Certif
 		log.Printf("🔒 CA certificate and key files already exist, skipping generation")
 	}
 
-	caCert, caKey, err := LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile)
+	caCert, caKey, err := LoadCA(caCertFile, caKeyFile)
 	if err != nil {
 		log.Printf("Failed to load CA: %v\n", err)
 		return nil, nil, err
@@ -133,10 +136,8 @@ func GenerateCA(certFile string, keyFile string) error {
 		return err
 	}
 
-	certFileFullPath, _ := os.Getwd()
-	certFileFullPath = certFileFullPath + string(os.PathSeparator) + certFile
-	keyFileFullPath, _ := os.Getwd()
-	keyFileFullPath = keyFileFullPath + string(os.PathSeparator) + keyFile
+	certFileFullPath, _ := filepath.Abs(certFile)
+	keyFileFullPath, _ := filepath.Abs(keyFile)
 
 	log.Println("🔒 CA generated successfully for debugging HTTPS on machine 🔛 " + hostname)
 	log.Println("🔒 CA certificate and private key files created at " + certFileFullPath + " and " + keyFileFullPath)

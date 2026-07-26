@@ -119,12 +119,13 @@ func (r *decryptHttpsRuntime) newInterceptor() (*middlewares.HttpsInterceptor, e
 
 	certStore := certManager.NewCertStoreFromConfig(caCert, caKey, r.config)
 	installer := certManager.NewCertInstaller()
+	caCertFile := r.config.DecryptHttps.CertManager.GetResolvedCaCertFile()
 	if !installer.IsSupported() {
 		slog.Warn("Automatic certificate installation is not supported on this OS; install the CA manually",
-			"caCertFile", r.config.DecryptHttps.CertManager.CaCertFile)
-	} else if err := installer.InstallCACert(r.config.DecryptHttps.CertManager.CaCertFile); err != nil {
+			"caCertFile", caCertFile)
+	} else if err := installer.InstallCACert(caCertFile); err != nil {
 		slog.Warn("Failed to install the CA certificate in the OS trust store; install it manually",
-			"caCertFile", r.config.DecryptHttps.CertManager.CaCertFile, "error", err)
+			"caCertFile", caCertFile, "error", err)
 	}
 
 	return &middlewares.HttpsInterceptor{

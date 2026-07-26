@@ -223,28 +223,42 @@ func snapshotPipeline(pipeline middlewares.Middleware) (middlewares.Middleware, 
 // capture file. In decryption mode the CONNECT tunnel is skipped here because
 // the HTTPS interceptor records the decrypted requests/responses instead.
 func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest, decryptingHttps bool) {
-	if !s.isCapturing() {
-		return
-	}
-	if s.capture == nil && s.store == nil {
+	toStorage := s.isStoring() && s.capture != nil
+	toView := s.isCapturing() && s.store != nil
+	if !toStorage && !toView {
 		return
 	}
 	if decryptingHttps && request.HttpRequestLine.IsConnect() {
 		return
 	}
 	rec := proxyRequestToRecord(correlationID, request)
-	if s.capture != nil {
+	if toStorage {
 		if err := s.capture.WriteRequest(rec); err != nil {
 			log.Printf("capture: failed to record request: %v\n", err)
 		}
 	}
-	if s.store != nil {
+	if toView {
 		s.store.PutRequest(correlationID.String(), rec)
 	}
 }
 
+// isCapturing reports whether the live UI view is active (in-memory store + SSE
+// events). It does not gate disk persistence.
 func (s *ProxyServer) isCapturing() bool {
 	return s.captureCtl == nil || s.captureCtl.IsCapturing()
+}
+
+// isStoring reports whether traffic should be persisted to the capture file,
+// independently of the live view. A switchable storage sink exposes its on/off
+// state through Enabled(); a plain writer always stores.
+func (s *ProxyServer) isStoring() bool {
+	if s.capture == nil {
+		return false
+	}
+	if e, ok := s.capture.(interface{ Enabled() bool }); ok {
+		return e.Enabled()
+	}
+	return true
 }
 
 // proxyRequestToRecord converts a parsed proxy request into a capture record,

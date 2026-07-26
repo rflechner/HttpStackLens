@@ -96,7 +96,7 @@
 
   // ─── state ───────────────────────────────────────────────
   const state = {
-    rows: [], selId: null, capturing: true, proxyRunning: true, proxyAddress: '', decryption: true,
+    rows: [], selId: null, capturing: true, storing: false, proxyRunning: true, proxyAddress: '', decryption: true,
     liveRows: [],
     source: { kind: 'live', name: '', metadata: null },
     captures: { files: [], loading: false, loaded: false, opening: false, error: null },
@@ -1049,7 +1049,8 @@
     const err = rows.filter((r) => r.status >= 400).length;
     $('#statusbar').innerHTML = `
       <span class="inline-flex items-center gap-[6px]" style="padding:0 10px 0 14px;color:${state.proxyRunning ? C.mint : C.danger}">proxy ${state.proxyRunning ? 'running' : 'stopped'}</span>
-      <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.capturing ? C.mint : C.faint}"><span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'recording' : 'recording stopped'}</span>
+      <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.capturing ? C.mint : C.faint}"><span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'live view' : 'live view off'}</span>
+      <span class="inline-flex items-center gap-[6px]" style="padding:0 10px;color:${state.storing ? C.mint : C.faint}">${state.storing ? 'saving to disk' : 'not saving'}</span>
       ${state.source.kind === 'capture' ? `<span style="padding:0 10px;color:${C.info}">read-only capture</span>` : ''}
       <span style="padding:0 10px;color:${C.dim}">${rows.length} req</span>
       <span style="padding:0 10px;color:${C.dim}">${err} errors</span>
@@ -1095,10 +1096,26 @@
     proxy.style.color = state.proxyRunning ? C.mint : C.danger;
     proxy.style.background = state.proxyRunning ? C.bg3 : 'transparent';
 
+    // Live view: gates what appears in the UI in real time. Independent from
+    // storage — it never writes to disk or the config.
     const cap = $('#btn-capture');
-    cap.innerHTML = `<span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'Stop recording' : 'Start recording'}`;
+    cap.innerHTML = `<span class="rec-dot ${state.capturing ? 'on' : ''}"></span>${state.capturing ? 'Stop live view' : 'Start live view'}`;
+    cap.title = 'Show or hide new requests in the live view. Does not affect what is saved to disk.';
     cap.style.color = state.capturing ? C.mint : C.dim;
     cap.style.background = state.capturing ? C.bg3 : 'transparent';
+
+    // Storage: persists traffic to .capture files and remembers the choice in the
+    // config. Independent from the live view.
+    const storage = $('#btn-storage');
+    if (storage) {
+      const diskIcon = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2.7 2.5h8l2.8 2.8v8.2H2.7z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.2 2.5v3.2h4.3V2.5" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><rect x="5.2" y="8.7" width="5.6" height="4.3" rx="0.4" stroke="currentColor" stroke-width="1.2"/></svg>`;
+      storage.innerHTML = `${diskIcon}${state.storing ? 'Stop storage' : 'Start storage'}`;
+      storage.title = state.storing
+        ? 'Traffic is being saved to a .capture file. Click to stop and close the file.'
+        : 'Save traffic to a .capture file next to the executable. Persists in the config.';
+      storage.style.color = state.storing ? C.mint : C.dim;
+      storage.style.background = state.storing ? C.bg3 : 'transparent';
+    }
 
     const clear = $('[data-action="clear"]');
     const archived = state.source.kind === 'capture';
@@ -1410,6 +1427,13 @@
     if (typeof fn === 'function') fn(action);
   }
 
+  // storageAction toggles disk persistence (independent from the live view). The
+  // authoritative storing flag comes back via the capture_state event.
+  function storageAction(action) {
+    const fn = window.hslStorage;
+    if (typeof fn === 'function') fn(action);
+  }
+
   function decryptHttps(enabled) {
     const fn = window.hslDecryptHttps;
     if (typeof fn === 'function') fn(enabled);
@@ -1643,6 +1667,9 @@
       case 'toggle-proxy':
         proxyAction(state.proxyRunning ? 'stop' : 'start');
         break;
+      case 'toggle-storage':
+        storageAction(state.storing ? 'stop' : 'start');
+        break;
       case 'clear':
         if (state.source.kind !== 'live') break;
         captureAction('clear');
@@ -1722,6 +1749,7 @@
     if (!s) return;
     if (typeof s.recording === 'boolean') state.capturing = s.recording;
     else if (typeof s.capturing === 'boolean') state.capturing = s.capturing;
+    if (typeof s.storing === 'boolean') state.storing = s.storing;
     if (s.proxy && typeof s.proxy.running === 'boolean') state.proxyRunning = s.proxy.running;
     if (s.proxy && typeof s.proxy.address === 'string') state.proxyAddress = s.proxy.address;
     // decrypt / upstream / access come from the backend (F3.2); the status bar
