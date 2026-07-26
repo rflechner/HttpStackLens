@@ -9,7 +9,8 @@ on:
     # `release` job is guarded below, so a branch push builds and tests without
     # publishing anything. Delete this `branches:` block once merged to main.
     branches:
-      - "devops/build-pipeline"
+      - "develop"
+      - "main"
   workflow_dispatch:
     inputs:
       version:
