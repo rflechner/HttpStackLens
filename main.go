@@ -55,7 +55,7 @@ func main() {
 		}
 	}
 
-	config := configuration.ReadConfiguration()
+	config := configuration.ReadOrCreateConfigurationIfNotExists()
 
 	// Registered here but parsed inside CreateOsSpecificProxyPipeline (which
 	// calls flag.Parse on the shared default flag set).
@@ -71,7 +71,7 @@ func main() {
 	if *verbose {
 		level = slog.LevelDebug
 	}
-	cleanup, err := logging.Setup(level, config.Logging.File)
+	cleanup, err := logging.Setup(level, config.Logging.GetResolvedFile())
 	if err != nil {
 		log.Printf("Failed to set up logging: %v\n", err)
 	} else {
@@ -81,6 +81,7 @@ func main() {
 		"proxyPort", appContext.port,
 		"webUiPort", appContext.webUiPort,
 		"level", level.String())
+	logResolvedPaths(config)
 
 	stopChan := make(chan bool)
 
@@ -102,12 +103,19 @@ func main() {
 	activePipeline := middlewares.NewSwitchableMiddleware(basePipeline)
 	appContext.pipeline = activePipeline
 
-	// Optional capture file. When decrypting, the interceptor stores clear-text
-	// requests/responses; otherwise only top-level HTTP requests and CONNECTs.
-	captureWriter := openCaptureWriter(config)
-	if captureWriter != nil {
-		defer func() { _ = captureWriter.Close() }()
+	// Runtime-switchable capture storage. When decrypting, the interceptor stores
+	// clear-text requests/responses; otherwise only top-level HTTP requests and
+	// CONNECTs. Persistence is independent from the live UI recording flag
+	// (captureCtl): the Web UI can start/stop storage without affecting the live
+	// view, and vice versa.
+	storageSink := newStorageSink(config, decryptHttpsSettings)
+	defer func() { _ = storageSink.Close() }()
+	if config.Storage.Enable {
+		if err := storageSink.Enable(); err != nil {
+			slog.Warn("Could not start capture storage; storage disabled", "error", err)
+		}
 	}
+	captureWriter := storageSink
 
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
 		InitialConfig:         config,
@@ -117,6 +125,7 @@ func main() {
 		AccessControlSettings: accessControlSettings,
 		Requests:              requestStore,
 		Capture:               captureCtl,
+		Storage:               storageSink,
 		Proxy:                 proxyCtl,
 		Commands:              runtimeCommands,
 		Build:                 buildInfo(),
@@ -149,6 +158,7 @@ func main() {
 		upstreamStore: upstreamSettings,
 		accessStore:   accessControlSettings,
 		capture:       captureWriter,
+		storageSink:   storageSink,
 		requests:      requestStore,
 		captureCtl:    captureCtl,
 		proxyCtl:      proxyCtl,
@@ -175,33 +185,50 @@ func main() {
 	}
 }
 
-// openCaptureWriter creates a timestamped .capture file in the configured folder
-// when storage is enabled. A relative folder is resolved against the working
-// directory; an absolute folder is used as-is. Any failure disables capturing
-// without aborting startup.
-func openCaptureWriter(config configuration.AppConfig) storage.CaptureSessionWriter {
-	if !config.Storage.Enable {
-		return nil
-	}
+// logResolvedPaths reports the on-disk locations the app will actually use, once
+// resolved relative to the executable (or kept as-is when absolute). Relative
+// paths in config.yaml are resolved against the binary, not the working
+// directory, so this makes the effective locations explicit at startup.
+func logResolvedPaths(config configuration.AppConfig) {
+	certManager := config.DecryptHttps.CertManager
+	slog.Info("Resolved configuration paths",
+		"config", configuration.ResolveConfigPath(),
+		"logFile", config.Logging.GetResolvedFile(),
+		"storageEnabled", config.Storage.Enable,
+		"storageFolder", config.Storage.GetResolvedFolder(),
+		"caCertFile", certManager.GetResolvedCaCertFile(),
+		"caKeyFile", certManager.GetResolvedCaKeyFile(),
+		"domainCertsFolder", certManager.GetResolvedDomainCertsFolder())
+}
 
-	folder := config.Storage.Folder
-	if folder == "" {
-		folder = "captures"
-	}
-	if err := os.MkdirAll(folder, 0o755); err != nil {
-		slog.Warn("Could not create capture folder; captures disabled", "folder", folder, "error", err)
-		return nil
-	}
+// newStorageSink builds the runtime-switchable capture destination. Each time
+// storage is switched on (at startup when storage.enable is true, or later from
+// the Web UI) it opens a fresh timestamped .capture file in the configured
+// folder — resolved against the executable, or used as-is when absolute. The
+// HTTPS-decrypted flag stamped in each file reflects the decrypt state at the
+// moment storage is turned on. A failure to open a file surfaces to whoever
+// toggled storage, without aborting the proxy.
+func newStorageSink(config configuration.AppConfig, decrypt *configuration.DecryptHttpsConfigStore) *storage.StorageSink {
+	folder := config.Storage.GetResolvedFolder()
+	return storage.NewStorageSink(func() (storage.CaptureSessionWriter, error) {
+		if err := os.MkdirAll(folder, 0o755); err != nil {
+			return nil, fmt.Errorf("could not create capture folder %q: %w", folder, err)
+		}
 
-	name := fmt.Sprintf("capture-%s.capture", time.Now().Format("20060102-150405"))
-	path := filepath.Join(folder, name)
+		name := fmt.Sprintf("capture-%s.capture", time.Now().Format("20060102-150405"))
+		path := filepath.Join(folder, name)
 
-	w, err := storage.NewFileCaptureSessionWriter(path, config.DecryptHttps.Enabled)
-	if err != nil {
-		slog.Warn("Could not open capture file; captures disabled", "path", path, "error", err)
-		return nil
-	}
+		decrypted := config.DecryptHttps.Enabled
+		if decrypt != nil {
+			decrypted = decrypt.Get().Enabled
+		}
 
-	slog.Info("Capture recording enabled", "file", path, "decrypted", config.DecryptHttps.Enabled)
-	return w
+		w, err := storage.NewFileCaptureSessionWriter(path, decrypted)
+		if err != nil {
+			return nil, fmt.Errorf("could not open capture file %q: %w", path, err)
+		}
+
+		slog.Info("Capture storage started", "file", path, "decrypted", decrypted)
+		return w, nil
+	})
 }

@@ -31,7 +31,6 @@ import (
 const defaultCaptureRecordsLimit = 100
 const maxCaptureRecordsLimit = 1000
 
-type storageEnabledPersister func(bool) error
 type bodyCaptureSettingsPersister func(configuration.DecryptHttpsConfig) error
 type upstreamSettingsPersister func(configuration.UpstreamSettings) error
 type accessControlSettingsPersister func(configuration.AccessControlSettings) error
@@ -76,6 +75,9 @@ type Dependencies struct {
 	AccessControlSettings *configuration.AccessControlSettingsStore
 	Requests              *storage.RequestStore
 	Capture               *storage.CaptureController
+	// Storage reports whether traffic is persisted to disk (read-only here; the
+	// on/off toggle goes through the SetStorageEnabled runtime command).
+	Storage               *storage.StorageSink
 	Proxy                 *storage.ProxyController
 	Commands              chan<- RuntimeCommand
 	Build                 shared.BuildInfoDto
@@ -225,6 +227,9 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 		result := send(RuntimeCommand{Kind: kind})
 		return result.ProxyRunning, result.Err
 	}
+	updateStorage := func(enabled bool) error {
+		return send(RuntimeCommand{Kind: SetStorageEnabled, Enabled: enabled}).Err
+	}
 	rootFS := getFS()
 
 	cssFS, err := fs.Sub(rootFS, "wwwroot/css")
@@ -298,29 +303,36 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	// and the /api/capture/state endpoint. It bundles the capture flag with the
 	// live decrypt/upstream/access states so the status bar (F3.2) stays in sync.
 	captureState := func() shared.CaptureStateDto {
-		return captureStateDto(captureCtl, requestStore, decryptHttpsSettings, upstreamSettings, accessControlSettings, proxyCtl)
+		return captureStateDto(captureCtl, deps.Storage.Enabled(), requestStore, decryptHttpsSettings, upstreamSettings, accessControlSettings, proxyCtl)
 	}
 	broadcastCaptureState := func() { publishCaptureState(hub, captureState()) }
 	mux.HandleFunc("/events", sseHandler(hub))
 	mux.HandleFunc("/api/requests/", requestsAPIHandler(requestStore))
+	// Recording controls the live UI view only (in-memory buffer + SSE). It never
+	// touches config or disk — storage has its own independent routes below.
 	mux.HandleFunc("/api/capture/state", captureStateHandler(captureState))
-	mux.HandleFunc("/api/capture/pause", capturePauseHandler(hub, captureCtl, nil, captureState))
-	mux.HandleFunc("/api/capture/resume", captureResumeHandler(hub, captureCtl, nil, captureState))
+	mux.HandleFunc("/api/capture/pause", capturePauseHandler(hub, captureCtl, captureState))
+	mux.HandleFunc("/api/capture/resume", captureResumeHandler(hub, captureCtl, captureState))
 	mux.HandleFunc("/api/capture/clear", captureClearHandler(hub, requestStore, captureState))
 	// Preferred recording terminology. The capture routes remain as compatible
 	// aliases for existing clients.
 	mux.HandleFunc("/api/recording/state", captureStateHandler(captureState))
-	mux.HandleFunc("/api/recording/start", captureResumeHandler(hub, captureCtl, nil, captureState))
-	mux.HandleFunc("/api/recording/stop", capturePauseHandler(hub, captureCtl, nil, captureState))
+	mux.HandleFunc("/api/recording/start", captureResumeHandler(hub, captureCtl, captureState))
+	mux.HandleFunc("/api/recording/stop", capturePauseHandler(hub, captureCtl, captureState))
 	mux.HandleFunc("/api/recording/clear", captureClearHandler(hub, requestStore, captureState))
+	// Storage persists traffic to .capture files. Toggling it opens/closes a file
+	// at runtime and persists storage.enable, independently of recording.
+	mux.HandleFunc("/api/storage/state", captureStateHandler(captureState))
+	mux.HandleFunc("/api/storage/start", storageToggleHandler(true, hub, updateStorage, captureState))
+	mux.HandleFunc("/api/storage/stop", storageToggleHandler(false, hub, updateStorage, captureState))
 	mux.HandleFunc("/api/proxy/start", proxyRuntimeHandler(true, hub, updateProxy, captureState))
 	mux.HandleFunc("/api/proxy/stop", proxyRuntimeHandler(false, hub, updateProxy, captureState))
 	mux.HandleFunc("/api/proxy/state", captureStateHandler(captureState))
 	mux.HandleFunc("/api/runtime/stats", runtimeStatsHandler)
 	mux.HandleFunc("/api/version", buildInfoHandler(deps.Build))
 	mux.HandleFunc("/api/update-check", updateCheckHandler(newUpdateChecker(deps.UpdateCheckEnabled, deps.Build.Version, deps.GitHubRepo)))
-	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.Folder))
-	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.Folder))
+	mux.HandleFunc("/api/captures", captureListHandler(config.Storage.GetResolvedFolder()))
+	mux.HandleFunc("/api/captures/", capturesAPIHandler(config.Storage.GetResolvedFolder()))
 	mux.HandleFunc("/api/settings/body-capture", bodyCaptureSettingsHandler(decryptHttpsSettings, persistBodyCaptureSettings))
 	mux.HandleFunc("/api/settings/decrypt-https", decryptHttpsToggleHandler(decryptHttpsSettings, updateDecryptHttps, broadcastCaptureState))
 	mux.HandleFunc("/api/settings/upstream", upstreamSettingsHandler(upstreamSettings, persistUpstreamSettings, broadcastCaptureState))
@@ -422,16 +434,13 @@ func captureStateHandler(stateFn func() shared.CaptureStateDto) http.HandlerFunc
 	}
 }
 
-func capturePauseHandler(hub *Hub, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
+// capturePauseHandler stops the live UI view (in-memory buffer + SSE). It does
+// not persist anything and does not affect disk storage.
+func capturePauseHandler(hub *Hub, captureCtl *storage.CaptureController, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if err := persistCaptureSetting(persistStorageEnabled, false); err != nil {
-			log.Printf("Error persisting storage.enable=false: %v", err)
-			http.Error(w, "could not persist capture state", http.StatusInternalServerError)
 			return
 		}
 		if captureCtl != nil {
@@ -443,16 +452,13 @@ func capturePauseHandler(hub *Hub, captureCtl *storage.CaptureController, persis
 	}
 }
 
-func captureResumeHandler(hub *Hub, captureCtl *storage.CaptureController, persistStorageEnabled storageEnabledPersister, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
+// captureResumeHandler resumes the live UI view. Like the pause handler it never
+// touches config or disk storage.
+func captureResumeHandler(hub *Hub, captureCtl *storage.CaptureController, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if err := persistCaptureSetting(persistStorageEnabled, true); err != nil {
-			log.Printf("Error persisting storage.enable=true: %v", err)
-			http.Error(w, "could not persist capture state", http.StatusInternalServerError)
 			return
 		}
 		if captureCtl != nil {
@@ -464,11 +470,29 @@ func captureResumeHandler(hub *Hub, captureCtl *storage.CaptureController, persi
 	}
 }
 
-func persistCaptureSetting(persistStorageEnabled storageEnabledPersister, enabled bool) error {
-	if persistStorageEnabled == nil {
-		return nil
+// storageToggleHandler starts or stops persisting traffic to disk. The runtime
+// command opens/closes the .capture file and persists storage.enable so the
+// choice survives the next start; the live UI view is left untouched.
+func storageToggleHandler(enabled bool, hub *Hub, update func(bool) error, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if update == nil {
+			http.Error(w, "storage control is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if err := update(enabled); err != nil {
+			log.Printf("Could not change storage state: %v", err)
+			http.Error(w, "could not change storage state", http.StatusInternalServerError)
+			return
+		}
+		state := stateFn()
+		publishCaptureState(hub, state)
+		writeJSON(w, state)
 	}
-	return persistStorageEnabled(enabled)
 }
 
 func captureClearHandler(hub *Hub, store *storage.RequestStore, stateFn func() shared.CaptureStateDto) http.HandlerFunc {
@@ -487,7 +511,7 @@ func captureClearHandler(hub *Hub, store *storage.RequestStore, stateFn func() s
 	}
 }
 
-func captureStateDto(captureCtl *storage.CaptureController, store *storage.RequestStore, decryptSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessSettings *configuration.AccessControlSettingsStore, proxyControllers ...*storage.ProxyController) shared.CaptureStateDto {
+func captureStateDto(captureCtl *storage.CaptureController, storing bool, store *storage.RequestStore, decryptSettings *configuration.DecryptHttpsConfigStore, upstreamSettings *configuration.UpstreamSettingsStore, accessSettings *configuration.AccessControlSettingsStore, proxyControllers ...*storage.ProxyController) shared.CaptureStateDto {
 	size := 0
 	if store != nil {
 		size = store.Len()
@@ -496,7 +520,7 @@ func captureStateDto(captureCtl *storage.CaptureController, store *storage.Reque
 	if captureCtl != nil {
 		capturing = captureCtl.IsCapturing()
 	}
-	dto := shared.CaptureStateDto{Capturing: capturing, Recording: capturing, BufferSize: size}
+	dto := shared.CaptureStateDto{Capturing: capturing, Recording: capturing, Storing: storing, BufferSize: size}
 	if len(proxyControllers) > 0 && proxyControllers[0] != nil {
 		dto.Proxy.Running = proxyControllers[0].IsRunning()
 		dto.Proxy.Address = proxyControllers[0].Address()
@@ -595,11 +619,11 @@ func certificateGenerateHandler(certConfig configuration.CertManagerConfig, inst
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if !replace && localFileExists(certConfig.CaCertFile) && localFileExists(certConfig.CaKeyFile) {
+		if !replace && localFileExists(certConfig.GetResolvedCaCertFile()) && localFileExists(certConfig.GetResolvedCaKeyFile()) {
 			http.Error(w, "CA already exists; set replace=true to regenerate it", http.StatusConflict)
 			return
 		}
-		if err := certManager.GenerateCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+		if err := certManager.GenerateCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()); err != nil {
 			log.Printf("Error generating local CA: %v", err)
 			http.Error(w, "could not generate CA", http.StatusInternalServerError)
 			return
@@ -623,11 +647,11 @@ func certificateInstallHandler(certConfig configuration.CertManagerConfig, insta
 			http.Error(w, "CA installation is not supported on this operating system", http.StatusServiceUnavailable)
 			return
 		}
-		if _, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+		if _, _, err := certManager.LoadCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()); err != nil {
 			http.Error(w, "CA certificate/key could not be loaded", http.StatusBadRequest)
 			return
 		}
-		if err := installer.InstallCACert(certConfig.CaCertFile); err != nil {
+		if err := installer.InstallCACert(certConfig.GetResolvedCaCertFile()); err != nil {
 			log.Printf("Error installing local CA: %v", err)
 			http.Error(w, "could not install CA", http.StatusInternalServerError)
 			return
@@ -695,17 +719,17 @@ func certificateExportHandler(certConfig configuration.CertManagerConfig) http.H
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if _, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile); err != nil {
+		if _, _, err := certManager.LoadCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()); err != nil {
 			http.Error(w, "CA certificate/key could not be loaded", http.StatusNotFound)
 			return
 		}
-		data, err := os.ReadFile(certConfig.CaCertFile)
+		data, err := os.ReadFile(certConfig.GetResolvedCaCertFile())
 		if err != nil {
 			log.Printf("Error exporting local CA: %v", err)
 			http.Error(w, "could not export CA", http.StatusInternalServerError)
 			return
 		}
-		name := filepath.Base(certConfig.CaCertFile)
+		name := filepath.Base(certConfig.GetResolvedCaCertFile())
 		w.Header().Set("Content-Type", "application/x-pem-file")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, strings.ReplaceAll(name, `"`, "")))
 		_, _ = w.Write(data)
@@ -747,7 +771,7 @@ func certificatesInfosDto(certConfig configuration.CertManagerConfig, installer 
 		dto.InstallSupported = installer.IsSupported()
 	}
 
-	caCert, _, err := certManager.LoadCA(certConfig.CaCertFile, certConfig.CaKeyFile)
+	caCert, _, err := certManager.LoadCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile())
 	if err != nil {
 		dto.Error = err.Error()
 		return dto
@@ -764,7 +788,7 @@ func certificatesInfosDto(certConfig configuration.CertManagerConfig, installer 
 	dto.Expired = now.Before(caCert.NotBefore) || now.After(caCert.NotAfter)
 
 	if installer != nil && installer.IsSupported() {
-		installed, err := installer.IsCACertInstalled(certConfig.CaCertFile)
+		installed, err := installer.IsCACertInstalled(certConfig.GetResolvedCaCertFile())
 		dto.Installed = installed
 		if err != nil {
 			dto.InstallCheckError = err.Error()

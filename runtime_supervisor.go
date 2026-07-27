@@ -46,6 +46,7 @@ type runtimeSupervisor struct {
 	upstreamStore *configuration.UpstreamSettingsStore
 	accessStore   *configuration.AccessControlSettingsStore
 	capture       storage.CaptureSessionWriter
+	storageSink   *storage.StorageSink
 	requests      *storage.RequestStore
 	captureCtl    *storage.CaptureController
 }
@@ -66,7 +67,19 @@ func (s *runtimeSupervisor) apply(command webui.RuntimeCommand) webui.RuntimeCom
 	var result webui.RuntimeCommandResult
 	switch command.Kind {
 	case webui.SetStorageEnabled:
-		result.Err = configuration.PersistStorageEnabled(command.Enabled)
+		// Open/close the .capture file at runtime, then persist the choice so it
+		// survives the next start. The live UI recording flag (captureCtl) is left
+		// untouched — storage and visualization are independent.
+		if s.storageSink != nil {
+			if command.Enabled {
+				result.Err = s.storageSink.Enable()
+			} else {
+				result.Err = s.storageSink.Disable()
+			}
+		}
+		if result.Err == nil {
+			result.Err = configuration.PersistStorageEnabled(command.Enabled)
+		}
 		if result.Err == nil {
 			s.config.Update(func(config *configuration.AppConfig) { config.Storage.Enable = command.Enabled })
 		}
