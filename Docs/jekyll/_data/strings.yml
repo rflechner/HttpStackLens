@@ -1,0 +1,34 @@
+# Per-language UI strings: navigation, language switch and footer. Keyed by the
+# page's `lang`, so templates read site.data.strings[page.lang].
+
+en:
+  nav:
+    - { label: "Home",            url: "/" }
+    - { label: "Features",        url: "/features/" }
+    - { label: "Getting started", url: "/getting-started/" }
+    - { label: "Corporate proxy", url: "/tutorial-upstream-proxy/" }
+    - { label: "HTTPS decryption", url: "/tutorial-https-decrypt/" }
+  github: "GitHub ↗"
+  menu_label: "Menu"
+  footer_tagline: "HttpStackLens — a Go learning project & local HTTP debugging proxy."
+  footer_links:
+    - { label: "GitHub",          url: "https://github.com/rflechner/HttpStackLens", external: true }
+    - { label: "Getting started", url: "/getting-started/" }
+    - { label: "Features",        url: "/features/" }
+  made_in: "Made in France and Switzerland"
+
+fr:
+  nav:
+    - { label: "Accueil",             url: "/fr/" }
+    - { label: "Fonctionnalités",     url: "/fr/features/" }
+    - { label: "Démarrage",           url: "/fr/getting-started/" }
+    - { label: "Proxy d'entreprise",  url: "/fr/tutorial-upstream-proxy/" }
+    - { label: "Déchiffrement HTTPS", url: "/fr/tutorial-https-decrypt/" }
+  github: "GitHub ↗"
+  menu_label: "Menu"
+  footer_tagline: "HttpStackLens — un projet d'apprentissage Go & proxy de débogage HTTP local."
+  footer_links:
+    - { label: "GitHub",       url: "https://github.com/rflechner/HttpStackLens", external: true }
+    - { label: "Démarrage",    url: "/fr/getting-started/" }
+    - { label: "Fonctionnalités", url: "/fr/features/" }
+  made_in: "Fait en France et en Suisse"

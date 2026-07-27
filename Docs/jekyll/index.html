@@ -1,0 +1,96 @@
+---
+layout: default
+lang: en
+permalink: /
+title: HttpStackLens
+---
+<header class="hero">
+  <div class="container">
+    <img class="hero-logo" src="{{ '/assets/img/logo.png' | relative_url }}" alt="HttpStackLens logo" />
+    <h1>See through your HTTP stack.</h1>
+    <p class="lead">
+      HttpStackLens is a local HTTP/HTTPS debugging proxy with a live Web UI. Inspect traffic in real
+      time, decrypt HTTPS on demand, and forward through an authenticated corporate proxy — all from
+      a single Go binary.
+    </p>
+    <div class="badges">
+      <span class="badge">🖥️ Windows · macOS · Linux</span>
+      <span class="badge">⚡ Single Go binary</span>
+      <span class="badge">🔒 Opt-in HTTPS decryption</span>
+      <span class="badge">🧩 WASM + Tailwind UI</span>
+    </div>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="{{ '/getting-started/' | relative_url }}">Get started →</a>
+      <a class="btn btn-ghost" href="{{ '/features/' | relative_url }}">Explore features</a>
+    </div>
+    <div class="note warn" style="margin-top:2.2rem;max-width:680px">
+      <span class="note-title">⚠️ For local development only</span>
+      <p>HttpStackLens is a debugging tool for your own machine. It is not built for production use or shared networks.</p>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <h2>What it does</h2>
+  <p class="section-lead">A focused set of tools for understanding what your applications actually send over the wire.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="feature-ico">🔀</div>
+      <h3>Forward proxy</h3>
+      <p>Listens on <code>localhost:3128</code>, tunnels HTTPS via <code>CONNECT</code>, and streams requests and responses bidirectionally.</p>
+    </div>
+    <div class="card">
+      <div class="feature-ico">🔓</div>
+      <h3>HTTPS decryption</h3>
+      <p>Opt-in local MITM. Generates per-domain certificates from a debug root CA so you can read encrypted bodies.</p>
+    </div>
+    <div class="card">
+      <div class="feature-ico">📡</div>
+      <h3>Live Web UI</h3>
+      <p>A WASM + Tailwind interface streams traffic over SSE: request list, timings, body decoding and inline image previews.</p>
+    </div>
+    <div class="card">
+      <div class="feature-ico">🏢</div>
+      <h3>Upstream proxy auth</h3>
+      <p>Forward to a corporate proxy with NTLM, Kerberos and Negotiate on Windows — plus a 401-compatibility mode.</p>
+    </div>
+    <div class="card">
+      <div class="feature-ico">💾</div>
+      <h3>Capture &amp; replay</h3>
+      <p>Record sessions to a binary <code>.capture</code> format, browse saved captures and query traffic through a REST API.</p>
+    </div>
+    <div class="card">
+      <div class="feature-ico">🧹</div>
+      <h3>Clean certificate teardown</h3>
+      <p>One click removes the debug CA and every leaf it signed from your OS trust store — nothing left behind.</p>
+    </div>
+  </div>
+
+  <h2>Two things people use it for</h2>
+  <p class="section-lead">Follow a guided, step-by-step tutorial for each.</p>
+
+  <div class="grid">
+    <a class="card" href="{{ '/tutorial-upstream-proxy/' | relative_url }}" style="text-decoration:none">
+      <h3>🏢 Authenticate behind a corporate proxy</h3>
+      <p>Point your tools at HttpStackLens and let it handle the authenticated upstream proxy — a drop-in local proxy for your dev box, with no separate authentication helper.</p>
+      <p style="margin-top:.8rem;color:var(--accent-strong);font-weight:600">Read the tutorial →</p>
+    </a>
+    <a class="card" href="{{ '/tutorial-https-decrypt/' | relative_url }}" style="text-decoration:none">
+      <h3>🔍 Debug HTTPS, then clean up</h3>
+      <p>Turn on decryption, inspect encrypted traffic, then remove every certificate so your OS trust store stays pristine.</p>
+      <p style="margin-top:.8rem;color:var(--accent-strong);font-weight:600">Read the tutorial →</p>
+    </a>
+  </div>
+
+  <h2>Quick start</h2>
+  <pre><code><span class="tok-c"># Build everything (WASM + CSS + native binary)</span>
+go run ./build-tools/main.go
+
+<span class="tok-c"># Run the proxy + Web UI</span>
+go run .
+
+<span class="tok-c"># Send a request through it</span>
+curl -x http://localhost:3128 http://example.com</code></pre>
+  <p>The proxy listens on <code>localhost:3128</code> and the Web UI on <code>localhost:9000</code>. See <a href="{{ '/getting-started/' | relative_url }}">Getting started</a> for prerequisites and build details.</p>
+</main>

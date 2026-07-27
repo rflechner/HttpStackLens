@@ -1,0 +1,12 @@
+{%- assign s = site.data.strings[page.lang] -%}
+<footer>
+  <div class="container foot-inner">
+    <div>{{ s.footer_tagline }}</div>
+    <div class="foot-links">
+      {%- for link in s.footer_links -%}
+      <a href="{% if link.external %}{{ link.url }}{% else %}{{ link.url | relative_url }}{% endif %}"{% if link.external %} target="_blank" rel="noopener"{% endif %}>{{ link.label }}</a>
+      {%- endfor -%}
+    </div>
+  </div>
+  <div class="container made-in">{{ s.made_in }} <span class="flags" aria-hidden="true">🇫🇷 🇨🇭</span></div>
+</footer>

@@ -1,0 +1,8 @@
+source "https://rubygems.org"
+
+# The github-pages gem pins Jekyll and every plugin to the exact versions
+# GitHub Pages runs, so a local build matches what Pages would publish.
+gem "github-pages", group: :jekyll_plugins
+
+# Windows/JRuby time-zone data (harmless elsewhere).
+gem "tzinfo-data", platforms: [:mingw, :mswin, :x64_mingw, :jruby]

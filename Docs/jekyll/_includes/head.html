@@ -1,0 +1,12 @@
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% if page.title and page.url != "/" and page.url != "/fr/" %}{{ page.title }} — {{ site.title }}{% else %}{{ site.title }} — a local HTTP/HTTPS debugging proxy{% endif %}</title>
+  <meta name="description" content="{{ page.description | default: site.description | strip_newlines }}" />
+  <link rel="icon" href="{{ '/assets/img/logo.png' | relative_url }}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}" />
+  <!-- Loaded without defer so data-theme is set before first paint (no flash). -->
+  <script src="{{ '/assets/js/main.js' | relative_url }}"></script>
+</head>

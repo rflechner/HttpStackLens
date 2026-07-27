@@ -1,0 +1,28 @@
+{%- assign s = site.data.strings[page.lang] -%}
+{%- comment -%}
+  Counterpart URL for the language switch. EN /features/ ↔ FR /fr/features/,
+  computed from the page path so no per-page front matter is needed.
+{%- endcomment -%}
+{%- if page.lang == "fr" -%}
+  {%- assign other_url = page.url | remove_first: "/fr" -%}
+  {%- if other_url == "" -%}{%- assign other_url = "/" -%}{%- endif -%}
+{%- else -%}
+  {%- assign other_url = "/fr" | append: page.url -%}
+{%- endif -%}
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="{{ s.nav[0].url | relative_url }}"><img src="{{ '/assets/img/logo.png' | relative_url }}" alt="" /> HttpStackLens</a>
+    <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="{{ s.menu_label }}">☰</button>
+    <div class="nav-links" id="nav-links">
+      {%- for item in s.nav -%}
+      <a href="{{ item.url | relative_url }}"{% if page.url == item.url %} class="active"{% endif %}>{{ item.label }}</a>
+      {%- endfor -%}
+      <a href="https://github.com/rflechner/HttpStackLens" target="_blank" rel="noopener">{{ s.github }}</a>
+      <span class="lang-switch">
+        <a href="{% if page.lang == 'fr' %}{{ other_url | relative_url }}{% else %}{{ page.url | relative_url }}{% endif %}" class="lang-link{% if page.lang != 'fr' %} active{% endif %}">EN</a>
+        <a href="{% if page.lang == 'fr' %}{{ page.url | relative_url }}{% else %}{{ other_url | relative_url }}{% endif %}" class="lang-link{% if page.lang == 'fr' %} active{% endif %}">FR</a>
+      </span>
+      <button class="icon-btn theme-btn" id="theme-btn" aria-label="Toggle theme">🌙</button>
+    </div>
+  </div>
+</nav>

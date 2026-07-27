@@ -1,0 +1,43 @@
+# HttpStackLens documentation — Jekyll site
+#
+# Content is plain Markdown (ported from the Docsy site under Docs/docsy);
+# the look comes from the hand-written theme under Docs/website, now expressed
+# as Jekyll layouts + includes. Build it with Docker — see README.md.
+
+title: HttpStackLens
+description: >-
+  A local HTTP/HTTPS debugging proxy with a live Web UI, opt-in HTTPS decryption
+  and upstream-proxy authentication.
+
+# ── Deployment ───────────────────────────────────────────────────────────────
+# url/baseurl feed the `absolute_url`/`relative_url` filters used across the
+# templates, so every asset and link is deployment-agnostic.
+#   • Root or custom domain (e.g. codeanythingpossible.com): leave baseurl empty.
+#   • GitHub Pages *project* site (…/HttpStackLens/): set baseurl: "/HttpStackLens".
+url: ""
+baseurl: ""
+
+# ── Build ────────────────────────────────────────────────────────────────────
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  input: GFM              # GitHub-flavoured: fenced code, tables, autolinks
+  hard_wrap: false
+  syntax_highlighter: rouge
+
+# Languages live as sibling trees: English at the root, French under /fr/.
+# No i18n plugin (GitHub Pages wouldn't allow it) — page.lang drives the nav,
+# footer strings and the language switch.
+defaults:
+  - scope: { path: "" }
+    values: { lang: "en" }
+  - scope: { path: "fr" }
+    values: { lang: "fr" }
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - Dockerfile
+  - docker-compose.yml
+  - README.md
+  - vendor
