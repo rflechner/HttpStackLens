@@ -1,0 +1,43 @@
+proxy:
+  port: 3128
+  require_windows_authentication: false # only for windows
+  access_control:
+    mode: "loopback"
+    networks: []
+
+  output_proxy_uri:
+  add_windows_authentication_to_output_proxy: false # only for windows
+  no_proxy:
+    - "localhost"
+    - "127.0.0.1"
+    - ".local"
+    - "host.docker.internal"
+webui:
+  port: 9000
+  access_control:
+    mode: "loopback"
+    networks: []
+
+logging:
+  level: info # debug | info | warn | error (overridden by --verbose)
+  file: logs/httpStackLens.log # empty to disable the file sink
+
+storage:
+  enable: false
+  folder: "captures"
+
+updates:
+  check_enabled: true # when true, check GitHub for a newer release on startup (outbound request)
+
+decrypt_https:
+  enabled: false # intercept & decrypt HTTPS (generates + installs a per-domain cert)
+  cert_manager:
+    ca_cert_file: "certificates/debug-https-ca.crt"
+    ca_key_file: "certificates/debug-https-ca.key"
+    domain_certs_folder: "certificates/domains"
+  mime_types:
+    - name: "image/*"
+      max_size_mb: 2.5
+    - name: "text/*"
+      max_size_mb: 1
+    - name: "application/json"

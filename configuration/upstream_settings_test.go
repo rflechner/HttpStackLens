@@ -125,14 +125,9 @@ func TestUpstreamSettingsStoreUpdate(t *testing.T) {
 
 func readConfigFromPath(t *testing.T, path string) AppConfig {
 	t.Helper()
-	dir := filepath.Dir(path)
-	cwd, err := os.Getwd()
+	conf, err := readConfigurationFromPath(path)
 	if err != nil {
-		t.Fatalf("getwd: %v", err)
+		t.Fatalf("read config: %v", err)
 	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() { _ = os.Chdir(cwd) }()
-	return ReadConfiguration()
+	return conf
 }

@@ -2,6 +2,11 @@
 
 ![Logo](images/logo-with-text.png)
 
+[![Release](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml/badge.svg)](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/rflechner/HttpStackLens)](https://github.com/rflechner/HttpStackLens/releases)
+[![Go version](https://img.shields.io/github/go-mod/go-version/rflechner/HttpStackLens)](go.mod)
+[![License](https://img.shields.io/github/license/rflechner/HttpStackLens)](LICENSE)
+
 > **Work in progress** — this project is far from finished and evolves over time.
 
 HttpStackLens is a local HTTP/HTTPS proxy designed **for local development only**. It allows inspecting and visualizing HTTP traffic passing between a client and a server, acting as a minimal network debugging tool.
