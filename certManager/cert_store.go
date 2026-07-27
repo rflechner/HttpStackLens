@@ -48,7 +48,7 @@ func NewCertStoreFromConfig(ca *x509.Certificate, caKey *ecdsa.PrivateKey, confi
 	if config.DecryptHttps.Enabled {
 		installer = NewCertInstaller()
 	}
-	return NewCertStore(ca, caKey, config.DecryptHttps.CertManager.DomainCertsFolder, installer)
+	return NewCertStore(ca, caKey, config.DecryptHttps.CertManager.GetResolvedDomainCertsFolder(), installer)
 }
 
 // GetCertificate returns the TLS certificate for domain, creating it if needed.

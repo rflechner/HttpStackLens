@@ -258,6 +258,7 @@ func captureStateToJS(st shared.CaptureStateDto) map[string]any {
 	return map[string]any{
 		"recording":  st.Recording,
 		"capturing":  st.Capturing,
+		"storing":    st.Storing,
 		"bufferSize": st.BufferSize,
 		"proxy":      map[string]any{"running": st.Proxy.Running, "address": st.Proxy.Address},
 		"decrypt":    map[string]any{"enabled": st.Decrypt.Enabled},
@@ -420,6 +421,12 @@ func (m *StateModel) registerBridges() {
 	js.Global().Set("hslProxy", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) >= 1 {
 			proxyAction(args[0].String())
+		}
+		return nil
+	}))
+	js.Global().Set("hslStorage", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) >= 1 {
+			storage(args[0].String())
 		}
 		return nil
 	}))
@@ -824,6 +831,20 @@ func proxyAction(action string) {
 	js.Global().Call("fetch", "/api/proxy/"+action, map[string]any{"method": "POST"}).
 		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
 			consoleLog("proxy " + action + " failed: " + args[0].String())
+			return nil
+		}))
+}
+
+// storage starts or stops persisting traffic to .capture files. It is separate
+// from capture() (the live UI view): the backend opens/closes the capture file
+// and persists storage.enable without touching the recording state.
+func storage(action string) {
+	if action != "start" && action != "stop" {
+		return
+	}
+	js.Global().Call("fetch", "/api/storage/"+action, map[string]any{"method": "POST"}).
+		Call("catch", js.FuncOf(func(this js.Value, args []js.Value) any {
+			consoleLog("storage " + action + " failed: " + args[0].String())
 			return nil
 		}))
 }

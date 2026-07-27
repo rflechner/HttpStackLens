@@ -2,42 +2,90 @@ package configuration
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"httpStackLens/helpers"
+
+	"github.com/goccy/go-yaml"
 )
 
 const defaultConfigPath = "config.yaml"
+
+func ResolveConfigPath() string {
+	return helpers.ResolveRelativePath(defaultConfigPath)
+}
+
+func ReadConfiguration() (AppConfig, error) {
+	return readConfigurationFromPath(ResolveConfigPath())
+}
+
+func readConfigurationFromPath(path string) (AppConfig, error) {
+	configData, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("Failed to parse configuration file: %v\n", err)
+		return DefaultAppConfig(), fmt.Errorf("failed to read configuration file: %v", err)
+	}
+	var conf AppConfig
+	err = yaml.Unmarshal(configData, &conf)
+	if err != nil {
+		log.Printf("Failed to parse configuration file: %v\n", err)
+		return DefaultAppConfig(), fmt.Errorf("failed to parse configuration file: %v", err)
+	}
+
+	return conf, nil
+}
+
+func ReadOrCreateConfigurationIfNotExists() AppConfig {
+	conf, e := ReadConfiguration()
+	if e != nil {
+		log.Printf("Creating default configuration file")
+		conf = DefaultAppConfig()
+		bytes, err := yaml.Marshal(conf)
+		if err != nil {
+			log.Printf("Failed to marshal default configuration: %v\n", err)
+			return conf
+		}
+		err = os.WriteFile(ResolveConfigPath(), bytes, 0644)
+		if err != nil {
+			log.Printf("Failed to write default configuration file: %v\n", err)
+			return conf
+		}
+	}
+	return conf
+}
 
 // PersistStorageEnabled updates storage.enable in config.yaml while preserving
 // the rest of the file as-is. The Web UI uses this for pause/resume so capture
 // preference survives the next application start.
 func PersistStorageEnabled(enabled bool) error {
-	return persistStorageEnabled(defaultConfigPath, enabled)
+	return persistStorageEnabled(ResolveConfigPath(), enabled)
 }
 
 func PersistDecryptHttpsCaptureRules(config DecryptHttpsConfig) error {
-	return persistDecryptHttpsCaptureRules(defaultConfigPath, config)
+	return persistDecryptHttpsCaptureRules(ResolveConfigPath(), config)
 }
 
 // PersistDecryptHttpsEnabled updates decrypt_https.enabled in config.yaml while
 // preserving certificate and body capture settings.
 func PersistDecryptHttpsEnabled(enabled bool) error {
-	return persistDecryptHttpsEnabled(defaultConfigPath, enabled)
+	return persistDecryptHttpsEnabled(ResolveConfigPath(), enabled)
 }
 
 // PersistUpstreamSettings writes the upstream proxy settings (output_proxy_uri,
 // add_windows_authentication_to_output_proxy, no_proxy) back into the proxy
 // section of config.yaml so Web UI edits survive the next application start.
 func PersistUpstreamSettings(settings UpstreamSettings) error {
-	return persistUpstreamSettings(defaultConfigPath, settings)
+	return persistUpstreamSettings(ResolveConfigPath(), settings)
 }
 
 // PersistAccessControlSettings writes the new access_control blocks back to
 // config.yaml and removes the legacy enable_remote_connection keys from the
 // proxy/webui sections.
 func PersistAccessControlSettings(settings AccessControlSettings) error {
-	return persistAccessControlSettings(defaultConfigPath, settings)
+	return persistAccessControlSettings(ResolveConfigPath(), settings)
 }
 
 func persistStorageEnabled(path string, enabled bool) error {

@@ -3,6 +3,34 @@
 All notable changes to this project are documented here, newest first.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## v0.1.1-beta — 2026-07-26
+
+### Features
+
+- **Certificate cleanup** — a one-click cleanup that disables HTTPS decryption
+  and clears the generated per-domain certificate cache.
+- **Split request/response panes** — inspect a request and its response side by
+  side, with a focus toggle to expand either pane.
+- **Automatic body decompression** — compressed request/response bodies are now
+  decompressed for inspection.
+- **Recording decoupled from disk** — live UI recording no longer forces disk
+  persistence, so you can watch traffic live without writing captures to disk.
+- **More robust config loading** — if the config file is missing, a default one
+  is created automatically instead of failing.
+
+### Bug fixes
+
+- Config path is now resolved dynamically relative to the executable, so the
+  proxy finds its configuration regardless of the working directory.
+
+### Maintenance
+
+- Centralized resolution of configuration, certificate and log file paths.
+- CI: GitHub Actions workflow for automated release builds and draft publishing,
+  with packaging decoupled from publishing and triggers on `develop`/`main`.
+- README: project status and info badges; repo skill for generating these
+  release notes.
+
 ## v0.1.1-alpha — 2026-07-14
 
 First public alpha. HttpStackLens is a debugging HTTP/HTTPS proxy with a live

@@ -183,7 +183,9 @@ func (m *HttpsInterceptor) forward(clientTLS net.Conn, transport *http.Transport
 	// stall progressive and long-lived responses — video segments, SSE,
 	// long-poll — until they closed, leaving the browser stuck in "loading".
 	var capture *captureLimitWriter
-	if (m.isCapturing() && (m.Capture != nil || m.Events != nil || m.Store != nil)) || isHtmlOrJs(contentType) {
+	needForView := m.isCapturing() && (m.Events != nil || m.Store != nil)
+	needForStorage := m.isStoring() && m.Capture != nil
+	if needForView || needForStorage || isHtmlOrJs(contentType) {
 		capture = &captureLimitWriter{limit: limit}
 		resp.Body = io.NopCloser(io.TeeReader(originalBody, capture))
 	}
@@ -331,7 +333,9 @@ func capBody(body io.Reader, limit int64) (store []byte, forward io.Reader, skip
 // replay for forwarding upstream. It is a no-op when capture is off or the
 // request has no body.
 func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skipped bool, err error) {
-	if !m.isCapturing() || (m.Capture == nil && m.Store == nil) || req.Body == nil {
+	needForView := m.isCapturing() && m.Store != nil
+	needForStorage := m.isStoring() && m.Capture != nil
+	if req.Body == nil || (!needForView && !needForStorage) {
 		return nil, false, nil
 	}
 	limit, _ := m.captureLimits().LimitForContentType(req.Header.Get("Content-Type"))
@@ -348,10 +352,9 @@ func (m *HttpsInterceptor) capRequestBody(req *http.Request) (store []byte, skip
 }
 
 func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, body []byte, skipped bool) {
-	if !m.isCapturing() {
-		return
-	}
-	if m.Capture == nil && m.Store == nil {
+	toStorage := m.isStoring() && m.Capture != nil
+	toView := m.isCapturing() && m.Store != nil
+	if !toStorage && !toView {
 		return
 	}
 	rec := storage.RequestRecord{
@@ -363,21 +366,20 @@ func (m *HttpsInterceptor) recordRequest(id storage.UUID, req *http.Request, bod
 		BodySkipped: skipped,
 		Body:        body,
 	}
-	if m.Capture != nil {
+	if toStorage {
 		if err := m.Capture.WriteRequest(rec); err != nil {
 			log.Printf("⚠️  capture: failed to record request: %v\n", err)
 		}
 	}
-	if m.Store != nil {
+	if toView {
 		m.Store.PutRequest(id.String(), rec)
 	}
 }
 
 func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, body []byte, skipped bool) {
-	if !m.isCapturing() {
-		return
-	}
-	if m.Capture == nil && m.Store == nil {
+	toStorage := m.isStoring() && m.Capture != nil
+	toView := m.isCapturing() && m.Store != nil
+	if !toStorage && !toView {
 		return
 	}
 	rec := storage.ResponseRecord{
@@ -389,12 +391,12 @@ func (m *HttpsInterceptor) recordResponse(id storage.UUID, resp *http.Response, 
 		BodySkipped:   skipped,
 		Body:          body,
 	}
-	if m.Capture != nil {
+	if toStorage {
 		if err := m.Capture.WriteResponse(rec); err != nil {
 			log.Printf("⚠️  capture: failed to record response: %v\n", err)
 		}
 	}
-	if m.Store != nil {
+	if toView {
 		m.Store.PutResponse(id.String(), rec)
 	}
 }
@@ -468,8 +470,23 @@ func span(a, b time.Time) time.Duration {
 	return b.Sub(a)
 }
 
+// isCapturing reports whether the live UI view is active: it gates the in-memory
+// store and the SSE events, never disk persistence.
 func (m *HttpsInterceptor) isCapturing() bool {
 	return m.CaptureCtl == nil || m.CaptureCtl.IsCapturing()
+}
+
+// isStoring reports whether decrypted traffic should be persisted to the capture
+// file, independently of the live view. A switchable storage sink exposes its
+// on/off state through Enabled(); a plain writer (e.g. in tests) always stores.
+func (m *HttpsInterceptor) isStoring() bool {
+	if m.Capture == nil {
+		return false
+	}
+	if s, ok := m.Capture.(interface{ Enabled() bool }); ok {
+		return s.Enabled()
+	}
+	return true
 }
 
 func (m *HttpsInterceptor) captureLimits() configuration.DecryptHttpsConfig {
