@@ -215,7 +215,10 @@ jobs:
           draft=""
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then draft="--draft"; fi
 
+          # --repo is required: this job has no checkout, so gh can't infer the
+          # repository from a local git remote.
           gh release create "$version" artifacts/* \
+            --repo "${{ github.repository }}" \
             --title "$version" \
             --generate-notes \
             $prerelease $draft
