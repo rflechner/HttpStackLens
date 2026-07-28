@@ -1,0 +1,55 @@
+{{if .Sending}}
+  <div class="cx-blank">
+    <div class="cx-spin"></div>
+    <div class="cx-blank-s" style="margin-top:14px">Waiting for response…</div>
+  </div>
+{{else if not .Res}}
+  <div class="cx-blank">
+    <div class="cx-blank-t">Response</div>
+    <div class="cx-blank-s">Send the request to see status, headers and body here.</div>
+  </div>
+{{else}}
+  {{$r := .Res}}
+  <div class="cx-res-head">
+    {{if $r.Err}}
+      <span class="cx-status" style="color:var(--danger);background:color-mix(in srgb, var(--danger) 14%, transparent)">failed</span>
+    {{else}}
+      <span class="cx-status" style="color:{{.StatusColor}};background:color-mix(in srgb, {{.StatusColor}} 14%, transparent)">{{$r.Status}} {{$r.StatusText}}</span>
+    {{end}}
+    <span class="cx-meta">{{$r.MS}} ms</span>
+    <span class="cx-meta">{{.Size}}</span>
+    <span class="cx-grow"></span>
+    <button class="cx-mini" data-on-click="Copy">Copy</button>
+  </div>
+
+  {{if $r.Err}}
+    <div class="cx-pane hsl-scroll">
+      <div class="cx-blank">
+        <div class="cx-blank-t">Request failed</div>
+        <div class="cx-blank-s mono">{{$r.Err}}</div>
+        <div class="cx-blank-s">The browser blocks cross-origin calls the target host does not allow. Routing the send through the proxy avoids it.</div>
+      </div>
+    </div>
+  {{else}}
+    <div class="cx-tabs sub">
+      <button class="cx-tab{{if .TabIs "body"}} on{{end}}" data-on-click="SetTab" data-arg="body">Body</button>
+      <button class="cx-tab{{if .TabIs "headers"}} on{{end}}" data-on-click="SetTab" data-arg="headers">Headers · {{len $r.Headers}}</button>
+      <span class="cx-grow"></span>
+      {{if .TabIs "body"}}
+        <button class="cx-seg{{if .ModeIs "pretty"}} on{{end}}" data-on-click="SetMode" data-arg="pretty">pretty</button>
+        <button class="cx-seg{{if .ModeIs "raw"}} on{{end}}" data-on-click="SetMode" data-arg="raw">raw</button>
+      {{end}}
+    </div>
+    <div class="cx-pane hsl-scroll">
+      {{if .TabIs "headers"}}
+        <div class="cx-hdrs">
+          {{range $r.Headers}}
+            <div class="cx-hdr"><span class="cx-hk mono">{{index . 0}}</span><span class="cx-hv mono">{{index . 1}}</span></div>
+          {{end}}
+        </div>
+      {{else}}
+        <pre class="cx-pre mono">{{.Text}}</pre>
+      {{end}}
+    </div>
+  {{end}}
+{{end}}

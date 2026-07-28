@@ -1,0 +1,120 @@
+<div class="cx-side" data-child="files"></div>
+
+<div class="cx-main">
+  <div class="cx-col" data-on-keydown="OnKey">
+    {{if not .Cur}}
+      <div class="cx-blank">
+        <div class="cx-blank-t">No request selected</div>
+        <div class="cx-blank-s">Pick one on the left, or create a new request.</div>
+        <div class="cx-blank-a">
+          <button class="cx-btn" data-on-click="NewRequest">+ New request</button>
+        </div>
+      </div>
+    {{else}}
+      <div class="cx-namebar">
+        <input class="cx-name" data-bind="Cur.Name" data-on-input="NameChanged" placeholder="Request name" />
+        <button class="cx-file-tag mono" data-on-click="SetTab" data-arg="raw" title="Open the raw {{.FileName}} text">{{.FileName}}</button>
+        {{if .FileDirty}}<span class="cx-dirty">unsaved</span>{{end}}
+        <button class="cx-mini" data-on-click="DuplicateRequest">Duplicate</button>
+        <button class="cx-mini danger" data-on-click="DeleteRequest">Delete</button>
+      </div>
+
+      <div class="cx-urlbar">
+        <select class="cx-method" style="color:{{.MethodColor}}" data-bind="Cur.Method" data-on-change="MethodChanged">
+          {{range .MethodList}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+        <input class="cx-url mono" data-ref="url" data-bind="Cur.URL" data-on-input="Edited"
+               placeholder="https://api.example.com/path" spellcheck="false" />
+        <button class="cx-btn primary" data-on-click="Send" {{attr .SendAttrs}}>
+          {{if .Sending}}Sending…{{else}}Send{{end}}<span class="cx-kbd">⌘↵</span>
+        </button>
+      </div>
+
+      <div class="cx-tabs">
+        {{if .TabIs "raw"}}
+          <span class="cx-tabs-off">Form fields are hidden while you edit the file directly</span>
+        {{else}}
+          <button class="cx-tab{{if .TabIs "body"}} on{{end}}" data-on-click="SetTab" data-arg="body">Body</button>
+          <button class="cx-tab{{if .TabIs "headers"}} on{{end}}" data-on-click="SetTab" data-arg="headers">Headers{{if .Cur.Headers}} · {{len .Cur.Headers}}{{end}}</button>
+          <button class="cx-tab{{if .TabIs "params"}} on{{end}}" data-on-click="SetTab" data-arg="params">Params{{if .Params}} · {{len .Params}}{{end}}</button>
+          <button class="cx-tab{{if .TabIs "vars"}} on{{end}}" data-on-click="SetTab" data-arg="vars">Variables{{if .CurFile.Vars}} · {{len .CurFile.Vars}}{{end}}</button>
+        {{end}}
+        <span class="cx-grow"></span>
+        <div class="cx-view-seg">
+          <span class="cx-view-l">Edit as</span>
+          <button class="cx-vbtn{{if not (.TabIs "raw")}} on{{end}}" data-on-click="SetTab" data-arg="body">Form</button>
+          <button class="cx-vbtn{{if .TabIs "raw"}} on{{end}}" data-on-click="SetTab" data-arg="raw"><span class="mono">{{.FileName}}</span></button>
+        </div>
+      </div>
+
+      <div class="cx-pane hsl-scroll{{if .TabIs "raw"}} noscroll{{end}}">
+        {{if .TabIs "body"}}
+          <div class="cx-body-pane">
+            <div class="cx-body-head">
+              <span class="cx-hint">Raw body · <span class="mono">{{"{{variables}}"}}</span> are substituted on send</span>
+              <button class="cx-mini" data-on-click="FormatJSON">Format JSON</button>
+            </div>
+            <textarea class="cx-ta mono" data-bind="Cur.Body" data-on-input="Edited"
+                      spellcheck="false" placeholder='{ "key": "value" }'></textarea>
+          </div>
+
+        {{else if .TabIs "raw"}}
+          <div class="cx-raw-pane">
+            <div class="cx-body-head">
+              <span class="cx-hint">Editing <span class="mono">{{.FileName}}</span> directly — changes sync to the list on the left as you type.</span>
+              <span class="cx-raw-stat" data-ref="rawStat">{{.ReqCount}}</span>
+            </div>
+            <div class="cx-raw-wrap">
+              <div class="cx-gutter mono" data-ref="gutter">{{range $i, $n := .RawLines}}{{if $i}}<br>{{end}}{{$n}}{{end}}</div>
+              <textarea class="cx-ta raw mono" data-bind="Raw" data-on-input="RawChanged" spellcheck="false"></textarea>
+            </div>
+          </div>
+
+        {{else if .TabIs "headers"}}
+          <div class="cx-kv-list">
+            {{range $i, $h := .Cur.Headers}}
+              <div class="cx-kv">
+                <button class="cx-check{{if $h.On}} on{{end}}" data-on-click="KVToggle" data-arg="headers" data-arg-i="{{$i}}">{{if $h.On}}✓{{end}}</button>
+                <input class="cx-in mono" data-bind="Cur.Headers.{{$i}}.Key" data-on-input="Edited" placeholder="Header name" />
+                <input class="cx-in mono" data-bind="Cur.Headers.{{$i}}.Value" data-on-input="Edited" placeholder="Value" />
+                <button class="cx-x" data-on-click="KVDel" data-arg="headers" data-arg-i="{{$i}}">×</button>
+              </div>
+            {{end}}
+            <button class="cx-add" data-on-click="KVAdd" data-arg="headers">+ Add header</button>
+          </div>
+
+        {{else if .TabIs "params"}}
+          <div class="cx-kv-list">
+            {{range $i, $p := .Params}}
+              <div class="cx-kv">
+                <button class="cx-check{{if $p.On}} on{{end}}" data-on-click="KVToggle" data-arg="params" data-arg-i="{{$i}}">{{if $p.On}}✓{{end}}</button>
+                <input class="cx-in mono" data-bind="Params.{{$i}}.Key" data-on-input="ParamChanged" placeholder="Parameter" />
+                <input class="cx-in mono" data-bind="Params.{{$i}}.Value" data-on-input="ParamChanged" placeholder="Value" />
+                <button class="cx-x" data-on-click="KVDel" data-arg="params" data-arg-i="{{$i}}">×</button>
+              </div>
+            {{end}}
+            <button class="cx-add" data-on-click="KVAdd" data-arg="params">+ Add parameter</button>
+          </div>
+
+        {{else}}
+          <div class="cx-hint" style="padding:10px 14px 2px">
+            File-level variables for <span class="mono">{{.FileName}}</span> — written as <span class="mono">@name = value</span> at the top of the file.
+          </div>
+          <div class="cx-kv-list">
+            {{range $i, $v := .CurFile.Vars}}
+              <div class="cx-kv">
+                <button class="cx-check{{if $v.On}} on{{end}}" data-on-click="KVToggle" data-arg="vars" data-arg-i="{{$i}}">{{if $v.On}}✓{{end}}</button>
+                <input class="cx-in mono" data-bind="CurFile.Vars.{{$i}}.Key" data-on-input="Edited" placeholder="name" />
+                <input class="cx-in mono" data-bind="CurFile.Vars.{{$i}}.Value" data-on-input="Edited" placeholder="value" />
+                <button class="cx-x" data-on-click="KVDel" data-arg="vars" data-arg-i="{{$i}}">×</button>
+              </div>
+            {{end}}
+            <button class="cx-add" data-on-click="KVAdd" data-arg="vars">+ Add variable</button>
+          </div>
+        {{end}}
+      </div>
+    {{end}}
+  </div>
+
+  <div class="cx-col cx-res" data-child="response"></div>
+</div>

@@ -1,0 +1,153 @@
+.mono { font-family:'JetBrains Mono', ui-monospace, monospace }
+.cx-side { width:250px; flex-shrink:0; background:var(--sidebar); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0 }
+.cx-grip { width:5px; flex-shrink:0; cursor:col-resize; background:transparent; margin-left:-3px; z-index:5; position:relative }
+.cx-grip:hover, .cx-grip.on { background:color-mix(in srgb, var(--mint) 55%, transparent) }
+.cx-raw-wrap { display:flex; flex:1; min-height:0; margin:0 14px 14px; background:var(--bg2); border:1px solid var(--line); border-radius:8px; overflow:hidden }
+.cx-raw-wrap:focus-within { border-color:var(--mint) }
+.cx-gutter { padding:10px 8px 10px 10px; font-size:11.5px; line-height:1.6; color:var(--faint); text-align:right; user-select:none; background:var(--bg0); border-right:1px solid var(--line); min-width:34px; overflow:hidden }
+.cx-ta.raw { flex:1; margin:0; border:none; border-radius:0; background:transparent; min-height:0; tab-size:2 }
+.cx-ta.raw:focus { border:none; background:transparent }
+.cx-raw-stat { font-size:10.5px; color:var(--mint); background:color-mix(in srgb, var(--mint) 12%, transparent); border-radius:5px; padding:2px 7px; white-space:nowrap }
+.cx-side-head { display:flex; align-items:center; gap:6px; padding:12px 12px 8px }
+.cx-side-note { padding:0 12px 10px; font-size:11px; line-height:1.55; color:var(--faint) }
+.cx-side-note .mono { color:var(--dim) }
+.cx-side-path { font-size:10.5px; color:var(--faint) }
+.cx-side-head { flex-wrap:wrap }
+.cx-side-head .cx-mini { flex:0 0 auto }
+.cx-file-ico { color:var(--faint); flex-shrink:0 }
+.cx-file.active .cx-file-ico, .cx-file-head:hover .cx-file-ico { color:var(--mint) }
+.cx-dot-dirty { width:6px; height:6px; border-radius:3px; background:var(--warn); flex-shrink:0 }
+.cx-raw-pane { display:flex; flex-direction:column; height:100%; min-height:0 }
+.cx-empty { text-align:center }
+.cx-ov { position:fixed; inset:0; z-index:60; background:rgba(43,41,38,.34); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center }
+[data-theme="dark"] .cx-ov { background:rgba(0,0,0,.5) }
+.cx-modal { width:520px; max-width:92%; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:0 24px 60px rgba(43,41,38,.22); overflow:hidden; color:var(--ink); font-family:Inter }
+.cx-modal-head { display:flex; align-items:flex-start; gap:10px; padding:14px 18px 12px; border-bottom:1px solid var(--line) }
+.cx-modal-t { font-size:13.5px; font-weight:600 }
+.cx-modal-s { font-size:11.5px; color:var(--dim); margin-top:3px; line-height:1.5 }
+.cx-modal-body { padding:16px 18px; display:grid; gap:16px }
+.cx-modal-foot { padding:12px 18px; border-top:1px solid var(--line); background:var(--bg2); display:flex; gap:8px; justify-content:flex-end }
+.cx-f-l { display:block; font-size:11.5px; font-weight:500; color:var(--ink); margin-bottom:6px }
+.cx-name-row { display:flex; align-items:center; gap:0; border:1px solid var(--line); border-radius:7px; background:var(--bg2); overflow:hidden }
+.cx-name-row .cx-in { flex:1; height:32px; border:none; border-radius:0; background:transparent }
+.cx-name-row .cx-in:focus { background:transparent }
+.cx-ext { font-size:11.5px; color:var(--faint); padding:0 10px 0 2px }
+.cx-tpls { display:grid; gap:6px }
+.cx-tpl { display:flex; align-items:flex-start; gap:10px; text-align:left; padding:10px 12px; background:var(--bg2); border:1px solid var(--line); border-radius:8px; cursor:pointer; color:var(--ink); font-family:Inter }
+.cx-tpl.on { border-color:var(--mint); background:color-mix(in srgb, var(--mint) 8%, transparent) }
+.cx-radio { width:14px; height:14px; border-radius:7px; border:1.5px solid var(--faint); flex-shrink:0; margin-top:1px }
+.cx-tpl.on .cx-radio { border-color:var(--mint); box-shadow:inset 0 0 0 3px var(--panel), inset 0 0 0 7px var(--mint) }
+.cx-tpl-t { display:block; font-size:12.5px; font-weight:500 }
+.cx-tpl-s { display:block; font-size:11px; color:var(--dim); margin-top:2px }
+.cx-dest { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 11px; background:var(--bg2); border:1px solid var(--line); border-radius:7px }
+.cx-dest-p { font-size:11.5px; color:var(--mint); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.cx-side-title { flex:1; font-size:10.5px; text-transform:uppercase; letter-spacing:.8px; font-weight:600; color:var(--faint) }
+.cx-files { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:0 8px 8px }
+.cx-side-foot { padding:9px 10px; border-top:1px solid var(--line); background:var(--bg2); display:flex; flex-wrap:wrap; gap:6px; align-items:center; overflow:hidden }
+.cx-side-foot .cx-mini { flex:1 1 auto; min-width:0; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.cx-side-path { flex:1 1 100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left }
+.cx-file { margin-bottom:4px }
+.cx-file-head { display:flex; align-items:center; gap:6px; width:100%; text-align:left; background:transparent; border:none; cursor:pointer; padding:6px 8px; border-radius:7px; color:var(--ink); font-family:'JetBrains Mono'; font-size:11.5px; font-weight:500 }
+.cx-file-head:hover { background:var(--bg3) }
+.cx-caret { color:var(--faint); font-size:9px; width:9px }
+.cx-file-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.cx-file-count { color:var(--faint); font-size:10.5px }
+.cx-req { display:flex; align-items:center; gap:8px; width:100%; text-align:left; background:transparent; border:none; cursor:pointer; padding:6px 8px 6px 22px; border-radius:7px; color:var(--dim); font-family:Inter; font-size:12.5px }
+.cx-req:hover { background:var(--bg3); color:var(--ink) }
+.cx-req.on { background:var(--bg3); color:var(--ink); font-weight:500 }
+.cx-m { font-family:'JetBrains Mono'; font-size:9.5px; font-weight:600; width:44px; flex-shrink:0; letter-spacing:.3px }
+.cx-req-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.cx-add-req { width:100%; text-align:left; padding:5px 8px 5px 22px; background:transparent; border:none; cursor:pointer; color:var(--faint); font-size:11.5px; font-family:Inter; border-radius:7px }
+.cx-add-req:hover { color:var(--mint) }
+.cx-empty { padding:16px 10px; color:var(--faint); font-size:12px }
+.cx-main { flex:1; min-width:0; display:flex; background:var(--bg0) }
+.cx-col { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--panel) }
+.cx-col:first-child { flex:1.25 }
+.cx-res { flex:none; width:44% }
+.cx-col + .cx-col { border-left:1px solid var(--line) }
+.cx-namebar { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex-shrink:0 }
+.cx-name { flex:1; min-width:0; background:transparent; border:none; outline:none; color:var(--ink); font-family:Inter; font-size:14px; font-weight:600 }
+.cx-file-tag { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--dim); background:var(--bg2); border:1px solid var(--line); border-radius:6px; padding:3px 8px; cursor:pointer; white-space:nowrap }
+.cx-file-tag:hover { color:var(--mint); border-color:var(--mint) }
+.cx-tabs-off { font-size:11px; color:var(--faint); padding:10px 4px 9px }
+.cx-view-seg { display:flex; align-items:center; gap:4px; padding:0 4px 0 10px }
+.cx-view-l { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:var(--faint); margin-right:2px }
+.cx-vbtn { display:inline-flex; align-items:center; gap:5px; background:var(--bg2); border:1px solid var(--line); border-radius:6px; padding:3px 9px; font-size:11px; font-family:Inter; color:var(--dim); cursor:pointer; white-space:nowrap }
+.cx-vbtn .mono { font-size:10.5px }
+.cx-vbtn:hover { color:var(--ink) }
+.cx-vbtn.on { color:var(--mint); border-color:var(--mint); background:color-mix(in srgb, var(--mint) 10%, transparent); font-weight:600 }
+.cx-dirty { font-size:10.5px; color:var(--warn); background:color-mix(in srgb, var(--warn) 14%, transparent); border-radius:5px; padding:2px 6px }
+.cx-urlbar { display:flex; gap:8px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); background:var(--bg2); flex-shrink:0 }
+.cx-method { height:32px; background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:0 8px; font-family:'JetBrains Mono'; font-size:12px; font-weight:600; cursor:pointer }
+.cx-url { flex:1; min-width:0; height:32px; background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:0 10px; color:var(--ink); font-size:12.5px; outline:none }
+.cx-url:focus { border-color:var(--mint) }
+.cx-tabs { display:flex; align-items:center; gap:2px; padding:0 8px; border-bottom:1px solid var(--line); flex-shrink:0 }
+.cx-tab { background:transparent; border:none; cursor:pointer; padding:9px 11px 8px; font-size:11.5px; font-family:Inter; font-weight:500; color:var(--dim); border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap }
+.cx-tab.on { color:var(--ink); border-bottom-color:var(--mint) }
+.cx-pane { flex:1; min-height:0; overflow:auto }
+.cx-pane.noscroll { overflow:hidden }
+.cx-grow { flex:1 }
+.cx-seg { background:transparent; border:1px solid var(--line); border-radius:5px; padding:2px 7px; margin:0 0 0 4px; font-size:10.5px; font-family:Inter; color:var(--dim); cursor:pointer }
+.cx-seg.on { color:var(--mint); border-color:var(--mint); background:color-mix(in srgb, var(--mint) 10%, transparent) }
+.cx-btn { display:inline-flex; align-items:center; gap:7px; height:32px; padding:0 13px; border-radius:7px; font-size:12.5px; font-family:Inter; font-weight:500; color:var(--dim); background:var(--panel); border:1px solid var(--line); cursor:pointer; white-space:nowrap }
+.cx-btn:hover { color:var(--ink); background:var(--bg3) }
+.cx-btn.primary { background:var(--mint); border-color:var(--mint); color:#fff; font-weight:600 }
+.cx-btn.primary:hover { background:var(--mint); opacity:.9; color:#fff }
+.cx-btn[disabled] { opacity:.6; cursor:default }
+.cx-kbd { font-family:'JetBrains Mono'; font-size:10px; opacity:.75 }
+.cx-mini { background:transparent; border:1px solid var(--line); border-radius:6px; padding:3px 8px; font-size:11px; font-family:Inter; color:var(--dim); cursor:pointer }
+.cx-mini:hover { color:var(--ink); background:var(--bg3) }
+.cx-mini.danger:hover { color:var(--danger); border-color:color-mix(in srgb, var(--danger) 45%, transparent) }
+.cx-hint { font-size:11px; color:var(--faint) }
+.cx-kv-list { padding:8px 0 }
+.cx-kv { display:grid; grid-template-columns:26px 210px 1fr 26px; gap:8px; align-items:center; padding:4px 14px }
+.cx-check { width:16px; height:16px; border-radius:4px; border:1px solid var(--line); background:var(--bg2); color:transparent; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0 }
+.cx-check.on { background:var(--mint); border-color:var(--mint); color:#fff }
+.cx-in { height:28px; background:var(--bg2); border:1px solid var(--line); border-radius:6px; padding:0 8px; color:var(--ink); font-size:11.5px; outline:none; min-width:0 }
+.cx-in:focus { border-color:var(--mint); background:var(--panel) }
+.cx-x { background:transparent; border:none; color:var(--faint); cursor:pointer; font-size:15px; line-height:1; padding:0 }
+.cx-x:hover { color:var(--danger) }
+.cx-add { margin:6px 14px 0; background:transparent; border:1px dashed var(--line); border-radius:6px; padding:5px 10px; color:var(--dim); font-size:11.5px; font-family:Inter; cursor:pointer }
+.cx-add:hover { color:var(--mint); border-color:var(--mint) }
+.cx-body-pane { display:flex; flex-direction:column; height:100%; min-height:0 }
+.cx-body-head { display:flex; align-items:center; gap:10px; padding:8px 14px 6px }
+.cx-body-head .cx-hint { flex:1 }
+.cx-ta { flex:1; min-height:220px; margin:0 14px 14px; background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; color:var(--ink); font-size:11.5px; line-height:1.6; resize:none; outline:none }
+.cx-ta:focus { border-color:var(--mint); background:var(--panel) }
+.cx-blank { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:30px; text-align:center }
+.cx-blank-t { font-size:13px; font-weight:600; color:var(--dim) }
+.cx-blank-s { font-size:12px; color:var(--faint); max-width:300px; line-height:1.6 }
+.cx-blank-a { display:flex; gap:8px; margin-top:10px }
+.cx-spin { width:26px; height:26px; border-radius:50%; border:2px solid var(--bg3); border-top-color:var(--mint); animation:hsl-spin 1s linear infinite }
+.cx-res-head { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); flex-shrink:0 }
+.cx-status { font-family:'JetBrains Mono'; font-size:11.5px; font-weight:600; border-radius:6px; padding:3px 9px }
+.cx-meta { font-size:11.5px; color:var(--dim); font-variant-numeric:tabular-nums }
+.cx-src { font-size:10.5px; color:var(--warn); background:color-mix(in srgb, var(--warn) 14%, transparent); border-radius:5px; padding:2px 6px }
+.cx-src.live { color:var(--mint); background:color-mix(in srgb, var(--mint) 14%, transparent) }
+.cx-pre { margin:0; padding:12px 14px; font-size:11.5px; line-height:1.6; color:var(--ink); white-space:pre-wrap; word-break:break-all }
+.cx-hdrs { padding:4px 0 }
+.cx-hdr { display:grid; grid-template-columns:190px 1fr; gap:12px; padding:4px 14px; border-bottom:1px solid var(--lineSoft) }
+.cx-hk { font-size:11.5px; color:var(--info) }
+.cx-hv { font-size:11.5px; color:var(--ink); word-break:break-all }
+</style>
+</head>
+<body>
+<div class="flex flex-col h-screen w-screen overflow-hidden bg-bg0">
+
+<!-- title bar -->
+<div class="flex items-center gap-[10px] flex-shrink-0" style="height:52px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)">
+  <div class="flex items-center gap-[10px] text-ink">
+    <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,#37b0a0,#2f9e8f);display:flex;align-items:center;justify-content:center;box-shadow:var(--brand-shadow)">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="5.5" stroke="#ffffff" stroke-width="1.4"></circle>
+        <circle cx="7" cy="7" r="1.9" fill="#ffffff"></circle>
+      </svg>
+    </div>
+    <div class="flex flex-col" style="line-height:1.15">
+      <span class="font-bold" style="font-size:15px;letter-spacing:-.2px">HttpStackLens</span>
+
+@keyframes hsl-spin { to { transform:rotate(360deg) } }
+.hsl-scroll::-webkit-scrollbar { width:9px; height:9px }
+.hsl-scroll::-webkit-scrollbar-thumb { background:var(--scroll-thumb); border-radius:5px }
+.hsl-scroll::-webkit-scrollbar-thumb:hover { background:var(--scroll-thumb-hover) }
+.hsl-scroll::-webkit-scrollbar-track { background:transparent }

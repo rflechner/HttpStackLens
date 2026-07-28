@@ -1,0 +1,46 @@
+<div class="cx-side-head">
+  <span class="cx-side-title">Request files</span>
+  <button class="cx-mini" data-on-click="NewFile">+ File</button>
+</div>
+<div class="cx-side-note">
+  Each file is a plain <span class="mono">.http</span> file; each entry below is one request inside it.
+</div>
+
+<div class="cx-files hsl-scroll">
+  {{range $f := .Files}}
+    <div class="cx-file{{if $.IsActiveFile $f}} active{{end}}">
+      <button class="cx-file-head" data-on-click="ToggleFile" data-arg="{{$f.ID}}">
+        <span class="cx-caret">{{if $f.Open}}▾{{else}}▸{{end}}</span>
+        <svg class="cx-file-ico" width="13" height="14" viewBox="0 0 13 14" fill="none">
+          <path d="M2 1.5h5l4 3.5v7.5H2z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+          <path d="M7 1.5V5h4" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+        </svg>
+        <span class="cx-file-name">{{$f.Name}}</span>
+        {{if $.IsDirty $f}}<span class="cx-dot-dirty" title="unsaved changes"></span>{{end}}
+        <span class="cx-file-count">{{len $f.Reqs}}</span>
+      </button>
+      {{if $f.Open}}
+        {{range $r := $f.Reqs}}
+          <button class="cx-req{{if $.IsActiveReq $r}} on{{end}}"
+                  data-on-click="Select" data-arg-file="{{$f.ID}}" data-arg-req="{{$r.ID}}"
+                  title="{{$r.Method}} {{$r.URL}}">
+            <span class="cx-m" style="color:{{$.MethodColor $r.Method}}">{{$r.Method}}</span>
+            <span class="cx-req-name">{{$r.Name}}</span>
+          </button>
+        {{end}}
+        <button class="cx-add-req" data-on-click="NewRequest" data-arg="{{$f.ID}}">+ New request</button>
+      {{end}}
+    </div>
+  {{else}}
+    <div class="cx-empty">
+      No .http file open yet.
+      <button class="cx-btn" data-on-click="NewFile" style="margin-top:10px">+ New .http file</button>
+    </div>
+  {{end}}
+</div>
+
+<div class="cx-side-foot">
+  <span class="cx-side-path mono" title="{{.Folder}}">{{.Folder}}</span>
+  <button class="cx-mini" data-on-click="SaveFile" title="Save this .http file">Save .http</button>
+  <button class="cx-mini danger" data-on-click="CloseFile" title="Close this file">Close</button>
+</div>
