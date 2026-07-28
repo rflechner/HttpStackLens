@@ -1,7 +1,0 @@
-node_modules
-public
-resources
-.hugo_build.lock
-package.json
-package-lock.json
-go.sum
