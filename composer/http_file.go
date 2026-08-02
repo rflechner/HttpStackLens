@@ -21,9 +21,15 @@ type PositionedHeader struct {
 	Value PositionedText[string]
 }
 
+type PositionedHttpRequestLine struct {
+	HttpMethod PositionedText[models.HttpMethod]
+	Endpoint   PositionedText[models.ResourceEndpoint]
+	Version    PositionedText[models.Version]
+}
+
 type HttpRequestFileItem struct {
 	HeaderComments  []CommentLine
-	HttpRequestLine PositionedText[models.HttpRequestLine]
+	HttpRequestLine PositionedHttpRequestLine
 	Headers         []PositionedHeader
 	Body            PositionedText[string]
 }

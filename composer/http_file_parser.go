@@ -7,29 +7,38 @@ import (
 )
 import http_parser "httpStackLens/http/parser"
 
-func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
-	return func(context p.ParsingContext) (p.ParseResult[models.HttpRequestLine], error) {
+func HttpRequestLineParser() p.Parser[PositionedHttpRequestLine] {
+	return func(context p.ParsingContext) (p.ParseResult[PositionedHttpRequestLine], error) {
 		httpMethod, err := http_parser.HttpMethodParser()(context)
 		if err != nil {
-			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
+			return p.ParseResult[PositionedHttpRequestLine]{Context: context}, err
 		}
 
 		targetResult, err := http_parser.EnrichedUrlParser()(httpMethod.Context)
 		if err != nil {
-			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
+			return p.ParseResult[PositionedHttpRequestLine]{Context: context}, err
 		}
 
 		someVersionResult, err := p.Optional(http_parser.VersionParser())(targetResult.Context)
 		if err != nil {
-			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
+			return p.ParseResult[PositionedHttpRequestLine]{Context: context}, err
 		}
 		httpVersion := someVersionResult.Result.UnwrapOrDefault(models.Version{Major: 1, Minor: 1})
 
-		return p.ParseResult[models.HttpRequestLine]{
-			Result: models.HttpRequestLine{
-				HttpMethod: httpMethod.Result,
-				Endpoint:   targetResult.Result,
-				Version:    httpVersion,
+		return p.ParseResult[PositionedHttpRequestLine]{
+			Result: PositionedHttpRequestLine{
+				HttpMethod: PositionedText[models.HttpMethod]{
+					Text:     httpMethod.Result,
+					Position: httpMethod.Context.Position,
+				},
+				Endpoint: PositionedText[models.ResourceEndpoint]{
+					Text:     targetResult.Result,
+					Position: targetResult.Context.Position,
+				},
+				Version: PositionedText[models.Version]{
+					Text:     httpVersion,
+					Position: someVersionResult.Context.Position,
+				},
 			},
 			Context: someVersionResult.Context,
 		}, nil

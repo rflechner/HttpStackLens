@@ -17,14 +17,14 @@ func TestHttpRequestLineParser(t *testing.T) {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
 
-		if result.Result.Endpoint.Host != "api.ipify.org" {
-			t.Errorf("Expected host 'api.ipify.org', got %q", result.Result.Endpoint.Host)
+		if result.Result.Endpoint.Text.Host != "api.ipify.org" {
+			t.Errorf("Expected host 'api.ipify.org', got %q", result.Result.Endpoint.Text.Host)
 		}
-		if result.Result.Endpoint.Port != 443 {
-			t.Errorf("Expected port 443, got %d", result.Result.Endpoint.Port)
+		if result.Result.Endpoint.Text.Port != 443 {
+			t.Errorf("Expected port 443, got %d", result.Result.Endpoint.Text.Port)
 		}
-		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
-			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
+		if result.Result.Version.Text.Major != 1 || result.Result.Version.Text.Minor != 1 {
+			t.Errorf("Expected version 1.1, got %d.%d", result.Result.Version.Text.Major, result.Result.Version.Text.Minor)
 		}
 	})
 
@@ -68,21 +68,21 @@ func TestHttpRequestLineParser(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Expected success, got error: %v", err)
 				}
-				if result.Result.HttpMethod != c.method {
-					t.Errorf("Expected method %q, got %q", c.method, result.Result.HttpMethod)
+				if result.Result.HttpMethod.Text != c.method {
+					t.Errorf("Expected method %q, got %q", c.method, result.Result.HttpMethod.Text)
 				}
-				if result.Result.Endpoint.Host != c.host {
-					t.Errorf("Expected host %q, got %q", c.host, result.Result.Endpoint.Host)
+				if result.Result.Endpoint.Text.Host != c.host {
+					t.Errorf("Expected host %q, got %q", c.host, result.Result.Endpoint.Text.Host)
 				}
-				if result.Result.Endpoint.Port != c.port {
-					t.Errorf("Expected port %d, got %d", c.port, result.Result.Endpoint.Port)
+				if result.Result.Endpoint.Text.Port != c.port {
+					t.Errorf("Expected port %d, got %d", c.port, result.Result.Endpoint.Text.Port)
 				}
-				if result.Result.Endpoint.PathAndQuery != c.pathAndQuery {
-					t.Errorf("Expected path and query %q, got %q", c.pathAndQuery, result.Result.Endpoint.PathAndQuery)
+				if result.Result.Endpoint.Text.PathAndQuery != c.pathAndQuery {
+					t.Errorf("Expected path and query %q, got %q", c.pathAndQuery, result.Result.Endpoint.Text.PathAndQuery)
 				}
-				if result.Result.Version.Major != c.major || result.Result.Version.Minor != c.minor {
+				if result.Result.Version.Text.Major != c.major || result.Result.Version.Text.Minor != c.minor {
 					t.Errorf("Expected version %d.%d, got %d.%d",
-						c.major, c.minor, result.Result.Version.Major, result.Result.Version.Minor)
+						c.major, c.minor, result.Result.Version.Text.Major, result.Result.Version.Text.Minor)
 				}
 			})
 		}
@@ -93,8 +93,8 @@ func TestHttpRequestLineParser(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
-		if result.Result.Version.Major != 1 || result.Result.Version.Minor != 1 {
-			t.Errorf("Expected the 1.1 default, got %d.%d", result.Result.Version.Major, result.Result.Version.Minor)
+		if result.Result.Version.Text.Major != 1 || result.Result.Version.Text.Minor != 1 {
+			t.Errorf("Expected the 1.1 default, got %d.%d", result.Result.Version.Text.Major, result.Result.Version.Text.Minor)
 		}
 		if remaining := string(result.Context.Remaining); remaining != " HTTP/1" {
 			t.Errorf("Expected the malformed version to remain, got %q", remaining)
