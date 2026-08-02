@@ -16,8 +16,10 @@ import (
 	"html/template"
 	"strconv"
 	"strings"
+	"syscall/js"
 	"time"
 
+	httpfile "httpStackLens/composer"
 	"httpStackLens/webui/wasm/dom"
 )
 
@@ -46,6 +48,11 @@ type Composer struct {
 
 	files *FilesPane
 	resp  *ResponsePane
+
+	// rawScroll keeps the highlight overlay and the line numbers aligned with
+	// the textarea. A scroll event does not bubble, so this one listener cannot
+	// be delegated to the component root the way the others are.
+	rawScroll js.Func
 }
 
 // New returns an unmounted composer. Pass it to dom.Mount.
@@ -106,6 +113,13 @@ func (c *Composer) RawText() string {
 		return ""
 	}
 	return ToHTTP(c.CurFile)
+}
+
+// RawHighlight is the coloured copy of the draft that sits behind the raw
+// textarea. It comes out of the same parser the back end runs, so what the
+// editor paints and what a request means can never drift apart.
+func (c *Composer) RawHighlight() template.HTML {
+	return template.HTML(httpfile.HighlightHTML(c.RawText()))
 }
 
 func (c *Composer) RawLines() []int {
@@ -206,6 +220,53 @@ func (c *Composer) RawChanged() {
 	}
 	if gutter := c.Ref("gutter"); gutter.Truthy() {
 		gutter.Set("innerHTML", gutterHTML(c.RawLines()))
+	}
+	if highlight := c.Ref("highlight"); highlight.Truthy() {
+		highlight.Set("innerHTML", string(c.RawHighlight()))
+	}
+	// A keystroke can scroll the textarea on its own — typing past the last
+	// visible line — without firing a scroll event first.
+	c.syncRawScroll()
+}
+
+// OnAfterRender rebinds the scroll listener: every render replaces the subtree,
+// and with it the textarea the previous listener was attached to.
+func (c *Composer) OnAfterRender(bool) {
+	c.releaseRawScroll()
+	area := c.Ref("rawArea")
+	if !area.Truthy() {
+		return
+	}
+	c.rawScroll = js.FuncOf(func(js.Value, []js.Value) any {
+		c.syncRawScroll()
+		return nil
+	})
+	area.Call("addEventListener", "scroll", c.rawScroll)
+}
+
+func (c *Composer) OnDispose() { c.releaseRawScroll() }
+
+func (c *Composer) releaseRawScroll() {
+	if c.rawScroll.Truthy() {
+		c.rawScroll.Release()
+		c.rawScroll = js.Func{}
+	}
+}
+
+// syncRawScroll pins the overlay and the line numbers to the textarea. The
+// overlay scrolls both ways, the gutter only down: it holds one column.
+func (c *Composer) syncRawScroll() {
+	area := c.Ref("rawArea")
+	if !area.Truthy() {
+		return
+	}
+	top, left := area.Get("scrollTop"), area.Get("scrollLeft")
+	if highlight := c.Ref("highlight"); highlight.Truthy() {
+		highlight.Set("scrollTop", top)
+		highlight.Set("scrollLeft", left)
+	}
+	if gutter := c.Ref("gutter"); gutter.Truthy() {
+		gutter.Set("scrollTop", top)
 	}
 }
 

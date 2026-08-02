@@ -1,14 +1,104 @@
 package composer
 
 import (
+	"fmt"
 	"strings"
+	"unicode"
 
 	"httpStackLens/helpers"
 	"httpStackLens/http/models"
 
 	p "github.com/rflechner/EasyParsingForGo/combinator"
+	parsing_helpers "github.com/rflechner/EasyParsingForGo/helpers"
 )
 import http_parser "httpStackLens/http/parser"
+
+// cutSpace is the trailing noise a span never covers: the padding between
+// tokens, and the '\r' a CRLF file leaves at the end of every line.
+const cutSpace = " \t\r"
+
+// spanOf measures what a parser consumed between two contexts and leaves out
+// the whitespace it swallowed on either side, so that the span covers the token
+// rather than its surroundings. cutRight lists the extra characters to drop on
+// the right — the ':' closing a header name, for instance.
+func spanOf(before, after p.ParsingContext, cutRight string) (start, end p.TextPosition, text string) {
+	consumed := before.Remaining[:after.Position.Offset-before.Position.Offset]
+	lead := 0
+	for lead < len(consumed) && (consumed[lead] == ' ' || consumed[lead] == '\t') {
+		lead++
+	}
+	tail := len(consumed)
+	for tail > lead && strings.ContainsRune(cutRight, consumed[tail-1]) {
+		tail--
+	}
+	return before.Position.Forward(consumed[:lead]),
+		before.Position.Forward(consumed[:tail]),
+		string(consumed[lead:tail])
+}
+
+// positioned pairs a parsed value with the span it was read from.
+func positioned[T any](before, after p.ParsingContext, cutRight string, value T) PositionedText[T] {
+	start, end, _ := spanOf(before, after, cutRight)
+	return PositionedText[T]{Text: value, Start: start, End: end}
+}
+
+// positionedSource is positioned for a value that is its own source text.
+func positionedSource(before, after p.ParsingContext, cutRight string) PositionedText[string] {
+	start, end, text := spanOf(before, after, cutRight)
+	return PositionedText[string]{Text: text, Start: start, End: end}
+}
+
+// lineContext limits a parser to the line it starts on. helpers.UrlParser looks
+// for the " HTTP/" marker anywhere ahead of it, which in a file of several
+// blocks would let a target run past its own line and swallow the next request.
+func lineContext(context p.ParsingContext) p.ParsingContext {
+	end := 0
+	for end < len(context.Remaining) && context.Remaining[end] != '\n' {
+		end++
+	}
+	return p.ParsingContext{Remaining: context.Remaining[:end], Position: context.Position}
+}
+
+// requestTarget is what the target slot of a request line yields: an endpoint
+// when the target is a URL, nothing when it is still a template.
+type requestTarget struct {
+	Endpoint models.ResourceEndpoint
+	Resolved bool
+}
+
+// requestTargetParser reads the request target, resolving it into a host, a
+// port and a path when it can.
+func requestTargetParser() p.Parser[requestTarget] {
+	return func(context p.ParsingContext) (p.ParseResult[requestTarget], error) {
+		if resolved, err := http_parser.EnrichedUrlParser()(lineContext(context)); err == nil {
+			return p.ParseResult[requestTarget]{
+				Result:  requestTarget{Endpoint: resolved.Result, Resolved: true},
+				Context: context.Forward(resolved.Context.Position.Offset - context.Position.Offset),
+			}, nil
+		}
+		return templateTargetParser()(context)
+	}
+}
+
+// templateTargetParser accepts a target that still holds {{variables}}: it has
+// no host to resolve until the file variables are substituted, so it is carried
+// as raw text. Demanding a placeholder is what keeps every other unusable
+// target — a relative path, a missing target — a parse error.
+func templateTargetParser() p.Parser[requestTarget] {
+	return func(context p.ParsingContext) (p.ParseResult[requestTarget], error) {
+		line := lineContext(context).Remaining
+		length := len(line)
+		if index := parsing_helpers.IndexOf(line, " HTTP/"); index >= 0 {
+			length = index
+		}
+		text := strings.TrimRight(string(line[0:length]), cutSpace)
+		if !strings.Contains(text, "{{") {
+			return p.ParseResult[requestTarget]{Context: context},
+				fmt.Errorf("unusable request target %q", text)
+		}
+		return p.ParseResult[requestTarget]{Context: context.Forward(length)}, nil
+	}
+}
 
 func HttpRequestLineParser() p.Parser[PositionedHttpRequestLine] {
 	return func(context p.ParsingContext) (p.ParseResult[PositionedHttpRequestLine], error) {
@@ -17,7 +107,7 @@ func HttpRequestLineParser() p.Parser[PositionedHttpRequestLine] {
 			return p.ParseResult[PositionedHttpRequestLine]{Context: context}, err
 		}
 
-		targetResult, err := http_parser.EnrichedUrlParser()(httpMethod.Context)
+		targetResult, err := requestTargetParser()(httpMethod.Context)
 		if err != nil {
 			return p.ParseResult[PositionedHttpRequestLine]{Context: context}, err
 		}
@@ -30,20 +120,56 @@ func HttpRequestLineParser() p.Parser[PositionedHttpRequestLine] {
 
 		return p.ParseResult[PositionedHttpRequestLine]{
 			Result: PositionedHttpRequestLine{
-				HttpMethod: PositionedText[models.HttpMethod]{
-					Text:     httpMethod.Result,
-					Position: httpMethod.Context.Position,
-				},
-				Endpoint: PositionedText[models.ResourceEndpoint]{
-					Text:     targetResult.Result,
-					Position: targetResult.Context.Position,
-				},
-				Version: PositionedText[models.Version]{
-					Text:     httpVersion,
-					Position: someVersionResult.Context.Position,
-				},
+				HttpMethod: positioned(context, httpMethod.Context, cutSpace, httpMethod.Result),
+				Target:     positionedSource(httpMethod.Context, targetResult.Context, cutSpace),
+				Endpoint: positioned(httpMethod.Context, targetResult.Context, cutSpace,
+					targetResult.Result.Endpoint),
+				Resolved: targetResult.Result.Resolved,
+				Version: positioned(targetResult.Context, someVersionResult.Context, cutSpace,
+					httpVersion),
 			},
 			Context: someVersionResult.Context,
+		}, nil
+	}
+}
+
+// FileVariableParser reads an `@name = value` line. The value runs to the end
+// of the line; the spaces around the '=' belong to neither half.
+func FileVariableParser() p.Parser[FileVariable] {
+	return func(context p.ParsingContext) (p.ParseResult[FileVariable], error) {
+		marker, err := p.StringMatch("@")(context)
+		if err != nil {
+			return p.ParseResult[FileVariable]{Context: context}, err
+		}
+
+		nameResult, err := p.Many(p.Satisfy(func(c rune) bool {
+			return unicode.IsLetter(c) || unicode.IsDigit(c) || c == '_' || c == '-' || c == '.'
+		}))(marker.Context)
+		if err != nil || len(nameResult.Result) == 0 {
+			return p.ParseResult[FileVariable]{Context: context},
+				fmt.Errorf("a file variable needs a name")
+		}
+
+		assign, err := p.Right(helpers.SpacesParser(), p.StringMatch("="))(nameResult.Context)
+		if err != nil {
+			return p.ParseResult[FileVariable]{Context: context}, err
+		}
+
+		valueResult, err := p.Many(p.Satisfy(func(c rune) bool {
+			return c != '\r' && c != '\n'
+		}))(assign.Context)
+		if err != nil {
+			return p.ParseResult[FileVariable]{Context: context}, err
+		}
+
+		return p.ParseResult[FileVariable]{
+			Result: FileVariable{
+				// The span opens on the '@' so that the whole declaration can be
+				// painted, while Text holds the bare name a lookup needs.
+				Name:  PositionedText[string]{Text: string(nameResult.Result), Start: context.Position, End: nameResult.Context.Position},
+				Value: positionedSource(assign.Context, valueResult.Context, cutSpace),
+			},
+			Context: valueResult.Context,
 		}, nil
 	}
 }
@@ -59,9 +185,13 @@ func commentLineParser(prefix string) p.Parser[CommentLine] {
 			return p.ParseResult[CommentLine]{Context: context}, err
 		}
 
+		// The span opens on the '#' marker, which the text leaves out: a
+		// highlighter paints the line, a reader gets the note.
+		start, end, _ := spanOf(context, text.Context, "\r")
 		comment := CommentLine{
-			Text:     string(text.Result),
-			Position: text.Context.Position,
+			Text:  string(text.Result),
+			Start: start,
+			End:   end,
 		}
 
 		return p.ParseResult[CommentLine]{
@@ -153,14 +283,10 @@ func positionedHeaderParser() p.Parser[PositionedHeader] {
 
 		return p.ParseResult[PositionedHeader]{
 			Result: PositionedHeader{
-				Name: PositionedText[string]{
-					Text:     strings.TrimSpace(string(nameResult.Result)),
-					Position: nameResult.Context.Position,
-				},
-				Value: PositionedText[string]{
-					Text:     strings.TrimSpace(string(valueResult.Result)),
-					Position: valueResult.Context.Position,
-				},
+				// The name parser swallows the ':' that closes it, which the span
+				// gives back so that the separator can be painted on its own.
+				Name:  positionedSource(context, nameResult.Context, cutSpace+":"),
+				Value: positionedSource(nameResult.Context, valueResult.Context, cutSpace),
 			},
 			Context: valueResult.Context,
 		}, nil
@@ -192,6 +318,7 @@ func parseBody(context p.ParsingContext) (PositionedText[string], p.ParsingConte
 		_, next = readLine(next)
 	}
 
+	start := next.Position
 	var body strings.Builder
 	for !next.AtEnd() && !startsWith(next, separator) {
 		line, rest := readLine(next)
@@ -199,9 +326,13 @@ func parseBody(context p.ParsingContext) (PositionedText[string], p.ParsingConte
 		next = rest
 	}
 
+	// The span stops where the text does: the blank lines before the next
+	// separator were read, but they are not part of the body.
+	text := strings.TrimRight(body.String(), "\r\n")
 	return PositionedText[string]{
-		Text:     strings.TrimRight(body.String(), "\r\n"),
-		Position: next.Position,
+		Text:  text,
+		Start: start,
+		End:   start.Forward([]rune(text)),
 	}, next
 }
 

@@ -66,7 +66,11 @@
             </div>
             <div class="cx-raw-wrap">
               <div class="cx-gutter mono" data-ref="gutter">{{range $i, $n := .RawLines}}{{if $i}}<br>{{end}}{{$n}}{{end}}</div>
-              <textarea class="cx-ta raw mono" data-bind="Raw" data-on-input="RawChanged" spellcheck="false"></textarea>
+              <div class="cx-raw-edit">
+                <pre class="cx-hl mono" data-ref="highlight" aria-hidden="true">{{.RawHighlight}}</pre>
+                <textarea class="cx-ta raw mono" data-ref="rawArea" data-bind="Raw" data-on-input="RawChanged"
+                          spellcheck="false" wrap="off"></textarea>
+              </div>
             </div>
           </div>
 
