@@ -116,6 +116,8 @@
         <span id="source-subtitle" class="text-faint" style="font-size:11px">Live session</span>
       </div>
     </div>
+    <!-- Traffic / Composer switch, rendered by the WASM modeswitch component -->
+    <div id="mode-switch" class="mode-seg" style="margin-left:18px"></div>
     <div class="flex-1"></div>
     <div class="flex items-center gap-[3px]" style="background:var(--bg0);border:1px solid var(--line);border-radius:9px;padding:3px;margin-right:4px">
       <span class="text-faint" style="font-size:11px;padding:0 6px 0 8px;font-weight:500">Density</span>
@@ -150,7 +152,7 @@
   </div>
 
   <!-- toolbar -->
-  <div class="flex items-center gap-2 flex-shrink-0" style="height:52px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)">
+  <div id="capture-toolbar" class="flex items-center gap-2 flex-shrink-0" style="height:52px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)">
     <button id="btn-proxy" class="hsl-tb" data-action="toggle-proxy"></button>
     <div style="width:1px;height:22px;background:var(--line);margin:0 4px"></div>
     <button id="btn-capture" class="hsl-tb" data-action="toggle-capture"></button>
@@ -172,7 +174,7 @@
   </div>
 
   <!-- body -->
-  <div class="flex flex-1 min-h-0">
+  <div id="capture-view" class="flex flex-1 min-h-0">
 
     <!-- sidebar -->
     <div class="flex flex-col flex-shrink-0 min-h-0" style="width:232px;background:var(--sidebar);border-right:1px solid var(--line)">
@@ -236,6 +238,9 @@
       <div id="detail-wrap" class="flex flex-col min-h-0" style="flex:0.45;border-top:1px solid var(--line);background:var(--panel);display:none"></div>
     </div>
   </div>
+
+  <!-- composer, mounted by the WASM composer component on first use -->
+  <div id="compose-view" class="flex flex-1 min-h-0" style="display:none"></div>
 
   <!-- status bar -->
   <div id="statusbar" class="flex items-center flex-shrink-0" style="height:30px;background:var(--panel);border-top:1px solid var(--line);font-family:Inter;font-size:11.5px;color:var(--dim)"></div>

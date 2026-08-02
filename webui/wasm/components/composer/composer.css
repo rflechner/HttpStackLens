@@ -129,23 +129,6 @@
 .cx-hdr { display:grid; grid-template-columns:190px 1fr; gap:12px; padding:4px 14px; border-bottom:1px solid var(--lineSoft) }
 .cx-hk { font-size:11.5px; color:var(--info) }
 .cx-hv { font-size:11.5px; color:var(--ink); word-break:break-all }
-</style>
-</head>
-<body>
-<div class="flex flex-col h-screen w-screen overflow-hidden bg-bg0">
-
-<!-- title bar -->
-<div class="flex items-center gap-[10px] flex-shrink-0" style="height:52px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)">
-  <div class="flex items-center gap-[10px] text-ink">
-    <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,#37b0a0,#2f9e8f);display:flex;align-items:center;justify-content:center;box-shadow:var(--brand-shadow)">
-      <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
-        <circle cx="7" cy="7" r="5.5" stroke="#ffffff" stroke-width="1.4"></circle>
-        <circle cx="7" cy="7" r="1.9" fill="#ffffff"></circle>
-      </svg>
-    </div>
-    <div class="flex flex-col" style="line-height:1.15">
-      <span class="font-bold" style="font-size:15px;letter-spacing:-.2px">HttpStackLens</span>
-
 @keyframes hsl-spin { to { transform:rotate(360deg) } }
 .hsl-scroll::-webkit-scrollbar { width:9px; height:9px }
 .hsl-scroll::-webkit-scrollbar-thumb { background:var(--scroll-thumb); border-radius:5px }
