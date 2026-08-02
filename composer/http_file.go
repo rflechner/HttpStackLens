@@ -31,6 +31,7 @@ type HttpRequestFileItem struct {
 	HeaderComments  []CommentLine
 	HttpRequestLine PositionedHttpRequestLine
 	Headers         []PositionedHeader
+	InnerComments   []CommentLine
 	Body            PositionedText[string]
 }
 

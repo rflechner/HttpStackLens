@@ -133,18 +133,37 @@ func TestHttpRequestLineParser(t *testing.T) {
 		}
 	})
 
-	t.Run("Failure: the version is in practice mandatory", func(t *testing.T) {
-		// p.Optional(VersionParser()) suggests otherwise, but the URL is read with
-		// UntilText(..., " HTTP/"): without that marker the endpoint parser fails
-		// before the optional version is ever reached. A `.http` file line such as
-		// "GET https://api.ipify.org?format=json" therefore does not parse yet.
-		for _, input := range []string{
-			"GET https://api.ipify.org?format=json",
-			"GET https://api.ipify.org?format=json\nAccept: application/json\n",
-		} {
-			if _, err := HttpRequestLineParser()(p.NewParsingContext(input)); err == nil {
-				t.Errorf("Expected an error for %q, got success", input)
-			}
+	t.Run("Success: a request line without a version falls back to 1.1", func(t *testing.T) {
+		cases := []struct {
+			name      string
+			input     string
+			remaining string
+		}{
+			{"end of input", "GET https://api.ipify.org?format=json", ""},
+			{"end of line", "GET https://api.ipify.org?format=json\nAccept: application/json\n", "\nAccept: application/json\n"},
+			{"CRLF end of line", "GET https://api.ipify.org?format=json\r\nAccept: application/json\r\n", "\nAccept: application/json\r\n"},
+		}
+
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				result, err := HttpRequestLineParser()(p.NewParsingContext(c.input))
+				if err != nil {
+					t.Fatalf("Expected success, got error: %v", err)
+				}
+				if result.Result.Endpoint.Text.Host != "api.ipify.org" {
+					t.Errorf("Expected host 'api.ipify.org', got %q", result.Result.Endpoint.Text.Host)
+				}
+				if result.Result.Endpoint.Text.PathAndQuery != "?format=json" {
+					t.Errorf("Expected path and query '?format=json', got %q", result.Result.Endpoint.Text.PathAndQuery)
+				}
+				if result.Result.Version.Text.Major != 1 || result.Result.Version.Text.Minor != 1 {
+					t.Errorf("Expected the 1.1 default, got %d.%d",
+						result.Result.Version.Text.Major, result.Result.Version.Text.Minor)
+				}
+				if remaining := string(result.Context.Remaining); remaining != c.remaining {
+					t.Errorf("Expected %q to remain, got %q", c.remaining, remaining)
+				}
+			})
 		}
 	})
 }
@@ -335,4 +354,253 @@ func TestHeaderCommentsParser(t *testing.T) {
 			t.Errorf("Expected the carriage return to be kept, got %q", result.Result.Text)
 		}
 	})
+}
+
+// HttpRequestFileItemParser reads one "###" block: its comments, its request
+// line, its headers and its body.
+func TestHttpRequestFileItemParser(t *testing.T) {
+	t.Run("Success: a complete block", func(t *testing.T) {
+		input := "### Create issue comment\n" +
+			"# the token comes from the file variables\n" +
+			"POST https://api.github.com/repos/golang/go/issues/1/comments HTTP/1.1\n" +
+			"Authorization: Bearer token\n" +
+			"Content-Type: application/json\n" +
+			"\n" +
+			"{\n  \"body\": \"Reproduced on go1.23.2\"\n}\n" +
+			"\n" +
+			"### Next request\n" +
+			"GET https://example.com\n"
+
+		result, err := HttpRequestFileItemParser()(p.NewParsingContext(input))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+		item := result.Result
+
+		expectComments(t, item.HeaderComments, " Create issue comment", " the token comes from the file variables")
+
+		if item.HttpRequestLine.HttpMethod.Text != models.POST {
+			t.Errorf("Expected method POST, got %q", item.HttpRequestLine.HttpMethod.Text)
+		}
+		if item.HttpRequestLine.Endpoint.Text.Host != "api.github.com" {
+			t.Errorf("Expected host 'api.github.com', got %q", item.HttpRequestLine.Endpoint.Text.Host)
+		}
+		if item.HttpRequestLine.Endpoint.Text.PathAndQuery != "/repos/golang/go/issues/1/comments" {
+			t.Errorf("Unexpected path and query %q", item.HttpRequestLine.Endpoint.Text.PathAndQuery)
+		}
+
+		expectHeaders(t, item.Headers, "Authorization: Bearer token", "Content-Type: application/json")
+
+		if item.Body.Text != "{\n  \"body\": \"Reproduced on go1.23.2\"\n}" {
+			t.Errorf("Unexpected body %q", item.Body.Text)
+		}
+		if remaining := string(result.Context.Remaining); remaining != "### Next request\nGET https://example.com\n" {
+			t.Errorf("Expected the next block to remain, got %q", remaining)
+		}
+	})
+
+	t.Run("Success: a request line without a version", func(t *testing.T) {
+		input := "### GET request example for calling API of ipify.org\n" +
+			"### enforcing IPv4\n" +
+			"GET https://api.ipify.org?format=json\n" +
+			"Accept: application/json\n"
+
+		result, err := HttpRequestFileItemParser()(p.NewParsingContext(input))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+		item := result.Result
+
+		expectComments(t, item.HeaderComments,
+			" GET request example for calling API of ipify.org", " enforcing IPv4")
+		if item.HttpRequestLine.Version.Text.Major != 1 || item.HttpRequestLine.Version.Text.Minor != 1 {
+			t.Errorf("Expected the 1.1 default, got %d.%d",
+				item.HttpRequestLine.Version.Text.Major, item.HttpRequestLine.Version.Text.Minor)
+		}
+		if item.HttpRequestLine.Endpoint.Text.PathAndQuery != "?format=json" {
+			t.Errorf("Unexpected path and query %q", item.HttpRequestLine.Endpoint.Text.PathAndQuery)
+		}
+		expectHeaders(t, item.Headers, "Accept: application/json")
+		if item.Body.Text != "" {
+			t.Errorf("Expected no body, got %q", item.Body.Text)
+		}
+		if !result.Context.AtEnd() {
+			t.Errorf("Expected the whole input to be consumed, got %q", string(result.Context.Remaining))
+		}
+	})
+
+	t.Run("Success: a block without comments nor headers", func(t *testing.T) {
+		result, err := HttpRequestFileItemParser()(p.NewParsingContext("GET https://example.com/a HTTP/1.1\n"))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+		if len(result.Result.HeaderComments) != 0 {
+			t.Errorf("Expected no comment, got %d", len(result.Result.HeaderComments))
+		}
+		if len(result.Result.Headers) != 0 {
+			t.Errorf("Expected no header, got %d", len(result.Result.Headers))
+		}
+		if result.Result.Body.Text != "" {
+			t.Errorf("Expected no body, got %q", result.Result.Body.Text)
+		}
+	})
+
+	t.Run("Success: comments between the headers are collected too", func(t *testing.T) {
+		input := "### Current user\n" +
+			"GET https://api.github.com/user HTTP/1.1\n" +
+			"Accept: application/json\n" +
+			"# Authorization: Bearer disabled-for-now\n" +
+			"User-Agent: httpStackLens\n"
+
+		result, err := HttpRequestFileItemParser()(p.NewParsingContext(input))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		expectComments(t, result.Result.HeaderComments,
+			" Current user", " Authorization: Bearer disabled-for-now")
+		expectHeaders(t, result.Result.Headers,
+			"Accept: application/json", "User-Agent: httpStackLens")
+	})
+
+	t.Run("Success: leading blank lines are skipped", func(t *testing.T) {
+		input := "\n\n### Current user\nGET https://api.github.com/user HTTP/1.1\n"
+		result, err := HttpRequestFileItemParser()(p.NewParsingContext(input))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+		expectComments(t, result.Result.HeaderComments, " Current user")
+	})
+
+	t.Run("Success: the body keeps its inner blank lines", func(t *testing.T) {
+		input := "GET https://example.com/a HTTP/1.1\n" +
+			"Content-Type: text/plain\n" +
+			"\n" +
+			"first\n" +
+			"\n" +
+			"third\n" +
+			"\n" +
+			"\n" +
+			"### Next request\n"
+
+		result, err := HttpRequestFileItemParser()(p.NewParsingContext(input))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+		if result.Result.Body.Text != "first\n\nthird" {
+			t.Errorf("Unexpected body %q", result.Result.Body.Text)
+		}
+		if remaining := string(result.Context.Remaining); remaining != "### Next request\n" {
+			t.Errorf("Expected the next block to remain, got %q", remaining)
+		}
+	})
+
+	t.Run("Success: a CRLF block", func(t *testing.T) {
+		input := "### Create issue comment\r\n" +
+			"POST https://api.github.com/issues HTTP/1.1\r\n" +
+			"Content-Type: application/json\r\n" +
+			"\r\n" +
+			"{\r\n  \"body\": \"hello\"\r\n}\r\n"
+
+		result, err := HttpRequestFileItemParser()(p.NewParsingContext(input))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+		expectHeaders(t, result.Result.Headers, "Content-Type: application/json")
+		if result.Result.Body.Text != "{\r\n  \"body\": \"hello\"\r\n}" {
+			t.Errorf("Unexpected body %q", result.Result.Body.Text)
+		}
+	})
+
+	t.Run("Success: consecutive blocks can be read in a loop", func(t *testing.T) {
+		input := "### First\n" +
+			"GET https://example.com/a\n" +
+			"\n" +
+			"### Second\n" +
+			"POST https://example.com/b\n" +
+			"Content-Type: text/plain\n" +
+			"\n" +
+			"payload\n"
+
+		context := p.NewParsingContext(input)
+		var items []HttpRequestFileItem
+		for !context.AtEnd() {
+			result, err := HttpRequestFileItemParser()(context)
+			if err != nil {
+				t.Fatalf("Expected success, got error: %v", err)
+			}
+			items = append(items, result.Result)
+			context = result.Context
+		}
+
+		if len(items) != 2 {
+			t.Fatalf("Expected 2 items, got %d", len(items))
+		}
+		expectComments(t, items[0].HeaderComments, " First")
+		expectComments(t, items[1].HeaderComments, " Second")
+		if items[1].Body.Text != "payload" {
+			t.Errorf("Unexpected body %q", items[1].Body.Text)
+		}
+	})
+
+	t.Run("Failure: a block without a request line", func(t *testing.T) {
+		cases := []struct {
+			name  string
+			input string
+		}{
+			{"comments only", "### Current user\n# nothing below\n"},
+			{"dangling separator", "###"},
+			{"headers only", "Accept: application/json\n"},
+			{"empty input", ""},
+		}
+
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				if _, err := HttpRequestFileItemParser()(p.NewParsingContext(c.input)); err == nil {
+					t.Errorf("Expected an error for %q, got success", c.input)
+				}
+			})
+		}
+	})
+}
+
+func expectComments(t *testing.T, comments []CommentLine, expected ...string) {
+	t.Helper()
+	if len(comments) != len(expected) {
+		t.Fatalf("Expected %d comments, got %d: %v", len(expected), len(comments), commentTexts(comments))
+	}
+	for i, want := range expected {
+		if comments[i].Text != want {
+			t.Errorf("Expected comment %d to be %q, got %q", i, want, comments[i].Text)
+		}
+	}
+}
+
+func commentTexts(comments []CommentLine) []string {
+	texts := make([]string, 0, len(comments))
+	for _, comment := range comments {
+		texts = append(texts, comment.Text)
+	}
+	return texts
+}
+
+// expectHeaders compares the parsed headers with "Name: value" strings.
+func expectHeaders(t *testing.T, headers []PositionedHeader, expected ...string) {
+	t.Helper()
+	if len(headers) != len(expected) {
+		t.Fatalf("Expected %d headers, got %d: %v", len(expected), len(headers), headerTexts(headers))
+	}
+	for i, want := range expected {
+		if got := headers[i].Name.Text + ": " + headers[i].Value.Text; got != want {
+			t.Errorf("Expected header %d to be %q, got %q", i, want, got)
+		}
+	}
+}
+
+func headerTexts(headers []PositionedHeader) []string {
+	texts := make([]string, 0, len(headers))
+	for _, header := range headers {
+		texts = append(texts, header.Name.Text+": "+header.Value.Text)
+	}
+	return texts
 }
