@@ -172,8 +172,8 @@ func TestCommentLineParser(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Expected success, got error: %v", err)
 				}
-				if result.Result != c.expected {
-					t.Errorf("Expected comment %q, got %q", c.expected, result.Result)
+				if result.Result.Text != c.expected {
+					t.Errorf("Expected comment %q, got %q", c.expected, result.Result.Text)
 				}
 			})
 		}
@@ -231,8 +231,8 @@ func TestCommentLineParser(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
-		if result.Result != "## Current user" {
-			t.Errorf("Expected the extra markers in the text, got %q", result.Result)
+		if result.Result.Text != "## Current user" {
+			t.Errorf("Expected the extra markers in the text, got %q", result.Result.Text)
 		}
 	})
 
@@ -243,8 +243,8 @@ func TestCommentLineParser(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
-		if result.Result != " enforcing IPv4\r" {
-			t.Errorf("Expected the carriage return to be kept, got %q", result.Result)
+		if result.Result.Text != " enforcing IPv4\r" {
+			t.Errorf("Expected the carriage return to be kept, got %q", result.Result.Text)
 		}
 	})
 }
@@ -271,8 +271,8 @@ func TestHeaderCommentsParser(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Expected success, got error: %v", err)
 				}
-				if result.Result != c.expected {
-					t.Errorf("Expected comment %q, got %q", c.expected, result.Result)
+				if result.Result.Text != c.expected {
+					t.Errorf("Expected comment %q, got %q", c.expected, result.Result.Text)
 				}
 			})
 		}
@@ -331,8 +331,8 @@ func TestHeaderCommentsParser(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
-		if result.Result != " GET request example\r" {
-			t.Errorf("Expected the carriage return to be kept, got %q", result.Result)
+		if result.Result.Text != " GET request example\r" {
+			t.Errorf("Expected the carriage return to be kept, got %q", result.Result.Text)
 		}
 	})
 }
