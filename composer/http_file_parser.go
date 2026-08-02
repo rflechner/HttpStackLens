@@ -36,13 +36,13 @@ func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
 	}
 }
 
-func CommentLineParser() p.Parser[string] {
+func commentLineParser(prefix string) p.Parser[string] {
 	return func(context p.ParsingContext) (p.ParseResult[string], error) {
-		tagResult, err := p.Many(p.OneChar('#'))(context)
+		prefixResult, err := p.StringMatch(prefix)(context)
 		if err != nil {
 			return p.ParseResult[string]{Context: context}, err
 		}
-		text, err := p.UntilText(p.Many(p.Satisfy(func(r rune) bool { return true })), "\n", false)(tagResult.Context)
+		text, err := p.UntilText(p.Many(p.Satisfy(func(r rune) bool { return true })), "\n", false)(prefixResult.Context)
 		if err != nil {
 			return p.ParseResult[string]{Context: context}, err
 		}
@@ -52,4 +52,12 @@ func CommentLineParser() p.Parser[string] {
 			Context: text.Context,
 		}, nil
 	}
+}
+
+func CommentLineParser() p.Parser[string] {
+	return commentLineParser("#")
+}
+
+func HeaderCommentsParser() p.Parser[string] {
+	return commentLineParser("###")
 }

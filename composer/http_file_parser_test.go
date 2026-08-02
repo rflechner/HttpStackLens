@@ -149,20 +149,21 @@ func TestHttpRequestLineParser(t *testing.T) {
 	})
 }
 
+// CommentLineParser reads an ordinary comment line — a commented-out header, a
+// note — introduced by a single '#'.
 func TestCommentLineParser(t *testing.T) {
-	t.Run("Success: comment text is returned without its '#' markers", func(t *testing.T) {
+	t.Run("Success: text after the '#' marker", func(t *testing.T) {
 		cases := []struct {
 			name     string
 			input    string
 			expected string
 		}{
-			{"request separator", "### GET request example\nGET https://api.ipify.org\n", " GET request example"},
-			{"single marker", "# enforcing IPv4\nGET https://api.ipify.org\n", " enforcing IPv4"},
-			{"no space after the markers", "###enforcing IPv4\n", "enforcing IPv4"},
-			{"empty comment", "###\nGET https://api.ipify.org\n", ""},
-			{"empty line", "\nGET https://api.ipify.org\n", ""},
-			{"markers inside the text are kept", "### issue #42 — see RFC #7230\n", " issue #42 — see RFC #7230"},
-			{"trailing spaces are kept", "### spaced   \n", " spaced   "},
+			{"note", "# enforcing IPv4\nGET https://api.ipify.org\n", " enforcing IPv4"},
+			{"commented-out header", "# Accept: application/json\n", " Accept: application/json"},
+			{"no space after the marker", "#enforcing IPv4\n", "enforcing IPv4"},
+			{"empty comment", "#\nGET https://api.ipify.org\n", ""},
+			{"markers inside the text are kept", "# issue #42 — see RFC #7230\n", " issue #42 — see RFC #7230"},
+			{"trailing spaces are kept", "# spaced   \n", " spaced   "},
 		}
 
 		for _, c := range cases {
@@ -179,7 +180,7 @@ func TestCommentLineParser(t *testing.T) {
 	})
 
 	t.Run("Success: parsing stops on the line break, leaving it to the caller", func(t *testing.T) {
-		input := "### enforcing IPv4\nGET https://api.ipify.org\n"
+		input := "# enforcing IPv4\nGET https://api.ipify.org\n"
 		result, err := CommentLineParser()(p.NewParsingContext(input))
 		if err != nil {
 			t.Fatalf("Expected success, got error: %v", err)
@@ -191,36 +192,146 @@ func TestCommentLineParser(t *testing.T) {
 		}
 	})
 
+	t.Run("Failure: lines that are not comments", func(t *testing.T) {
+		cases := []struct {
+			name  string
+			input string
+		}{
+			{"request line", "GET https://api.ipify.org HTTP/1.1\n"},
+			{"header", "Accept: application/json\n"},
+			{"empty line", "\nGET https://api.ipify.org\n"},
+			{"marker not at the start of the line", "  # indented\n"},
+			{"empty input", ""},
+		}
+
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				if _, err := CommentLineParser()(p.NewParsingContext(c.input)); err == nil {
+					t.Errorf("Expected an error for %q, got success", c.input)
+				}
+			})
+		}
+	})
+
 	t.Run("Failure: a comment on the last line without a line break", func(t *testing.T) {
 		// UntilText needs its delimiter: a file whose last line is a comment and
 		// which does not end with a newline cannot be parsed.
-		for _, input := range []string{"###", "### trailing comment", ""} {
+		for _, input := range []string{"#", "# trailing comment"} {
 			if _, err := CommentLineParser()(p.NewParsingContext(input)); err == nil {
 				t.Errorf("Expected an error for %q, got success", input)
 			}
 		}
 	})
 
-	t.Run("Behaviour: the '#' markers are optional", func(t *testing.T) {
-		// Many() never fails, so any line parses as a comment. Callers that need
-		// to tell a comment from a request line must check the marker themselves.
-		result, err := CommentLineParser()(p.NewParsingContext("GET https://api.ipify.org\n"))
+	t.Run("Behaviour: a '###' separator also parses, extra markers included", func(t *testing.T) {
+		// '#' is a prefix of '###', so a request separator is a valid comment line
+		// whose text starts with the two remaining markers. A file scanner must
+		// therefore try HeaderCommentsParser first.
+		result, err := CommentLineParser()(p.NewParsingContext("### Current user\nGET https://api.ipify.org\n"))
 		if err != nil {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
-		if result.Result != "GET https://api.ipify.org" {
-			t.Errorf("Expected the whole line as comment text, got %q", result.Result)
+		if result.Result != "## Current user" {
+			t.Errorf("Expected the extra markers in the text, got %q", result.Result)
 		}
 	})
 
 	t.Run("Behaviour: CRLF files keep the carriage return in the comment", func(t *testing.T) {
 		// The delimiter is "\n" alone, so on a Windows-authored .http file the
 		// text ends with a stray '\r'.
-		result, err := CommentLineParser()(p.NewParsingContext("### enforcing IPv4\r\nGET https://api.ipify.org\r\n"))
+		result, err := CommentLineParser()(p.NewParsingContext("# enforcing IPv4\r\nGET https://api.ipify.org\r\n"))
 		if err != nil {
 			t.Fatalf("Expected success, got error: %v", err)
 		}
 		if result.Result != " enforcing IPv4\r" {
+			t.Errorf("Expected the carriage return to be kept, got %q", result.Result)
+		}
+	})
+}
+
+// HeaderCommentsParser reads the '###' line that opens a request block.
+func TestHeaderCommentsParser(t *testing.T) {
+	t.Run("Success: text after the '###' marker", func(t *testing.T) {
+		cases := []struct {
+			name     string
+			input    string
+			expected string
+		}{
+			{"named request", "### GET request example\nGET https://api.ipify.org\n", " GET request example"},
+			{"bare separator", "###\nGET https://api.ipify.org\n", ""},
+			{"no space after the marker", "###enforcing IPv4\n", "enforcing IPv4"},
+			{"extra markers land in the text", "#### four markers\n", "# four markers"},
+			{"markers inside the text are kept", "### issue #42 — see RFC #7230\n", " issue #42 — see RFC #7230"},
+			{"trailing spaces are kept", "### spaced   \n", " spaced   "},
+		}
+
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				result, err := HeaderCommentsParser()(p.NewParsingContext(c.input))
+				if err != nil {
+					t.Fatalf("Expected success, got error: %v", err)
+				}
+				if result.Result != c.expected {
+					t.Errorf("Expected comment %q, got %q", c.expected, result.Result)
+				}
+			})
+		}
+	})
+
+	t.Run("Success: parsing stops on the line break, leaving it to the caller", func(t *testing.T) {
+		input := "### GET request example\nGET https://api.ipify.org\n"
+		result, err := HeaderCommentsParser()(p.NewParsingContext(input))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+
+		remaining := string(result.Context.Remaining)
+		if remaining != "\nGET https://api.ipify.org\n" {
+			t.Errorf("Expected the line break and the rest of the file to remain, got %q", remaining)
+		}
+	})
+
+	t.Run("Failure: fewer than three markers", func(t *testing.T) {
+		// This is the whole point of the two parsers: a commented-out header must
+		// not be mistaken for the separator that opens a request block.
+		cases := []struct {
+			name  string
+			input string
+		}{
+			{"one marker", "# enforcing IPv4\n"},
+			{"two markers", "## enforcing IPv4\n"},
+			{"commented-out header", "# Accept: application/json\n"},
+			{"request line", "GET https://api.ipify.org HTTP/1.1\n"},
+			{"empty line", "\n"},
+			{"marker not at the start of the line", "  ### indented\n"},
+			{"empty input", ""},
+		}
+
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				if _, err := HeaderCommentsParser()(p.NewParsingContext(c.input)); err == nil {
+					t.Errorf("Expected an error for %q, got success", c.input)
+				}
+			})
+		}
+	})
+
+	t.Run("Failure: a separator on the last line without a line break", func(t *testing.T) {
+		// http_file_sample.http ends with a bare "###": the file must end with a
+		// newline for its last separator to be readable.
+		for _, input := range []string{"###", "### trailing separator"} {
+			if _, err := HeaderCommentsParser()(p.NewParsingContext(input)); err == nil {
+				t.Errorf("Expected an error for %q, got success", input)
+			}
+		}
+	})
+
+	t.Run("Behaviour: CRLF files keep the carriage return in the comment", func(t *testing.T) {
+		result, err := HeaderCommentsParser()(p.NewParsingContext("### GET request example\r\nGET https://api.ipify.org\r\n"))
+		if err != nil {
+			t.Fatalf("Expected success, got error: %v", err)
+		}
+		if result.Result != " GET request example\r" {
 			t.Errorf("Expected the carriage return to be kept, got %q", result.Result)
 		}
 	})
