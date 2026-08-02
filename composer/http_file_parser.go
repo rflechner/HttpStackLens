@@ -35,3 +35,21 @@ func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
 		}, nil
 	}
 }
+
+func CommentLineParser() p.Parser[string] {
+	return func(context p.ParsingContext) (p.ParseResult[string], error) {
+		tagResult, err := p.Many(p.OneChar('#'))(context)
+		if err != nil {
+			return p.ParseResult[string]{Context: context}, err
+		}
+		text, err := p.UntilText(p.Many(p.Satisfy(func(r rune) bool { return true })), "\n", false)(tagResult.Context)
+		if err != nil {
+			return p.ParseResult[string]{Context: context}, err
+		}
+
+		return p.ParseResult[string]{
+			Result:  string(text.Result),
+			Context: text.Context,
+		}, nil
+	}
+}
