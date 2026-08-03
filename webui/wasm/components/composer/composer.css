@@ -98,7 +98,9 @@
 .cx-col { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--panel) }
 .cx-col:first-child { flex:1.25 }
 .cx-res { flex:none; width:44% }
-.cx-col + .cx-col { border-left:1px solid var(--line) }
+/* The grip sits between the two columns, so the adjacency the border used to
+   ride on is broken: it now hangs off the grip instead. */
+.cx-grip + .cx-col { border-left:1px solid var(--line) }
 .cx-namebar { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex-shrink:0 }
 .cx-name { flex:1; min-width:0; background:transparent; border:none; outline:none; color:var(--ink); font-family:Inter; font-size:14px; font-weight:600 }
 .cx-file-tag { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--dim); background:var(--bg2); border:1px solid var(--line); border-radius:6px; padding:3px 8px; cursor:pointer; white-space:nowrap }

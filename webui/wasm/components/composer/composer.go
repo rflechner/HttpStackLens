@@ -58,7 +58,34 @@ type Composer struct {
 	// whole subtree, and without them clicking a play button on line 40 would
 	// throw the reader back to the top of the file.
 	rawTop, rawLeft int
+
+	// panes holds the widths the dividers were dragged to, by pane name. A pane
+	// missing from the map has never been dragged and keeps the width the
+	// stylesheet gives it.
+	panes map[string]int
+
+	// dragMove and dragUp are the listeners of a divider being dragged. They go
+	// on the document, not on the 5px grip, which the pointer leaves behind at
+	// the first quick move.
+	dragMove, dragUp js.Func
 }
+
+// The two draggable panes, named by the grips' data-arg and by the suffix of
+// the key their width is stored under.
+const (
+	paneSide = "side"
+	paneRes  = "response"
+	paneKey  = "hsl-composer-w-"
+)
+
+// Pane bounds, ported from the mockup. The response column is capped against
+// the room its own row has, so that the editor keeps editorMin whatever the
+// window does.
+const (
+	sideMin, sideMax = 190, 560
+	resMin, resFloor = 280, 320
+	editorMin        = 380
+)
 
 // New returns an unmounted composer. Pass it to dom.Mount.
 func New() *Composer { return &Composer{} }
@@ -73,6 +100,7 @@ func (c *Composer) OnInit() {
 	// from the "Edit as" switch.
 	c.Tab = "raw"
 	c.Dirty = map[string]bool{}
+	c.loadPanes()
 	c.load()
 	c.files = &FilesPane{owner: c}
 	c.resp = &ResponsePane{owner: c}
@@ -285,6 +313,7 @@ func (c *Composer) RawChanged() {
 // OnAfterRender rebinds the scroll listener: every render replaces the subtree,
 // and with it the textarea the previous listener was attached to.
 func (c *Composer) OnAfterRender(bool) {
+	c.applyPaneWidths()
 	c.releaseRawScroll()
 	area := c.Ref("rawArea")
 	if !area.Truthy() {
@@ -300,7 +329,10 @@ func (c *Composer) OnAfterRender(bool) {
 	area.Call("addEventListener", "scroll", c.rawScroll)
 }
 
-func (c *Composer) OnDispose() { c.releaseRawScroll() }
+func (c *Composer) OnDispose() {
+	c.releaseRawScroll()
+	c.releaseDrag()
+}
 
 func (c *Composer) releaseRawScroll() {
 	if c.rawScroll.Truthy() {
@@ -325,6 +357,143 @@ func (c *Composer) syncRawScroll() {
 		gutter.Set("scrollTop", top)
 	}
 	c.rawTop, c.rawLeft = top.Int(), left.Int()
+}
+
+// ── resizable panes ────────────────────────────────────────────────────────
+
+// StartResize begins dragging one of the two dividers.
+func (c *Composer) StartResize(e dom.Event) {
+	pane := e.Arg()
+	node := c.Ref(pane)
+	if !node.Truthy() {
+		return
+	}
+	e.PreventDefault()
+	c.releaseDrag()
+
+	startX := e.Raw.Get("clientX").Float()
+	startWidth := node.Get("offsetWidth").Float()
+
+	grip := e.Node
+	grip.Get("classList").Call("add", "on")
+	document := js.Global().Get("document")
+	body := document.Get("body").Get("style")
+	body.Set("cursor", "col-resize")
+	// Without this the drag selects the text it passes over.
+	body.Set("userSelect", "none")
+
+	c.dragMove = js.FuncOf(func(_ js.Value, args []js.Value) any {
+		delta := args[0].Get("clientX").Float() - startX
+		if pane == paneRes {
+			delta = -delta // the response column grows as the pointer moves left
+		}
+		c.setPaneWidth(pane, node, int(startWidth+delta))
+		return nil
+	})
+	c.dragUp = js.FuncOf(func(js.Value, []js.Value) any {
+		document.Call("removeEventListener", "pointermove", c.dragMove)
+		document.Call("removeEventListener", "pointerup", c.dragUp)
+		grip.Get("classList").Call("remove", "on")
+		body.Set("cursor", "")
+		body.Set("userSelect", "")
+		c.savePane(pane)
+		c.releaseDrag()
+		return nil
+	})
+	document.Call("addEventListener", "pointermove", c.dragMove)
+	document.Call("addEventListener", "pointerup", c.dragUp)
+}
+
+// ResetPane gives a pane back the width the stylesheet gives it. Clearing the
+// inline width rather than restoring a number keeps the stylesheet the one
+// place a pane's natural size is written.
+func (c *Composer) ResetPane(e dom.Event) {
+	pane := e.Arg()
+	if node := c.Ref(pane); node.Truthy() {
+		node.Get("style").Set("width", "")
+	}
+	delete(c.panes, pane)
+	dom.LocalSet(paneKey+pane, "")
+}
+
+// setPaneWidth writes the width straight to the DOM. Rendering on every pointer
+// move would replace the subtree — and the editor's caret with it — dozens of
+// times a second.
+func (c *Composer) setPaneWidth(pane string, node js.Value, width int) {
+	min, max := c.paneBounds(pane)
+	width = clamp(width, min, max)
+	node.Get("style").Set("width", strconv.Itoa(width)+"px")
+	c.panes[pane] = width
+}
+
+func (c *Composer) paneBounds(pane string) (min, max int) {
+	if pane == paneSide {
+		return sideMin, sideMax
+	}
+	max = resFloor
+	if main := c.Ref("main"); main.Truthy() {
+		if room := main.Get("offsetWidth").Int() - editorMin; room > max {
+			max = room
+		}
+	}
+	return resMin, max
+}
+
+// applyPaneWidths re-applies the dragged widths after a render, which replaces
+// the very nodes carrying them.
+func (c *Composer) applyPaneWidths() {
+	for _, pane := range []string{paneSide, paneRes} {
+		width, dragged := c.panes[pane]
+		if !dragged {
+			continue
+		}
+		if node := c.Ref(pane); node.Truthy() {
+			node.Get("style").Set("width", strconv.Itoa(width)+"px")
+		}
+	}
+}
+
+func (c *Composer) savePane(pane string) {
+	if width, dragged := c.panes[pane]; dragged {
+		dom.LocalSet(paneKey+pane, strconv.Itoa(width))
+	}
+}
+
+// loadPanes restores the widths the window was left with. A stored width below
+// the pane's minimum is dropped rather than clamped: it is a leftover from a
+// narrower build, not a choice.
+func (c *Composer) loadPanes() {
+	c.panes = map[string]int{}
+	for _, pane := range []string{paneSide, paneRes} {
+		min := sideMin
+		if pane == paneRes {
+			min = resMin
+		}
+		if width, err := strconv.Atoi(dom.LocalGet(paneKey + pane)); err == nil && width >= min {
+			c.panes[pane] = width
+		}
+	}
+}
+
+func (c *Composer) releaseDrag() {
+	if c.dragMove.Truthy() {
+		c.dragMove.Release()
+		c.dragMove = js.Func{}
+	}
+	if c.dragUp.Truthy() {
+		c.dragUp.Release()
+		c.dragUp = js.Func{}
+	}
+}
+
+func clamp(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
 
 // refreshRaw rebuilds the draft after a change made outside the editor — a

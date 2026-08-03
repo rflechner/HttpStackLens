@@ -1,6 +1,8 @@
-<div class="cx-side" data-child="files"></div>
+<div class="cx-side" data-ref="side" data-child="files"></div>
+<div class="cx-grip" data-arg="side" data-on-pointerdown="StartResize" data-on-dblclick="ResetPane"
+     title="Drag to resize · double-click to reset"></div>
 
-<div class="cx-main">
+<div class="cx-main" data-ref="main">
   <div class="cx-col" data-on-keydown="OnKey">
     {{if not .Cur}}
       <div class="cx-blank">
@@ -120,5 +122,7 @@
     {{end}}
   </div>
 
-  <div class="cx-col cx-res" data-child="response"></div>
+  <div class="cx-grip" data-arg="response" data-on-pointerdown="StartResize" data-on-dblclick="ResetPane"
+       title="Drag to resize · double-click to reset"></div>
+  <div class="cx-col cx-res" data-ref="response" data-child="response"></div>
 </div>
