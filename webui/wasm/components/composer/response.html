@@ -18,6 +18,12 @@
     {{end}}
     <span class="cx-meta">{{$r.MS}} ms</span>
     <span class="cx-meta">{{.Size}}</span>
+    {{if $r.Truncated}}<span class="cx-src">truncated</span>{{end}}
+    {{if $r.Upstream}}
+      <span class="cx-src live" title="Sent through the upstream proxy">via {{$r.Upstream}}</span>
+    {{else}}
+      <span class="cx-src live" title="Sent by HttpStackLens through the proxy pipeline">via proxy</span>
+    {{end}}
     <span class="cx-grow"></span>
     <button class="cx-mini" data-on-click="Copy">Copy</button>
   </div>
@@ -27,7 +33,7 @@
       <div class="cx-blank">
         <div class="cx-blank-t">Request failed</div>
         <div class="cx-blank-s mono">{{$r.Err}}</div>
-        <div class="cx-blank-s">The browser blocks cross-origin calls the target host does not allow. Routing the send through the proxy avoids it.</div>
+        <div class="cx-blank-s">HttpStackLens sent the request through the proxy pipeline. Check the URL, the upstream proxy settings and, for HTTPS, the certificate of the target host.</div>
       </div>
     </div>
   {{else}}

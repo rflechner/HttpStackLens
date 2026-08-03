@@ -15,14 +15,19 @@ import (
 //go:embed response.html
 var responseHTML string
 
-// Result is what a send produced.
+// Result is what a send produced, as reported by the backend.
 type Result struct {
 	Status     int
 	StatusText string
 	Headers    [][2]string
 	Body       string
 	MS         int
-	Err        string
+	// Truncated reports that the body was cut at the display limit.
+	Truncated bool
+	// Upstream is the outbound proxy the request went through, empty when the
+	// connection was direct.
+	Upstream string
+	Err      string
 }
 
 // ResponsePane renders the right-hand column. It is a child component so that

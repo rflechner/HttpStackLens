@@ -117,6 +117,11 @@ func main() {
 	}
 	captureWriter := storageSink
 
+	// The composer sends through the proxy pipeline rather than from the browser.
+	// It is created before the Web UI (which exposes it) and completed further
+	// down, once the event logger and the stores it reports to exist.
+	composerSend := newComposerSender(runtimeConfig.Snapshot, decryptHttpsSettings)
+
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
 		InitialConfig:         config,
 		CurrentConfig:         runtimeConfig.Snapshot,
@@ -128,6 +133,7 @@ func main() {
 		Storage:               storageSink,
 		Proxy:                 proxyCtl,
 		Commands:              runtimeCommands,
+		SendComposerRequest:   composerSend.Send,
 		Build:                 buildInfo(),
 		GitHubRepo:            repoSlug,
 		UpdateCheckEnabled:    config.Updates.CheckEnabled,
@@ -137,6 +143,18 @@ func main() {
 	// pipeline so the HTTPS interceptor can surface the decrypted requests and
 	// responses it sees (they are otherwise only written to the capture file).
 	logger := logging.CreateWebUiEventLogger(hub)
+
+	// Entry point into the pipeline for composer sends: a proxy server without a
+	// listener. Composer requests are therefore reported to the UI and recorded
+	// like any proxied traffic, and stay available while the proxy is stopped —
+	// only the accept loop is stopped, never the pipeline.
+	composerSend.attach(&ProxyServer{
+		appContext:  appContext,
+		EventLogger: logger,
+		capture:     captureWriter,
+		store:       requestStore,
+		captureCtl:  captureCtl,
+	})
 
 	decryptRuntime := newDecryptHttpsRuntime(config, basePipeline, activePipeline, decryptHttpsSettings, captureWriter, logger, requestStore, captureCtl, configuration.PersistDecryptHttpsEnabled)
 	if err := decryptRuntime.ApplyInitial(); err != nil {

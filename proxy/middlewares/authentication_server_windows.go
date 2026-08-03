@@ -17,6 +17,13 @@ type WindowsAuthenticationServerMiddleware struct {
 }
 
 func (m *WindowsAuthenticationServerMiddleware) HandleProxyRequest(browser net.Conn, request models.ProxyRequest) error {
+	// A connection the application created for itself has no external client to
+	// challenge: authenticating HttpStackLens to HttpStackLens would only make
+	// the composer unusable when browsers must authenticate.
+	if IsLocal(browser) {
+		return m.NextMiddleware.HandleProxyRequest(browser, request)
+	}
+
 	clientAddr := browser.RemoteAddr().String()
 	fmt.Printf("New connection from %s\n", clientAddr)
 

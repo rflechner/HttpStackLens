@@ -17,10 +17,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall/js"
-	"time"
 
 	httpfile "httpStackLens/composer"
 	"httpStackLens/webui/wasm/dom"
+	"httpStackLens/webui/wasm/shared"
 )
 
 //go:embed composer.html
@@ -650,20 +650,58 @@ func (c *Composer) start(req outgoing) {
 }
 
 func (c *Composer) send(req outgoing) {
-	start := time.Now()
-	res, err := dom.Fetch(req.Method, req.URL, req.Headers, req.Body)
-	out := &Result{MS: int(time.Since(start).Milliseconds())}
-	if err != nil {
-		out.Err = err.Error()
-	} else {
-		out.Status, out.StatusText = res.Status, res.StatusText
-		out.Headers, out.Body = res.Headers, res.Body
-	}
-
 	c.Sending = false
-	c.Res = out
+	c.Res = exchange(req)
 	c.resp.Tab = "body"
 	c.StateHasChanged()
+}
+
+// sendPath is the backend endpoint that replays a composer request through the
+// proxy pipeline.
+const sendPath = "/api/composer/send"
+
+// exchange hands the request to the backend instead of issuing it from the
+// browser: the request then goes through the same pipeline as any client of the
+// proxy — upstream proxy, no_proxy rules and HTTPS decryption included — and is
+// not subject to CORS.
+func exchange(req outgoing) *Result {
+	request := shared.ComposerRequestDto{Method: req.Method, Url: req.URL, Body: req.Body}
+	for name, value := range req.Headers {
+		request.Headers = append(request.Headers, shared.HeaderDto{Name: name, Value: value})
+	}
+
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return &Result{Err: err.Error()}
+	}
+
+	res, err := dom.Fetch("POST", sendPath,
+		map[string]string{"Content-Type": "application/json"}, string(payload))
+	if err != nil {
+		return &Result{Err: "could not reach HttpStackLens: " + err.Error()}
+	}
+	if res.Status != 200 {
+		return &Result{Err: strings.TrimSpace(res.Body)}
+	}
+
+	var dto shared.ComposerResponseDto
+	if err := json.Unmarshal([]byte(res.Body), &dto); err != nil {
+		return &Result{Err: "unreadable answer from HttpStackLens: " + err.Error()}
+	}
+
+	out := &Result{
+		Status:     dto.Status,
+		StatusText: dto.StatusText,
+		Body:       dto.Body,
+		MS:         dto.DurationMs,
+		Truncated:  dto.Truncated,
+		Upstream:   dto.Upstream,
+		Err:        dto.Error,
+	}
+	for _, header := range dto.Headers {
+		out.Headers = append(out.Headers, [2]string{header.Name, header.Value})
+	}
+	return out
 }
 
 func fromForm(r *Request, vars []KV) outgoing {

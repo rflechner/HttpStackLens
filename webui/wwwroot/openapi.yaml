@@ -10,6 +10,7 @@ tags:
   - name: Runtime
   - name: Requests
   - name: Captures
+  - name: Composer
   - name: Events
 paths:
   /config:
@@ -436,6 +437,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CaptureState"
+  /api/composer/send:
+    post:
+      tags: [Composer]
+      summary: Send a request built in the composer
+      description: |
+        Executes the request through the proxy middleware pipeline, exactly as a
+        browser configured to use this proxy would: upstream proxy, `no_proxy`
+        rules and HTTPS decryption apply, and the exchange shows up in the
+        traffic view and the capture like any proxied request.
+
+        The pipeline is used directly, not the TCP listener, so the composer
+        keeps working while the proxy is stopped.
+
+        An exchange that never reached a response (DNS failure, refused
+        connection, TLS error, timeout) is reported as `200` with `error` set and
+        a zero `status`: it is a result to display, not an API failure. Only a
+        malformed composer request is a `400`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComposerRequest"
+      responses:
+        "200":
+          description: Outcome of the exchange
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComposerResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          description: Sending from the composer is unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
   /api/proxy/start:
     post:
       tags: [Runtime]
@@ -690,6 +731,52 @@ components:
           type: string
         value:
           type: string
+    ComposerRequest:
+      type: object
+      required: [method, url, headers, body]
+      properties:
+        method:
+          type: string
+          example: GET
+        url:
+          type: string
+          description: Absolute http:// or https:// URL, variables already substituted.
+          example: https://api.ipify.org?format=json
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+          description: A `Host` header overrides the host sent to the server.
+        body:
+          type: string
+          description: Sent as-is; empty means no body.
+    ComposerResponse:
+      type: object
+      required: [status, status_text, headers, body, duration_ms, truncated, upstream, error]
+      properties:
+        status:
+          type: integer
+          description: Zero when the request never reached a response.
+        status_text:
+          type: string
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+        body:
+          type: string
+        duration_ms:
+          type: integer
+          description: Whole exchange, pipeline included.
+        truncated:
+          type: boolean
+          description: The body was cut at the 5 MiB display limit.
+        upstream:
+          type: string
+          description: Outbound proxy the request went through; empty when direct.
+        error:
+          type: string
+          description: Transport failure, empty on a completed exchange.
     RequestEvent:
       type: object
       required: [id, correlation_id, method, host, port, path, version, scheme, tls, decrypted]

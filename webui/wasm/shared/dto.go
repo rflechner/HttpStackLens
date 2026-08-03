@@ -342,3 +342,33 @@ type MimeTypeRuleDto struct {
 	MaxSizeKb    *float64 `json:"max_size_kb,omitempty"`
 	MaxSizeMb    *float64 `json:"max_size_mb,omitempty"`
 }
+
+// ComposerRequestDto is a request built in the Web UI composer and sent by
+// POST /api/composer/send. The backend executes it through the proxy pipeline
+// rather than letting the browser issue it, so upstream proxy, no_proxy and
+// HTTPS decryption settings apply exactly as they do for proxied traffic.
+type ComposerRequestDto struct {
+	Method  string      `json:"method"`
+	Url     string      `json:"url"`
+	Headers []HeaderDto `json:"headers"`
+	Body    string      `json:"body"`
+}
+
+// ComposerResponseDto is the outcome of a composer send. A request that never
+// reached a response (DNS failure, refused connection, TLS error, timeout) is
+// reported with Error set and a zero Status — it is a result to display, not an
+// API failure.
+type ComposerResponseDto struct {
+	Status     int         `json:"status"`
+	StatusText string      `json:"status_text"`
+	Headers    []HeaderDto `json:"headers"`
+	Body       string      `json:"body"`
+	// DurationMs covers the whole exchange, pipeline included.
+	DurationMs int `json:"duration_ms"`
+	// Truncated reports that the body was cut at the size limit.
+	Truncated bool `json:"truncated"`
+	// Upstream is the outbound proxy the request went through, empty when the
+	// connection was direct.
+	Upstream string `json:"upstream"`
+	Error    string `json:"error"`
+}
