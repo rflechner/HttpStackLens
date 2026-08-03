@@ -9,8 +9,8 @@
 <div class="cx-files hsl-scroll">
   {{range $f := .Files}}
     <div class="cx-file{{if $.IsActiveFile $f}} active{{end}}">
-      <button class="cx-file-head" data-on-click="ToggleFile" data-arg="{{$f.ID}}">
-        <span class="cx-caret">{{if $f.Open}}▾{{else}}▸{{end}}</span>
+      <button class="cx-file-head" data-on-click="OpenFile" data-arg="{{$f.ID}}">
+        <span class="cx-caret" data-on-click="ToggleFile" data-arg="{{$f.ID}}">{{if $f.Open}}▾{{else}}▸{{end}}</span>
         <svg class="cx-file-ico" width="13" height="14" viewBox="0 0 13 14" fill="none">
           <path d="M2 1.5h5l4 3.5v7.5H2z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
           <path d="M7 1.5V5h4" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>

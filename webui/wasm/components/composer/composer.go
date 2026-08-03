@@ -53,6 +53,11 @@ type Composer struct {
 	// the textarea. A scroll event does not bubble, so this one listener cannot
 	// be delegated to the component root the way the others are.
 	rawScroll js.Func
+
+	// rawTop and rawLeft outlive a render. Sending a request re-renders the
+	// whole subtree, and without them clicking a play button on line 40 would
+	// throw the reader back to the top of the file.
+	rawTop, rawLeft int
 }
 
 // New returns an unmounted composer. Pass it to dom.Mount.
@@ -64,7 +69,9 @@ func (c *Composer) Template() string { return composerHTML }
 func (c *Composer) Styles() string { return composerCSS }
 
 func (c *Composer) OnInit() {
-	c.Tab = "body"
+	// The file itself is the editor: the form is the alternate view, reachable
+	// from the "Edit as" switch.
+	c.Tab = "raw"
 	c.Dirty = map[string]bool{}
 	c.load()
 	c.files = &FilesPane{owner: c}
@@ -74,6 +81,9 @@ func (c *Composer) OnInit() {
 	if len(c.Files) > 0 && len(c.Files[0].Reqs) > 0 {
 		c.CurFile, c.Cur = c.Files[0], c.Files[0].Reqs[0]
 	}
+	// The raw tab opens on the first render, and the textarea is filled from
+	// Raw: without this the editor would come up empty over a painted overlay.
+	c.refreshRaw()
 }
 
 // ── template accessors ─────────────────────────────────────────────────────
@@ -103,10 +113,13 @@ func (c *Composer) SendAttrs() template.HTMLAttr {
 	return ""
 }
 
-// RawText is the .http rendering of the current file, kept in Raw while the
-// raw tab is open so that edits survive a re-render.
+// RawText is the .http rendering of the current file. While the raw tab is
+// open the draft is the truth, so that edits survive a re-render; elsewhere the
+// model is. The tab is what says which, rather than an empty Raw: an emptied
+// editor is a legitimate draft, and taking it for "no draft" would leave the
+// overlay painting a file the textarea no longer holds.
 func (c *Composer) RawText() string {
-	if c.Raw != "" {
+	if c.Tab == "raw" {
 		return c.Raw
 	}
 	if c.CurFile == nil {
@@ -122,13 +135,52 @@ func (c *Composer) RawHighlight() template.HTML {
 	return template.HTML(httpfile.HighlightHTML(c.RawText()))
 }
 
-func (c *Composer) RawLines() []int {
-	n := strings.Count(c.RawText(), "\n") + 1
-	out := make([]int, n)
-	for i := range out {
-		out[i] = i + 1
+// rawLine is one row of the raw editor's gutter: its number, and the index of
+// the request that starts there when one does.
+type rawLine struct {
+	Number  int
+	Request int
+}
+
+func (l rawLine) runnable() bool { return l.Request >= 0 }
+
+func (c *Composer) rawLines() []rawLine {
+	text := c.RawText()
+	// The parser's spans carry the line each request was read from, which is
+	// what puts a play button on the right row without measuring anything.
+	opens := map[int]int{}
+	for i, request := range httpfile.ParseHttpFile(text).Requests {
+		opens[request.HttpRequestLine.HttpMethod.Start.Line] = i
 	}
-	return out
+
+	lines := make([]rawLine, strings.Count(text, "\n")+1)
+	for i := range lines {
+		request, ok := opens[i+1]
+		if !ok {
+			request = -1
+		}
+		lines[i] = rawLine{Number: i + 1, Request: request}
+	}
+	return lines
+}
+
+// GutterHTML is the line-number column, play buttons included. It is built
+// here rather than in the template because a keystroke refreshes it in place:
+// a full render would replace the textarea and take the caret with it.
+func (c *Composer) GutterHTML() template.HTML {
+	var out strings.Builder
+	for _, line := range c.rawLines() {
+		out.WriteString(`<div class="cx-gl">`)
+		if line.runnable() {
+			out.WriteString(`<button class="cx-run" data-on-click="RunLine" data-arg-i="`)
+			out.WriteString(strconv.Itoa(line.Request))
+			out.WriteString(`" title="Send this request">▶</button>`)
+		}
+		out.WriteString(`<span class="cx-ln">`)
+		out.WriteString(strconv.Itoa(line.Number))
+		out.WriteString(`</span></div>`)
+	}
+	return template.HTML(out.String())
 }
 
 func (c *Composer) ReqCount() string {
@@ -168,6 +220,7 @@ func (c *Composer) SetTab(e dom.Event) {
 	}
 	if next == "raw" {
 		c.Raw = ToHTTP(c.CurFile)
+		c.rawTop, c.rawLeft = 0, 0
 	} else {
 		c.Raw = ""
 	}
@@ -219,7 +272,7 @@ func (c *Composer) RawChanged() {
 		stat.Set("textContent", c.ReqCount())
 	}
 	if gutter := c.Ref("gutter"); gutter.Truthy() {
-		gutter.Set("innerHTML", gutterHTML(c.RawLines()))
+		gutter.Set("innerHTML", string(c.GutterHTML()))
 	}
 	if highlight := c.Ref("highlight"); highlight.Truthy() {
 		highlight.Set("innerHTML", string(c.RawHighlight()))
@@ -237,6 +290,9 @@ func (c *Composer) OnAfterRender(bool) {
 	if !area.Truthy() {
 		return
 	}
+	area.Set("scrollTop", c.rawTop)
+	area.Set("scrollLeft", c.rawLeft)
+	c.syncRawScroll()
 	c.rawScroll = js.FuncOf(func(js.Value, []js.Value) any {
 		c.syncRawScroll()
 		return nil
@@ -268,6 +324,16 @@ func (c *Composer) syncRawScroll() {
 	if gutter := c.Ref("gutter"); gutter.Truthy() {
 		gutter.Set("scrollTop", top)
 	}
+	c.rawTop, c.rawLeft = top.Int(), left.Int()
+}
+
+// refreshRaw rebuilds the draft after a change made outside the editor — a
+// request added, duplicated or deleted. Without it the draft would still show
+// the file as it was, and the next keystroke would write that back.
+func (c *Composer) refreshRaw() {
+	if c.Tab == "raw" && c.CurFile != nil {
+		c.Raw = ToHTTP(c.CurFile)
+	}
 }
 
 func (c *Composer) OnKey(e dom.Event) {
@@ -288,6 +354,7 @@ func (c *Composer) DuplicateRequest() {
 	clone.Name = c.Cur.Name + " copy"
 	clone.Headers = append([]KV(nil), c.Cur.Headers...)
 	c.CurFile.Reqs = append(c.CurFile.Reqs, &clone)
+	c.refreshRaw()
 	c.selectRequest(c.CurFile.ID, clone.ID)
 }
 
@@ -306,6 +373,7 @@ func (c *Composer) DeleteRequest() {
 	if len(kept) > 0 {
 		c.Cur = kept[0]
 	}
+	c.refreshRaw()
 	c.touch()
 	c.StateHasChanged()
 	c.files.StateHasChanged()
@@ -368,8 +436,16 @@ func (c *Composer) FormatJSON() {
 	c.StateHasChanged()
 }
 
-// Send fires the request. The handler itself must not block — the fetch runs
-// in a goroutine so the JS callbacks it waits on can be delivered.
+// outgoing is a request resolved down to what dom.Fetch needs: variables
+// substituted, disabled rows dropped.
+type outgoing struct {
+	Method  string
+	URL     string
+	Headers map[string]string
+	Body    string
+}
+
+// Send fires the request the form is showing.
 func (c *Composer) Send() {
 	if c.Cur == nil || c.Sending {
 		return
@@ -377,28 +453,36 @@ func (c *Composer) Send() {
 	if c.Tab == "raw" {
 		c.applyRaw()
 	}
+	c.start(fromForm(c.Cur, c.CurFile.Vars))
+}
+
+// RunLine sends the request the clicked play button sits next to. It reads the
+// block straight out of the draft rather than out of the form model, so what
+// runs is exactly what the editor shows.
+func (c *Composer) RunLine(e dom.Event) {
+	if c.Sending {
+		return
+	}
+	file := httpfile.ParseHttpFile(c.RawText())
+	index := e.ArgIntOf("i")
+	if index < 0 || index >= len(file.Requests) {
+		return
+	}
+	c.start(fromBlock(file, file.Requests[index]))
+}
+
+// start fires a request. The handler itself must not block — the fetch runs in
+// a goroutine so the JS callbacks it waits on can be delivered.
+func (c *Composer) start(req outgoing) {
 	c.Sending = true
 	c.Res = nil
 	c.StateHasChanged()
-	go c.send()
+	go c.send(req)
 }
 
-func (c *Composer) send() {
-	r, f := c.Cur, c.CurFile
-	url := Interpolate(r.URL, f.Vars)
-	headers := map[string]string{}
-	for _, h := range r.Headers {
-		if h.On && h.Key != "" {
-			headers[h.Key] = Interpolate(h.Value, f.Vars)
-		}
-	}
-	body := ""
-	if r.Method != "GET" && r.Method != "HEAD" {
-		body = Interpolate(r.Body, f.Vars)
-	}
-
+func (c *Composer) send(req outgoing) {
 	start := time.Now()
-	res, err := dom.Fetch(r.Method, url, headers, body)
+	res, err := dom.Fetch(req.Method, req.URL, req.Headers, req.Body)
 	out := &Result{MS: int(time.Since(start).Milliseconds())}
 	if err != nil {
 		out.Err = err.Error()
@@ -411,6 +495,45 @@ func (c *Composer) send() {
 	c.Res = out
 	c.resp.Tab = "body"
 	c.StateHasChanged()
+}
+
+func fromForm(r *Request, vars []KV) outgoing {
+	out := outgoing{Method: r.Method, URL: Interpolate(r.URL, vars), Headers: map[string]string{}}
+	for _, h := range r.Headers {
+		if h.On && h.Key != "" {
+			out.Headers[h.Key] = Interpolate(h.Value, vars)
+		}
+	}
+	if r.Method != "GET" && r.Method != "HEAD" {
+		out.Body = Interpolate(r.Body, vars)
+	}
+	return out
+}
+
+// fromBlock resolves one block of the shared parser's reading of the draft.
+// The target is taken as written — a placeholder target has no host to resolve
+// until the file variables are substituted, which happens right here.
+func fromBlock(file httpfile.HttpFile, item httpfile.HttpRequestFileItem) outgoing {
+	vars := make([]KV, 0, len(file.Variables))
+	for _, variable := range file.Variables {
+		vars = append(vars, KV{Key: variable.Name.Text, Value: variable.Value.Text, On: true})
+	}
+
+	method := string(item.HttpRequestLine.HttpMethod.Text)
+	out := outgoing{
+		Method:  method,
+		URL:     Interpolate(item.HttpRequestLine.Target.Text, vars),
+		Headers: map[string]string{},
+	}
+	for _, header := range item.Headers {
+		if header.Name.Text != "" {
+			out.Headers[header.Name.Text] = Interpolate(header.Value.Text, vars)
+		}
+	}
+	if method != "GET" && method != "HEAD" {
+		out.Body = Interpolate(item.Body.Text, vars)
+	}
+	return out
 }
 
 // ── model helpers ──────────────────────────────────────────────────────────
@@ -436,16 +559,45 @@ func (c *Composer) selectRequest(fileID, reqID string) {
 	if f == nil {
 		return
 	}
+	previous := c.CurFile
 	c.CurFile = f
 	c.Cur = f.find(reqID)
 	c.Res = nil
-	c.Raw = ""
 	if c.Tab == "raw" {
-		c.Tab = "body"
+		// The draft belongs to the file, not to the request: picking another
+		// request inside the same file must not rewrite what is being edited.
+		if previous != f {
+			c.Raw = ToHTTP(f)
+			c.rawTop, c.rawLeft = 0, 0
+		}
+	} else {
+		c.Raw = ""
 	}
 	if c.Tab == "params" && c.Cur != nil {
 		_, c.Params = SplitURL(c.Cur.URL)
 	}
+	c.StateHasChanged()
+	c.files.StateHasChanged()
+}
+
+// openFile makes a file the one being edited and shows it as text. Choosing a
+// .http file means opening the file, not one request inside it: the editor is
+// the file, and the form is the alternate view of whatever request is current.
+func (c *Composer) openFile(id string) {
+	f := c.file(id)
+	if f == nil {
+		return
+	}
+	f.Open = true
+	c.CurFile = f
+	c.Cur = nil
+	if len(f.Reqs) > 0 {
+		c.Cur = f.Reqs[0]
+	}
+	c.Res = nil
+	c.Tab = "raw"
+	c.Raw = ToHTTP(f)
+	c.rawTop, c.rawLeft = 0, 0
 	c.StateHasChanged()
 	c.files.StateHasChanged()
 }
@@ -464,6 +616,7 @@ func (c *Composer) newRequest(fileID string) {
 	f.Reqs = append(f.Reqs, r)
 	f.Open = true
 	c.Dirty[f.ID] = true
+	c.refreshRaw()
 	c.selectRequest(f.ID, r.ID)
 }
 
@@ -530,17 +683,6 @@ func toggleAt(list []KV, i int) {
 	if i >= 0 && i < len(list) {
 		list[i].On = !list[i].On
 	}
-}
-
-func gutterHTML(lines []int) string {
-	var b strings.Builder
-	for i, n := range lines {
-		if i > 0 {
-			b.WriteString("<br>")
-		}
-		b.WriteString(strconv.Itoa(n))
-	}
-	return b.String()
 }
 
 func seed() []*File {

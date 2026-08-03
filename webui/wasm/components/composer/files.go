@@ -38,6 +38,10 @@ func (p *FilesPane) Folder() string { return "~/HttpStackLens/requests" }
 
 // ── handlers ───────────────────────────────────────────────────────────────
 
+// OpenFile shows the file as text. The caret keeps the disclosure to itself, so
+// that clicking the row opens the file rather than merely folding it away.
+func (p *FilesPane) OpenFile(e dom.Event) { p.owner.openFile(e.Arg()) }
+
 func (p *FilesPane) ToggleFile(e dom.Event) {
 	if f := p.owner.file(e.Arg()); f != nil {
 		f.Open = !f.Open
@@ -57,7 +61,7 @@ func (p *FilesPane) NewFile() {
 	f := ParseHTTP("@baseUrl = https://api.example.com\n\n### Health check\nGET {{baseUrl}}/health\nAccept: application/json\n", "requests.http")
 	p.owner.Files = append(p.owner.Files, f)
 	p.owner.Dirty[f.ID] = true
-	p.owner.selectRequest(f.ID, f.Reqs[0].ID)
+	p.owner.openFile(f.ID)
 }
 
 func (p *FilesPane) SaveFile() {
@@ -86,7 +90,7 @@ func (p *FilesPane) CloseFile() {
 	delete(p.owner.Dirty, f.ID)
 	p.owner.CurFile, p.owner.Cur = nil, nil
 	if len(kept) > 0 && len(kept[0].Reqs) > 0 {
-		p.owner.selectRequest(kept[0].ID, kept[0].Reqs[0].ID)
+		p.owner.openFile(kept[0].ID)
 		return
 	}
 	p.owner.save()
