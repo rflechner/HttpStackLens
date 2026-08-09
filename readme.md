@@ -21,7 +21,7 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 - Handles HTTPS tunnels via the `CONNECT` method
 - Can decrypt HTTPS traffic with opt-in local MITM when `decrypt_https.enabled` is enabled
 - Forwards requests and responses bidirectionally
-- Web UI (WASM-based) to inspect live HTTP traffic
+- Wails desktop app with a Go/WASM traffic inspector
 
 ## What it doesn't do (yet)
 
@@ -63,7 +63,15 @@ Or via npm scripts from `webui/`:
 | `npm run build:app` | Native binary only |
 | `npm run dev:css` | Tailwind CSS in watch mode (dev) |
 
-The build tool auto-detects the current platform and produces `httpStackLens.exe` on Windows or `httpStackLens` on macOS/Linux.
+The build tool compiles the Web UI and the desktop application. For a packaged
+desktop build (native window, icon and platform metadata), use the Wails CLI:
+
+```sh
+wails build
+```
+
+The packaged application is written to `build/bin/`. Running `go run .` remains
+useful during Go development and also opens the Wails desktop window.
 
 ---
 
@@ -154,7 +162,8 @@ These rely on the Windows SSPI API (`secur32.dll`) and will return an error if u
 go run .
 ```
 
-The proxy listens on `localhost:3128`. You can test it with curl:
+The Wails window opens automatically, and the proxy listens on `localhost:3128`.
+You can test it with curl:
 
 ```sh
 curl -x http://localhost:3128 http://example.com

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"httpStackLens/configuration"
@@ -14,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -84,6 +84,10 @@ func main() {
 	logResolvedPaths(config)
 
 	stopChan := make(chan bool)
+	var stopOnce sync.Once
+	requestStop := func() {
+		stopOnce.Do(func() { close(stopChan) })
+	}
 
 	// Keeps the most recent request/response records in memory so the Web UI can
 	// fetch their full headers and bodies on demand.
@@ -185,22 +189,12 @@ func main() {
 	go proxyServer.Run()
 	go supervisor.Run(runtimeCommands, stopChan)
 
-	keyboard := bufio.NewReader(os.Stdin)
-
-	go func() {
-		fmt.Println("Type 'exit' to quit")
-		for {
-			line, _, _ := keyboard.ReadLine()
-			if string(line) == "exit" {
-				close(stopChan)
-			}
-		}
-	}()
-
-	select {
-	case <-stopChan:
-		supervisor.closeAllProxies()
+	if err := runDesktopApp(appContext.webUiPort, requestStop); err != nil {
+		slog.Error("Wails application stopped with an error", "error", err)
 	}
+
+	requestStop()
+	supervisor.closeAllProxies()
 }
 
 // logResolvedPaths reports the on-disk locations the app will actually use, once

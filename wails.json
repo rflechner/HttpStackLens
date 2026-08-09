@@ -1,0 +1,11 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "HttpStackLens",
+  "outputfilename": "HttpStackLens",
+  "frontend:dir": "webui",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build:webui",
+  "author": {
+    "name": "HttpStackLens contributors"
+  }
+}

@@ -36,6 +36,8 @@ go.work.sum
 # .vscode/
 
 /httpStackLens
+/build/bin/
+/.cache/
 
 .DS_Store
 
