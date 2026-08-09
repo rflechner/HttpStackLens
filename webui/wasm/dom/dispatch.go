@@ -39,18 +39,19 @@ func bindListeners(c Component) {
 }
 
 // dispatch walks from the event target up to the component root, looking for a
-// data-bind to write and a data-on-<event> to call. It stops at any nested
-// component root: that subtree has its own listener and handled the event
-// first, on the way up.
+// data-bind to write and a data-on-<event> to call. Events raised inside a
+// nested component are left to it: its own listener saw them first, on the way
+// up.
 func dispatch(c Component, ev string, evt js.Value) {
 	b := c.base()
 	key := "on" + strings.ToUpper(ev[:1]) + ev[1:]
 	bindable := ev == "input" || ev == "change"
 
+	if insideChild(evt.Get("target"), b.root) {
+		return
+	}
+
 	for node := evt.Get("target"); node.Truthy() && !node.Equal(b.root); node = node.Get("parentElement") {
-		if node.Get("dataset").Get("child").Truthy() {
-			return // belongs to a child component
-		}
 		if bindable {
 			if path := node.Get("dataset").Get("bind"); path.Truthy() {
 				writeBinding(c, node, path.String())
@@ -64,6 +65,24 @@ func dispatch(c Component, ev string, evt js.Value) {
 			return
 		}
 	}
+}
+
+// insideChild reports whether target sits inside a nested component hosted
+// under root. The whole chain has to be checked before any handler runs: the
+// element carrying data-on-<event> is a descendant of the data-child node, so
+// looking for the boundary along the way would always find the handler first
+// and fire the parent's method as well as the child's.
+//
+// This is what keeps two components from answering one click when they happen
+// to name a handler the same — a response pane and its composer both having a
+// SetTab, say.
+func insideChild(target, root js.Value) bool {
+	for node := target; node.Truthy() && !node.Equal(root); node = node.Get("parentElement") {
+		if node.Get("dataset").Get("child").Truthy() {
+			return true
+		}
+	}
+	return false
 }
 
 var eventType = reflect.TypeOf(Event{})
