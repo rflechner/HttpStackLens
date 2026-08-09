@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const wailsCLIVersion = "v2.12.0"
+const wailsCLIVersion = "v2.13.0"
 
 var allTargets = []string{"webui", "app"}
 
@@ -434,17 +434,22 @@ func environmentWithout(env []string, key string) []string {
 }
 
 func ensureWailsIcon(projectRoot string) error {
+	source := filepath.Join(projectRoot, "images", "logo-v2.png")
 	destination := filepath.Join(projectRoot, "build", "appicon.png")
-	if _, err := os.Stat(destination); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}
-	return copyFile(filepath.Join(projectRoot, "images", "logo.png"), destination)
+	if err := copyFile(source, destination); err != nil {
+		return err
+	}
+
+	// Wails only generates icon.ico when it is absent. Remove the generated
+	// cache so a branding update is always reflected in the packaged binary.
+	generatedIcon := filepath.Join(projectRoot, "build", "windows", "icon.ico")
+	if err := os.Remove(generatedIcon); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // versionLdflags builds the -ldflags value, injecting build metadata into the

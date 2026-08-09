@@ -1,6 +1,6 @@
 # HttpStackLens
 
-![Logo](images/logo-with-text.png)
+![HttpStackLens](images/splash-screen.png)
 
 [![Release](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml/badge.svg)](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/rflechner/HttpStackLens)](https://github.com/rflechner/HttpStackLens/releases)
