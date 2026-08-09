@@ -105,7 +105,10 @@
 .cx-name { flex:1; min-width:0; background:transparent; border:none; outline:none; color:var(--ink); font-family:Inter; font-size:14px; font-weight:600 }
 .cx-file-tag { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--dim); background:var(--bg2); border:1px solid var(--line); border-radius:6px; padding:3px 8px; cursor:pointer; white-space:nowrap }
 .cx-file-tag:hover { color:var(--mint); border-color:var(--mint) }
-.cx-tabs-off { font-size:11px; color:var(--faint); padding:10px 4px 9px }
+/* The raw view has no request name to show, so the toolbar's heading slot goes
+   to the file being edited. It keeps .cx-name's flex so the "Edit as" switch
+   stays pinned to the same edge in both views. */
+.cx-name-file { font-size:12.5px; font-weight:600; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .cx-view-seg { display:flex; align-items:center; gap:4px; padding:0 4px 0 10px }
 .cx-view-l { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:var(--faint); margin-right:2px }
 .cx-vbtn { display:inline-flex; align-items:center; gap:5px; background:var(--bg2); border:1px solid var(--line); border-radius:6px; padding:3px 9px; font-size:11px; font-family:Inter; color:var(--dim); cursor:pointer; white-space:nowrap }

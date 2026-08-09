@@ -111,6 +111,33 @@ func TestCommentsAboveTheRequestLineSurvive(t *testing.T) {
 		"Accept: application/vnd.github+json\n")
 }
 
+// The raw editor addresses lines through the textarea's selection, counted in
+// UTF-16 code units. A body holding an em dash or an emoji is where a byte
+// offset would put the caret on the wrong line.
+func TestUTF16LineConversions(t *testing.T) {
+	const text = "### Créé — accentué\nGET https://x/é\n\n{\"k\":\"🙂\"}\nlast"
+
+	// Line 1 is 19 units wide, line 2 is 15 (the é counts once), line 3 empty,
+	// line 4 is 10 (the emoji is a surrogate pair, so it counts twice).
+	for line, want := range map[int]int{1: 0, 2: 20, 3: 36, 4: 37, 5: 48} {
+		if got := utf16LineOffset(text, line); got != want {
+			t.Errorf("utf16LineOffset(line %d) = %d, want %d", line, got, want)
+		}
+		if got := utf16LineAt(text, want); got != line {
+			t.Errorf("utf16LineAt(offset %d) = %d, want line %d", want, got, line)
+		}
+	}
+
+	// A line past the end clamps to the end rather than reaching out of range.
+	if got, want := utf16LineOffset(text, 99), 48+len("last"); got != want {
+		t.Errorf("utf16LineOffset past the end = %d, want %d", got, want)
+	}
+	// A caret in the middle of a line stays on that line.
+	if got := utf16LineAt(text, 25); got != 2 {
+		t.Errorf("utf16LineAt(mid-line) = %d, want 2", got)
+	}
+}
+
 func TestVariablesBodyAndSeveralRequestsAreStable(t *testing.T) {
 	assertStable(t, "@baseUrl = https://api.github.com\n"+
 		"@token = ghp_exampletoken\n"+

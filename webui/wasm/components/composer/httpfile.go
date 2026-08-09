@@ -22,6 +22,11 @@ type KV struct {
 type Request struct {
 	ID   string
 	Name string
+	// Line is the 1-based line its `###` was read from. It only describes the
+	// text ParseHTTP was given, so a caller wanting to point at the editor
+	// reparses the draft rather than trusting a request it kept around; it is
+	// not part of the file and does not go to storage.
+	Line int `json:"-"`
 	// Notes holds the comment lines written between the block's title and its
 	// request line, verbatim markers included. They are kept rather than parsed
 	// because they only have to survive the trip back to text: dropping them, or
@@ -96,7 +101,7 @@ func ParseHTTP(text, name string) *File {
 	var cur *Request
 	section := "none"
 
-	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+	for n, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		if strings.HasPrefix(line, "###") {
 			if cur != nil && section == "reqline" {
 				cur.Notes = append(cur.Notes, line)
@@ -105,6 +110,7 @@ func ParseHTTP(text, name string) *File {
 			cur = &Request{
 				ID:     uid(),
 				Name:   strings.TrimSpace(strings.TrimLeft(line, "# ")),
+				Line:   n + 1,
 				Method: "GET",
 			}
 			f.Reqs = append(f.Reqs, cur)

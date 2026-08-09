@@ -4,50 +4,63 @@
 
 <div class="cx-main" data-ref="main">
   <div class="cx-col" data-on-keydown="OnKey">
-    {{if not .Cur}}
+    {{if not .Editing}}
       <div class="cx-blank">
-        <div class="cx-blank-t">No request selected</div>
-        <div class="cx-blank-s">Pick one on the left, or create a new request.</div>
-        <div class="cx-blank-a">
-          <button class="cx-btn" data-on-click="NewRequest">+ New request</button>
-        </div>
+        {{if .CurFile}}
+          <div class="cx-blank-t">No request selected</div>
+          <div class="cx-blank-s">Pick one on the left, create a new request, or edit the file as text.</div>
+          <div class="cx-blank-a">
+            <button class="cx-btn" data-on-click="NewRequest">+ New request</button>
+            <button class="cx-btn" data-on-click="SetTab" data-arg="raw">Edit <span class="mono">{{.FileName}}</span></button>
+          </div>
+        {{else}}
+          <div class="cx-blank-t">No .http file open</div>
+          <div class="cx-blank-s">Open or create a file on the left to start composing.</div>
+        {{end}}
       </div>
     {{else}}
+      <!-- The toolbar is the one row both views share: it carries the file's
+           identity and the switch that chooses the view. Everything below it
+           belongs to one view or the other. -->
       <div class="cx-namebar">
-        <input class="cx-name" data-bind="Cur.Name" data-on-input="NameChanged" placeholder="Request name" />
-        <button class="cx-file-tag mono" data-on-click="SetTab" data-arg="raw" title="Open the raw {{.FileName}} text">{{.FileName}}</button>
-        {{if .FileDirty}}<span class="cx-dirty">unsaved</span>{{end}}
-        <button class="cx-mini" data-on-click="DuplicateRequest">Duplicate</button>
-        <button class="cx-mini danger" data-on-click="DeleteRequest">Delete</button>
-      </div>
-
-      <div class="cx-urlbar">
-        <select class="cx-method" style="color:{{.MethodColor}}" data-bind="Cur.Method" data-on-change="MethodChanged">
-          {{range .MethodList}}<option value="{{.}}">{{.}}</option>{{end}}
-        </select>
-        <input class="cx-url mono" data-ref="url" data-bind="Cur.URL" data-on-input="Edited"
-               placeholder="https://api.example.com/path" spellcheck="false" />
-        <button class="cx-btn primary" data-on-click="Send" {{attr .SendAttrs}}>
-          {{if .Sending}}Sending…{{else}}Send{{end}}<span class="cx-kbd">⌘↵</span>
-        </button>
-      </div>
-
-      <div class="cx-tabs">
         {{if .TabIs "raw"}}
-          <span class="cx-tabs-off">Form fields are hidden while you edit the file directly</span>
+          <span class="cx-name mono cx-name-file">{{.FileName}}</span>
         {{else}}
-          <button class="cx-tab{{if .TabIs "body"}} on{{end}}" data-on-click="SetTab" data-arg="body">Body</button>
-          <button class="cx-tab{{if .TabIs "headers"}} on{{end}}" data-on-click="SetTab" data-arg="headers">Headers{{if .Cur.Headers}} · {{len .Cur.Headers}}{{end}}</button>
-          <button class="cx-tab{{if .TabIs "params"}} on{{end}}" data-on-click="SetTab" data-arg="params">Params{{if .Params}} · {{len .Params}}{{end}}</button>
-          <button class="cx-tab{{if .TabIs "vars"}} on{{end}}" data-on-click="SetTab" data-arg="vars">Variables{{if .CurFile.Vars}} · {{len .CurFile.Vars}}{{end}}</button>
+          <input class="cx-name" data-bind="Cur.Name" data-on-input="NameChanged" placeholder="Request name" />
+          <button class="cx-file-tag mono" data-on-click="SetTab" data-arg="raw" title="Open the raw {{.FileName}} text">{{.FileName}}</button>
         {{end}}
-        <span class="cx-grow"></span>
+        {{if .FileDirty}}<span class="cx-dirty">unsaved</span>{{end}}
+        {{if not (.TabIs "raw")}}
+          <button class="cx-mini" data-on-click="DuplicateRequest">Duplicate</button>
+          <button class="cx-mini danger" data-on-click="DeleteRequest">Delete</button>
+        {{end}}
         <div class="cx-view-seg">
           <span class="cx-view-l">Edit as</span>
           <button class="cx-vbtn{{if not (.TabIs "raw")}} on{{end}}" data-on-click="SetTab" data-arg="body">Form</button>
           <button class="cx-vbtn{{if .TabIs "raw"}} on{{end}}" data-on-click="SetTab" data-arg="raw"><span class="mono">{{.FileName}}</span></button>
         </div>
       </div>
+
+      {{if not (.TabIs "raw")}}
+        <div class="cx-urlbar">
+          <select class="cx-method" style="color:{{.MethodColor}}" data-bind="Cur.Method" data-on-change="MethodChanged">
+            {{range .MethodList}}<option value="{{.}}">{{.}}</option>{{end}}
+          </select>
+          <input class="cx-url mono" data-ref="url" data-bind="Cur.URL" data-on-input="Edited"
+                 placeholder="https://api.example.com/path" spellcheck="false" />
+          <button class="cx-btn primary" data-on-click="Send" {{attr .SendAttrs}}>
+            {{if .Sending}}Sending…{{else}}Send{{end}}<span class="cx-kbd">⌘↵</span>
+          </button>
+        </div>
+
+        <div class="cx-tabs">
+          <button class="cx-tab{{if .TabIs "body"}} on{{end}}" data-on-click="SetTab" data-arg="body">Body</button>
+          <button class="cx-tab{{if .TabIs "headers"}} on{{end}}" data-on-click="SetTab" data-arg="headers">Headers{{if .Cur.Headers}} · {{len .Cur.Headers}}{{end}}</button>
+          <button class="cx-tab{{if .TabIs "params"}} on{{end}}" data-on-click="SetTab" data-arg="params">Params{{if .Params}} · {{len .Params}}{{end}}</button>
+          <button class="cx-tab{{if .TabIs "vars"}} on{{end}}" data-on-click="SetTab" data-arg="vars">Variables{{if .CurFile.Vars}} · {{len .CurFile.Vars}}{{end}}</button>
+          <span class="cx-grow"></span>
+        </div>
+      {{end}}
 
       <div class="cx-pane hsl-scroll{{if .TabIs "raw"}} noscroll{{end}}">
         {{if .TabIs "body"}}
@@ -63,7 +76,11 @@
         {{else if .TabIs "raw"}}
           <div class="cx-raw-pane">
             <div class="cx-body-head">
-              <span class="cx-hint">Editing <span class="mono">{{.FileName}}</span> directly — changes sync to the list on the left as you type.</span>
+              <span class="cx-hint">Editing <span class="mono">{{.FileName}}</span> directly — <span class="mono">▶</span> in the gutter sends one request.</span>
+              <button class="cx-mini" data-on-click="RunCaret" {{attr .SendAttrs}}
+                      title="Send the request the caret sits in">
+                {{if .Sending}}Sending…{{else}}Send<span class="cx-kbd">⌘↵</span>{{end}}
+              </button>
               <span class="cx-raw-stat" data-ref="rawStat">{{.ReqCount}}</span>
             </div>
             <div class="cx-raw-wrap">

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall/js"
+	"unicode/utf16"
 
 	httpfile "httpStackLens/composer"
 	"httpStackLens/webui/wasm/dom"
@@ -30,6 +31,31 @@ var composerHTML string
 var composerCSS string
 
 const storeKey = "hsl-http-files"
+
+// tabKey remembers which of the two editors the composer was left in. It
+// belongs next to the title bar's density and theme: which view a developer
+// works in is a preference of their session, not a property of the file.
+const tabKey = "hsl-composer-tab"
+
+// The editor views. tabRaw edits the .http file as text; the others are the
+// panes of the form view, which edits the selected request.
+const (
+	tabRaw     = "raw"
+	tabBody    = "body"
+	tabHeaders = "headers"
+	tabParams  = "params"
+	tabVars    = "vars"
+)
+
+// knownTab guards what comes back from storage: an unknown value would leave
+// the editor on a branch the template has no case for.
+func knownTab(tab string) bool {
+	switch tab {
+	case tabRaw, tabBody, tabHeaders, tabParams, tabVars:
+		return true
+	}
+	return false
+}
 
 // Composer is the root component: layout, request editor, and the model the
 // two child panes read from.
@@ -58,6 +84,11 @@ type Composer struct {
 	// whole subtree, and without them clicking a play button on line 40 would
 	// throw the reader back to the top of the file.
 	rawTop, rawLeft int
+
+	// revealLine asks the next render to bring a line of the draft into view.
+	// Scrolling straight from the handler would be undone: the textarea it
+	// scrolled is replaced by the render that follows.
+	revealLine int
 
 	// panes holds the widths the dividers were dragged to, by pane name. A pane
 	// missing from the map has never been dragged and keeps the width the
@@ -97,8 +128,11 @@ func (c *Composer) Styles() string { return composerCSS }
 
 func (c *Composer) OnInit() {
 	// The file itself is the editor: the form is the alternate view, reachable
-	// from the "Edit as" switch.
-	c.Tab = "raw"
+	// from the "Edit as" switch. Whichever the window was last left in wins.
+	c.Tab = tabRaw
+	if tab := dom.LocalGet(tabKey); knownTab(tab) {
+		c.Tab = tab
+	}
 	c.Dirty = map[string]bool{}
 	c.loadPanes()
 	c.load()
@@ -108,6 +142,9 @@ func (c *Composer) OnInit() {
 	c.SetChild("response", c.resp)
 	if len(c.Files) > 0 && len(c.Files[0].Reqs) > 0 {
 		c.CurFile, c.Cur = c.Files[0], c.Files[0].Reqs[0]
+	}
+	if c.Tab == tabParams && c.Cur != nil {
+		_, c.Params = SplitURL(c.Cur.URL)
 	}
 	// The raw tab opens on the first render, and the textarea is filled from
 	// Raw: without this the editor would come up empty over a painted overlay.
@@ -120,7 +157,19 @@ func (c *Composer) MethodList() []string { return Methods }
 
 func (c *Composer) TabIs(id string) bool { return c.Tab == id }
 
-func (c *Composer) MethodColor() template.CSS { return methodColor(c.Cur.Method) }
+// Editing says whether the main column shows an editor rather than the empty
+// state. The raw view edits the file, so it only needs a file open; the form
+// view edits one request and needs that request selected.
+func (c *Composer) Editing() bool {
+	return c.CurFile != nil && (c.Tab == tabRaw || c.Cur != nil)
+}
+
+func (c *Composer) MethodColor() template.CSS {
+	if c.Cur == nil {
+		return methodColor("")
+	}
+	return methodColor(c.Cur.Method)
+}
 
 func (c *Composer) FileDirty() bool { return c.CurFile != nil && c.Dirty[c.CurFile.ID] }
 
@@ -147,7 +196,7 @@ func (c *Composer) SendAttrs() template.HTMLAttr {
 // editor is a legitimate draft, and taking it for "no draft" would leave the
 // overlay painting a file the textarea no longer holds.
 func (c *Composer) RawText() string {
-	if c.Tab == "raw" {
+	if c.Tab == tabRaw {
 		return c.Raw
 	}
 	if c.CurFile == nil {
@@ -243,19 +292,26 @@ func methodColor(m string) template.CSS {
 // SetTab switches editor tab, converting between the form and the raw text.
 func (c *Composer) SetTab(e dom.Event) {
 	next := e.Arg()
-	if c.Tab == "raw" && next != "raw" {
+	if !knownTab(next) {
+		return
+	}
+	if c.Tab == tabRaw && next != tabRaw {
 		c.applyRaw()
 	}
-	if next == "raw" {
+	if next == tabRaw {
+		if c.CurFile == nil {
+			return
+		}
 		c.Raw = ToHTTP(c.CurFile)
 		c.rawTop, c.rawLeft = 0, 0
 	} else {
 		c.Raw = ""
 	}
-	if next == "params" && c.Cur != nil {
+	if next == tabParams && c.Cur != nil {
 		_, c.Params = SplitURL(c.Cur.URL)
 	}
 	c.Tab = next
+	dom.LocalSet(tabKey, next)
 	c.StateHasChanged()
 }
 
@@ -321,6 +377,10 @@ func (c *Composer) OnAfterRender(bool) {
 	}
 	area.Set("scrollTop", c.rawTop)
 	area.Set("scrollLeft", c.rawLeft)
+	if line := c.revealLine; line > 0 {
+		c.revealLine = 0
+		revealRawLine(area, line)
+	}
 	c.syncRawScroll()
 	c.rawScroll = js.FuncOf(func(js.Value, []js.Value) any {
 		c.syncRawScroll()
@@ -339,6 +399,69 @@ func (c *Composer) releaseRawScroll() {
 		c.rawScroll.Release()
 		c.rawScroll = js.Func{}
 	}
+}
+
+// A textarea counts its selection in UTF-16 code units. Go indexes strings in
+// bytes, and the two part ways at the first non-ASCII character — an accented
+// word in a body, the em dash in a comment. The pair below converts, so that a
+// caret lands on the line it was asked for whatever the file holds.
+//
+// Neither goes through JS: syscall/js refuses Call and Get on a string, which
+// is what `textarea.value` hands back.
+
+// utf16LineOffset is the selection offset of the start of a 1-based line.
+func utf16LineOffset(text string, line int) int {
+	start := 0
+	for i := 1; i < line; i++ {
+		next := strings.IndexByte(text[start:], '\n')
+		if next < 0 {
+			start = len(text)
+			break
+		}
+		start += next + 1
+	}
+	return len(utf16.Encode([]rune(text[:start])))
+}
+
+// utf16LineAt is the 1-based line a selection offset falls on.
+func utf16LineAt(text string, offset int) int {
+	line, units := 1, 0
+	for _, r := range text {
+		if units >= offset {
+			break
+		}
+		if size := utf16.RuneLen(r); size > 0 {
+			units += size
+		} else {
+			units++
+		}
+		if r == '\n' {
+			line++
+		}
+	}
+	return line
+}
+
+// revealRawLine puts the caret at the start of a line of the draft and scrolls
+// it into view, a couple of lines below the top edge so the block's comment
+// header stays readable. The line height is read from the stylesheet rather
+// than assumed: the density switch in the title bar changes it.
+func revealRawLine(area js.Value, line int) {
+	offset := utf16LineOffset(area.Get("value").String(), line)
+	area.Call("focus")
+	area.Call("setSelectionRange", offset, offset)
+
+	height := js.Global().Call("getComputedStyle", area).Get("lineHeight").String()
+	pixels, err := strconv.ParseFloat(strings.TrimSuffix(height, "px"), 64)
+	if err != nil || pixels <= 0 { // "normal", left unresolved by the browser
+		return
+	}
+	const context = 2 // lines kept visible above the target
+	top := (float64(line-1) - context) * pixels
+	if top < 0 {
+		top = 0
+	}
+	area.Set("scrollTop", int(top))
 }
 
 // syncRawScroll pins the overlay and the line numbers to the textarea. The
@@ -500,16 +623,59 @@ func clamp(v, min, max int) int {
 // request added, duplicated or deleted. Without it the draft would still show
 // the file as it was, and the next keystroke would write that back.
 func (c *Composer) refreshRaw() {
-	if c.Tab == "raw" && c.CurFile != nil {
+	if c.Tab == tabRaw && c.CurFile != nil {
 		c.Raw = ToHTTP(c.CurFile)
 	}
 }
 
+// OnKey wires ⌘↵. In the form view there is one request to send; in the raw
+// view the shortcut has to pick, and it picks the block the caret sits in — the
+// same request the gutter's play button on that row would run.
 func (c *Composer) OnKey(e dom.Event) {
-	if e.Meta() && e.Key() == "Enter" {
-		e.PreventDefault()
-		c.Send()
+	if !e.Meta() || e.Key() != "Enter" {
+		return
 	}
+	e.PreventDefault()
+	if c.Tab == tabRaw {
+		c.RunCaret()
+		return
+	}
+	c.Send()
+}
+
+// RunCaret sends the request the caret is inside. A caret above the first block
+// — in the file's @variables — is not inside any request, and nothing happens.
+func (c *Composer) RunCaret() {
+	if c.Sending {
+		return
+	}
+	area := c.Ref("rawArea")
+	if !area.Truthy() {
+		return
+	}
+	line := utf16LineAt(area.Get("value").String(), area.Get("selectionStart").Int())
+
+	file := httpfile.ParseHttpFile(c.RawText())
+	index := -1
+	for i, request := range file.Requests {
+		if blockStartLine(request) <= line {
+			index = i
+		}
+	}
+	if index < 0 {
+		return
+	}
+	c.start(fromBlock(file, file.Requests[index]))
+}
+
+// blockStartLine is the first line a request block owns. The comment header
+// counts: a caret on the "### title" line is inside that request, which is
+// where it lands after clicking the request in the sidebar.
+func blockStartLine(request httpfile.HttpRequestFileItem) int {
+	if len(request.HeaderComments) > 0 {
+		return request.HeaderComments[0].Start.Line
+	}
+	return request.HttpRequestLine.HttpMethod.Start.Line
 }
 
 func (c *Composer) NewRequest() { c.newRequest(c.fileID()) }
@@ -620,7 +786,7 @@ func (c *Composer) Send() {
 	if c.Cur == nil || c.Sending {
 		return
 	}
-	if c.Tab == "raw" {
+	if c.Tab == tabRaw {
 		c.applyRaw()
 	}
 	c.start(fromForm(c.Cur, c.CurFile.Vars))
@@ -755,6 +921,29 @@ func (c *Composer) file(id string) *File {
 	return nil
 }
 
+func indexOfRequest(list []*Request, r *Request) int {
+	for i, x := range list {
+		if x == r {
+			return i
+		}
+	}
+	return -1
+}
+
+// lineOfRequest locates the nth block of a draft. The text is reparsed rather
+// than trusting the Line a request carries, because the model it belongs to may
+// have been built from an older version of that text.
+func lineOfRequest(raw string, index int) int {
+	if index < 0 {
+		return 0
+	}
+	parsed := ParseHTTP(raw, "")
+	if index >= len(parsed.Reqs) {
+		return 0
+	}
+	return parsed.Reqs[index].Line
+}
+
 func (c *Composer) fileID() string {
 	if c.CurFile == nil {
 		return ""
@@ -771,17 +960,21 @@ func (c *Composer) selectRequest(fileID, reqID string) {
 	c.CurFile = f
 	c.Cur = f.find(reqID)
 	c.Res = nil
-	if c.Tab == "raw" {
+	if c.Tab == tabRaw {
 		// The draft belongs to the file, not to the request: picking another
 		// request inside the same file must not rewrite what is being edited.
 		if previous != f {
 			c.Raw = ToHTTP(f)
 			c.rawTop, c.rawLeft = 0, 0
 		}
+		// Selecting has no form to fill here, so it navigates instead: the
+		// editor jumps to the block, which is the only thing picking a request
+		// can usefully mean while the file is the editor.
+		c.revealLine = lineOfRequest(c.Raw, indexOfRequest(f.Reqs, c.Cur))
 	} else {
 		c.Raw = ""
 	}
-	if c.Tab == "params" && c.Cur != nil {
+	if c.Tab == tabParams && c.Cur != nil {
 		_, c.Params = SplitURL(c.Cur.URL)
 	}
 	c.StateHasChanged()
@@ -803,7 +996,7 @@ func (c *Composer) openFile(id string) {
 		c.Cur = f.Reqs[0]
 	}
 	c.Res = nil
-	c.Tab = "raw"
+	c.Tab = tabRaw
 	c.Raw = ToHTTP(f)
 	c.rawTop, c.rawLeft = 0, 0
 	c.StateHasChanged()
