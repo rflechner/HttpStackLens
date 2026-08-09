@@ -25,7 +25,7 @@
                   data-on-click="Select" data-arg-file="{{$f.ID}}" data-arg-req="{{$r.ID}}"
                   title="{{$r.Method}} {{$r.URL}}">
             <span class="cx-m" style="color:{{$.MethodColor $r.Method}}">{{$r.Method}}</span>
-            <span class="cx-req-name">{{$r.Name}}</span>
+            <span class="cx-req-name">{{$r.Title}}</span>
           </button>
         {{end}}
         <button class="cx-add-req" data-on-click="NewRequest" data-arg="{{$f.ID}}">+ New request</button>

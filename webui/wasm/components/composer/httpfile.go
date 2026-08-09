@@ -20,12 +20,36 @@ type KV struct {
 
 // Request is a single `###` block inside a .http file.
 type Request struct {
-	ID      string
-	Name    string
+	ID   string
+	Name string
+	// Notes holds the comment lines written between the block's title and its
+	// request line, verbatim markers included. They are kept rather than parsed
+	// because they only have to survive the trip back to text: dropping them, or
+	// mistaking a second `###` for the start of another block, is what used to
+	// make the file grow a request on every switch between the form and the raw
+	// editor.
+	Notes   []string
 	Method  string
 	URL     string
 	Headers []KV
 	Body    string
+}
+
+// Title is the name to display for the request. A block opened by a bare `###`
+// separator has no title of its own; the placeholder lives here rather than in
+// Name so that serialising the file back does not invent one.
+func (r *Request) Title() string {
+	if strings.TrimSpace(r.Name) == "" {
+		return "Untitled"
+	}
+	return r.Name
+}
+
+// empty reports whether the block holds nothing but its title — a bare `###`
+// separator, or a request whose fields have all been cleared. Such a block is
+// written back as just that title line.
+func (r *Request) empty() bool {
+	return r.URL == "" && len(r.Headers) == 0 && strings.TrimSpace(r.Body) == ""
 }
 
 // File is one .http file: `@variables` at the top, then requests.
@@ -63,6 +87,10 @@ var (
 // ParseHTTP reads the .http / .rest format: `@name = value` variables, then one
 // `### title` block per request followed by its request line, headers, a blank
 // line and a body.
+//
+// A `###` line only opens a block when the current one already has its request
+// line. Consecutive separators are a multi-line comment header — the shape
+// http_file_sample.http opens on — not a run of empty requests.
 func ParseHTTP(text, name string) *File {
 	f := &File{ID: uid(), Name: name, Open: true}
 	var cur *Request
@@ -70,11 +98,15 @@ func ParseHTTP(text, name string) *File {
 
 	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		if strings.HasPrefix(line, "###") {
-			title := strings.TrimSpace(strings.TrimLeft(line, "# "))
-			if title == "" {
-				title = "Untitled"
+			if cur != nil && section == "reqline" {
+				cur.Notes = append(cur.Notes, line)
+				continue
 			}
-			cur = &Request{ID: uid(), Name: title, Method: "GET"}
+			cur = &Request{
+				ID:     uid(),
+				Name:   strings.TrimSpace(strings.TrimLeft(line, "# ")),
+				Method: "GET",
+			}
 			f.Reqs = append(f.Reqs, cur)
 			section = "reqline"
 			continue
@@ -88,13 +120,24 @@ func ParseHTTP(text, name string) *File {
 		}
 		switch section {
 		case "reqline":
-			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			if strings.TrimSpace(line) == "" {
 				continue
 			}
-			if m := reqLine.FindStringSubmatch(line); m != nil && isMethod(strings.ToUpper(m[1])) {
+			if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+				cur.Notes = append(cur.Notes, line)
+				continue
+			}
+			trimmed := strings.TrimSpace(line)
+			switch m := reqLine.FindStringSubmatch(line); {
+			case m != nil && isMethod(strings.ToUpper(m[1])):
 				cur.Method, cur.URL = strings.ToUpper(m[1]), m[2]
-			} else {
-				cur.URL = strings.TrimSpace(line)
+			case isMethod(strings.ToUpper(trimmed)):
+				// A verb with no target: the request line of a block still being
+				// written. Reading it as a target would turn "GET" into "GET GET"
+				// on the next round-trip.
+				cur.Method = strings.ToUpper(trimmed)
+			default:
+				cur.URL = trimmed
 			}
 			section = "headers"
 		case "headers":
@@ -120,6 +163,11 @@ func ParseHTTP(text, name string) *File {
 
 // ToHTTP serialises a file back to .http text. Disabled rows are dropped, so a
 // round-trip through the raw editor is lossy by design — same as the format.
+//
+// What it must never be is *additive*: ParseHTTP(ToHTTP(f)) has to give the same
+// text back, or every switch between the form and the raw editor grows the file.
+// That is why an empty block keeps to its title line and a request line with no
+// target carries no trailing space.
 func ToHTTP(f *File) string {
 	var b strings.Builder
 	for _, v := range f.Vars {
@@ -134,7 +182,13 @@ func ToHTTP(f *File) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("### " + r.Name + "\n" + r.Method + " " + r.URL + "\n")
+		b.WriteString(strings.TrimRight("### "+r.Name, " ") + "\n")
+		for _, note := range r.Notes {
+			b.WriteString(note + "\n")
+		}
+		if !r.empty() {
+			b.WriteString(strings.TrimRight(r.Method+" "+r.URL, " ") + "\n")
+		}
 		for _, h := range r.Headers {
 			if h.On && h.Key != "" {
 				b.WriteString(h.Key + ": " + h.Value + "\n")

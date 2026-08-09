@@ -520,7 +520,8 @@ func (c *Composer) DuplicateRequest() {
 	}
 	clone := *c.Cur
 	clone.ID = uid()
-	clone.Name = c.Cur.Name + " copy"
+	clone.Name = c.Cur.Title() + " copy"
+	clone.Notes = append([]string(nil), c.Cur.Notes...)
 	clone.Headers = append([]KV(nil), c.Cur.Headers...)
 	c.CurFile.Reqs = append(c.CurFile.Reqs, &clone)
 	c.refreshRaw()
