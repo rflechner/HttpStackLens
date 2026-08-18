@@ -237,6 +237,8 @@ func buildApp(projectRoot string) error {
 	output := filepath.Join(projectRoot, "build", "bin", "HttpStackLens")
 	if runtime.GOOS == "windows" {
 		output += ".exe"
+	} else if runtime.GOOS == "darwin" {
+		output += ".app"
 	}
 	if _, err := os.Stat(output); err != nil {
 		return fmt.Errorf("Wails reported success but output %q is unavailable: %w", output, err)
