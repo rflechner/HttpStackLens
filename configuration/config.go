@@ -12,6 +12,7 @@ type AppConfig struct {
 	WebUi        WebUiConfig        `json:"webui"`
 	Logging      LoggingConfig      `yaml:"logging"`
 	Storage      StorageConfig      `yaml:"storage"`
+	HttpFiles    HttpFilesConfig    `yaml:"http_files"`
 	DecryptHttps DecryptHttpsConfig `yaml:"decrypt_https"`
 	Updates      UpdatesConfig      `yaml:"updates"`
 }
@@ -39,6 +40,27 @@ func (c StorageConfig) GetResolvedFolder() string {
 	folder := strings.TrimSpace(c.Folder)
 	if folder == "" {
 		folder = defaultCaptureFolder
+	}
+	return helpers.ResolveRelativePath(folder)
+}
+
+// HttpFilesConfig points at the folder holding the composer's `.http` files.
+// They are ordinary text files on disk so that the same collection can be
+// edited from an IDE, committed to a repository, or shared with a colleague.
+type HttpFilesConfig struct {
+	Folder string `yaml:"folder"` // where .http files live (relative to the executable, or absolute)
+}
+
+// defaultHttpFilesFolder is used when HttpFiles.Folder is left empty.
+const defaultHttpFilesFolder = "http_files"
+
+// GetResolvedFolder returns the .http folder resolved relative to the
+// executable (an absolute path is used as-is), so the Web UI and anything else
+// reading the collection agree on one location whatever the working directory.
+func (c HttpFilesConfig) GetResolvedFolder() string {
+	folder := strings.TrimSpace(c.Folder)
+	if folder == "" {
+		folder = defaultHttpFilesFolder
 	}
 	return helpers.ResolveRelativePath(folder)
 }
@@ -256,10 +278,11 @@ type WebUiConfig struct {
 
 func DefaultAppConfig() AppConfig {
 	return AppConfig{
-		Proxy:   ProxyConfig{Port: 3128, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
-		WebUi:   WebUiConfig{Port: 9000, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
-		Logging: LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
-		Storage: StorageConfig{Enable: false, Folder: "captures"},
+		Proxy:     ProxyConfig{Port: 3128, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
+		WebUi:     WebUiConfig{Port: 9000, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
+		Logging:   LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
+		Storage:   StorageConfig{Enable: false, Folder: "captures"},
+		HttpFiles: HttpFilesConfig{Folder: defaultHttpFilesFolder},
 		DecryptHttps: DecryptHttpsConfig{
 			Enabled:     false,
 			CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},

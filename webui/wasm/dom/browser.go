@@ -12,17 +12,8 @@ func Clipboard(text string) {
 	}
 }
 
-// Download offers content to the user as a file.
-func Download(name, mime, content string) {
-	doc := js.Global().Get("document")
-	blob := js.Global().Get("Blob").New(
-		[]any{content},
-		map[string]any{"type": mime},
-	)
-	url := js.Global().Get("URL").Call("createObjectURL", blob)
-	a := doc.Call("createElement", "a")
-	a.Set("href", url)
-	a.Set("download", name)
-	a.Call("click")
-	js.Global().Get("URL").Call("revokeObjectURL", url)
+// Confirm asks the user a yes/no question. It blocks the page, so keep it for
+// what deserves it — deleting a file on disk, not a change that can be undone.
+func Confirm(message string) bool {
+	return js.Global().Call("confirm", message).Truthy()
 }

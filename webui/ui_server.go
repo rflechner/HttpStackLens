@@ -335,6 +335,9 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	// The composer sends through the backend, not from the browser: the request
 	// then follows the same pipeline as any proxied traffic.
 	mux.HandleFunc("/api/composer/send", composerSendHandler(deps.SendComposerRequest))
+	// The composer's collection lives on disk, in http_files.folder, so the same
+	// .http files can be opened from an IDE or committed alongside a project.
+	registerHttpFileRoutes(mux, newHttpFileStore(config.HttpFiles.GetResolvedFolder()))
 	mux.HandleFunc("/api/runtime/stats", runtimeStatsHandler)
 	mux.HandleFunc("/api/version", buildInfoHandler(deps.Build))
 	mux.HandleFunc("/api/update-check", updateCheckHandler(newUpdateChecker(deps.UpdateCheckEnabled, deps.Build.Version, deps.GitHubRepo)))

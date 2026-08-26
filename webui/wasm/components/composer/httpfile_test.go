@@ -154,3 +154,33 @@ func TestVariablesBodyAndSeveralRequestsAreStable(t *testing.T) {
 		"  \"body\": \"Reproduced on go1.23.2.\"\n"+
 		"}\n")
 }
+
+// FileName mirrors what the backend accepts, so that the name field can refuse
+// a bad name without a round trip. These are the cases the two have to agree on.
+func TestFileNameNormalises(t *testing.T) {
+	cases := map[string]string{
+		"github":        "github.http",
+		"  corp-auth  ": "corp-auth.http",
+		"orders.http":   "orders.http",
+		"orders.HTTP":   "orders.HTTP",
+		"notes.txt":     "notes.txt.http",
+	}
+	for input, want := range cases {
+		got, err := FileName(input)
+		if err != nil {
+			t.Errorf("FileName(%q): %v", input, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("FileName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestFileNameRefusesPathsAndReservedCharacters(t *testing.T) {
+	for _, input := range []string{"", "   ", "..", "../escape", "nested/file", `nested\file`, ".hidden", "pipe|name", "star*"} {
+		if got, err := FileName(input); err == nil {
+			t.Errorf("expected %q to be refused, got %q", input, got)
+		}
+	}
+}

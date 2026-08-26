@@ -56,3 +56,6 @@ webui/wailsjs/
 *.crt
 
 *.capture
+
+# The composer's .http collection, which may hold tokens
+/http_files/

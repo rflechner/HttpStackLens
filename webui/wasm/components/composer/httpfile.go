@@ -3,6 +3,8 @@
 package composer
 
 import (
+	"errors"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -258,4 +260,35 @@ func Interpolate(s string, vars []KV) string {
 		}
 		return m
 	})
+}
+
+// httpExt is the extension every file of the collection carries.
+const httpExt = ".http"
+
+// reservedNameChars are the characters a file name may not hold. The set is
+// Windows', applied everywhere so a collection stays portable between the
+// machines one developer works on. The backend refuses the same ones — this
+// copy is what lets the name field answer without a round trip.
+const reservedNameChars = "<>:\"|?*/\\"
+
+// FileName normalises what was typed into a .http file name, adding the
+// extension when it is missing, or says why it cannot be one.
+func FileName(input string) (string, error) {
+	name := strings.TrimSpace(input)
+	if name == "" {
+		return "", errors.New("give the file a name")
+	}
+	if !strings.EqualFold(path.Ext(name), httpExt) {
+		name += httpExt
+	}
+	if strings.ContainsAny(name, reservedNameChars) {
+		return "", errors.New("a name cannot hold " + reservedNameChars)
+	}
+	if strings.HasPrefix(name, ".") {
+		return "", errors.New("a name cannot start with a dot")
+	}
+	if len(name) > 128 {
+		return "", errors.New("that name is too long")
+	}
+	return name, nil
 }

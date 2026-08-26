@@ -168,6 +168,8 @@ it from `config.yaml` with `goccy/go-yaml`. Key flags:
 - `proxy.output_proxy_uri` — upstream proxy.
 - `proxy.require_windows_authentication` / `add_windows_authentication_to_output_proxy`.
 - `decrypt_https.cert_manager.ca_cert_file` / `ca_key_file` / `domain_certs_folder`.
+- `storage.folder` — where `.capture` files are written.
+- `http_files.folder` — where the composer keeps its `.http` files.
 
 `AppConfig.ToDto()` converts to a sanitized DTO (`webui/wasm/shared`) that is
 safe to expose to the browser over `/config` — a deliberate duplicate type so
@@ -177,6 +179,20 @@ Runtime APIs may expose UI-first settings flows for values that originate in
 `config.yaml`. When an API changes one of those values, it should also persist
 the updated configuration back to `config.yaml`, so the setting survives the next
 application start for users who prefer the Web UI over editing YAML manually.
+
+## The composer's `.http` files (`webui/http_files.go`)
+
+The composer edits ordinary `.http` files in the folder `http_files.folder`
+names, not a collection hidden in the browser. That is what makes the same
+requests openable from an IDE, committable next to a project, and shareable with
+a colleague — and it is why the sidebar can show the folder and open it in the
+file manager.
+
+`httpFileStore` is the whole of it: list, save, rename, delete, and reveal. Every
+path it hands the filesystem is rebuilt by `httpFileName` from a validated base
+name, so a name arriving over `/api/http-files/{name}` can never point outside
+the folder. The Web UI writes back on a short debounce after the last keystroke,
+so the file on disk is what an editor opened beside the composer would show.
 
 ## Web UI (`webui/`)
 

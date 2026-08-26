@@ -116,6 +116,10 @@
 .cx-vbtn:hover { color:var(--ink) }
 .cx-vbtn.on { color:var(--mint); border-color:var(--mint); background:color-mix(in srgb, var(--mint) 10%, transparent); font-weight:600 }
 .cx-dirty { font-size:10.5px; color:var(--warn); background:color-mix(in srgb, var(--warn) 14%, transparent); border-radius:5px; padding:2px 6px }
+/* The save indicator is written into rather than rendered, so that a write-back
+   landing mid-keystroke does not replace the textarea. Empty means saved. */
+.cx-dirty:empty { display:none }
+.cx-dirty.err { color:var(--danger); background:color-mix(in srgb, var(--danger) 14%, transparent) }
 .cx-urlbar { display:flex; gap:8px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); background:var(--bg2); flex-shrink:0 }
 .cx-method { height:32px; background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:0 8px; font-family:'JetBrains Mono'; font-size:12px; font-weight:600; cursor:pointer }
 .cx-url { flex:1; min-width:0; height:32px; background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:0 10px; color:var(--ink); font-size:12.5px; outline:none }
@@ -173,3 +177,21 @@
 .hsl-scroll::-webkit-scrollbar-thumb { background:var(--scroll-thumb); border-radius:5px }
 .hsl-scroll::-webkit-scrollbar-thumb:hover { background:var(--scroll-thumb-hover) }
 .hsl-scroll::-webkit-scrollbar-track { background:transparent }
+
+/* The name field of the sidebar: one row for the input and its two buttons,
+   with room underneath for what the backend or the validator refused. */
+.cx-namefield { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 10px 8px; padding:7px 8px; background:var(--bg2); border:1px solid var(--line); border-radius:8px }
+.cx-name-input { flex:1 1 100%; min-width:0; height:26px; padding:0 8px; background:var(--panel); border:1px solid var(--line); border-radius:6px; color:var(--ink); font-size:11.5px }
+.cx-name-input:focus { outline:none; border-color:var(--mint) }
+.cx-namefield .cx-mini { flex:1 1 auto }
+.cx-name-err { flex:1 1 100%; font-size:10.5px; line-height:1.45; color:var(--danger); word-break:break-word }
+
+/* The rename affordance stays out of the way until the row is pointed at, so
+   the list keeps reading as file names rather than as a row of controls. */
+.cx-rename { color:var(--faint); font-size:11px; opacity:0; flex-shrink:0; padding:0 2px; border-radius:4px }
+.cx-file-head:hover .cx-rename, .cx-file.active .cx-rename { opacity:1 }
+.cx-rename:hover { color:var(--mint); background:var(--bg3) }
+
+/* The folder path is the button that opens it in the file manager. */
+.cx-side-path { background:transparent; border:none; padding:2px 0; cursor:pointer; font-family:'JetBrains Mono' }
+.cx-side-path:hover { color:var(--mint); text-decoration:underline }

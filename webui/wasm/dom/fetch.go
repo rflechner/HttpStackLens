@@ -92,3 +92,9 @@ func LocalSet(key, value string) {
 	defer func() { recover() }()
 	js.Global().Get("localStorage").Call("setItem", key, value)
 }
+
+// LocalRemove drops a localStorage key.
+func LocalRemove(key string) {
+	defer func() { recover() }()
+	js.Global().Get("localStorage").Call("removeItem", key)
+}

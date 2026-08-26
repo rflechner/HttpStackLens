@@ -13,6 +13,11 @@
             <button class="cx-btn" data-on-click="NewRequest">+ New request</button>
             <button class="cx-btn" data-on-click="SetTab" data-arg="raw">Edit <span class="mono">{{.FileName}}</span></button>
           </div>
+        {{else if .Loading}}
+          <div class="cx-blank-t">Reading the .http folder…</div>
+        {{else if .LoadErr}}
+          <div class="cx-blank-t">The .http folder could not be read</div>
+          <div class="cx-blank-s mono">{{.LoadErr}}</div>
         {{else}}
           <div class="cx-blank-t">No .http file open</div>
           <div class="cx-blank-s">Open or create a file on the left to start composing.</div>
@@ -29,7 +34,7 @@
           <input class="cx-name" data-bind="Cur.Name" data-on-input="NameChanged" placeholder="Request name" />
           <button class="cx-file-tag mono" data-on-click="SetTab" data-arg="raw" title="Open the raw {{.FileName}} text">{{.FileName}}</button>
         {{end}}
-        {{if .FileDirty}}<span class="cx-dirty">unsaved</span>{{end}}
+        <span class="cx-dirty" data-ref="saveState">{{.SaveState}}</span>
         {{if not (.TabIs "raw")}}
           <button class="cx-mini" data-on-click="DuplicateRequest">Duplicate</button>
           <button class="cx-mini danger" data-on-click="DeleteRequest">Delete</button>

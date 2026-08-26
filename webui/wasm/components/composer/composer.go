@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall/js"
+	"time"
 	"unicode/utf16"
 
 	httpfile "httpStackLens/composer"
@@ -29,8 +30,6 @@ var composerHTML string
 
 //go:embed composer.css
 var composerCSS string
-
-const storeKey = "hsl-http-files"
 
 // tabKey remembers which of the two editors the composer was left in. It
 // belongs next to the title bar's density and theme: which view a developer
@@ -71,6 +70,23 @@ type Composer struct {
 	Sending bool
 	Res     *Result
 	Dirty   map[string]bool
+
+	// Folder is where the .http files live, as the backend resolved it from
+	// config.yaml. It is what the sidebar shows and what the file manager is
+	// asked to open.
+	Folder string
+
+	// Loading covers the first read of the collection; LoadErr takes its place
+	// when that read failed, and SaveErr reports a file that could not be
+	// written back.
+	Loading bool
+	LoadErr string
+	SaveErr string
+
+	// saveGen debounces the write-back, one generation per file: every edit
+	// bumps it, and a timer that fires holding a stale generation has been
+	// overtaken by a later keystroke.
+	saveGen map[string]int
 
 	files *FilesPane
 	resp  *ResponsePane
@@ -134,21 +150,18 @@ func (c *Composer) OnInit() {
 		c.Tab = tab
 	}
 	c.Dirty = map[string]bool{}
+	c.saveGen = map[string]int{}
+	c.Loading = true
 	c.loadPanes()
-	c.load()
 	c.files = &FilesPane{owner: c}
 	c.resp = &ResponsePane{owner: c}
 	c.SetChild("files", c.files)
 	c.SetChild("response", c.resp)
-	if len(c.Files) > 0 && len(c.Files[0].Reqs) > 0 {
-		c.CurFile, c.Cur = c.Files[0], c.Files[0].Reqs[0]
-	}
-	if c.Tab == tabParams && c.Cur != nil {
-		_, c.Params = SplitURL(c.Cur.URL)
-	}
-	// The raw tab opens on the first render, and the textarea is filled from
-	// Raw: without this the editor would come up empty over a painted overlay.
-	c.refreshRaw()
+	// The collection is on disk, behind the backend, so the first render shows
+	// the loading state and the files land on the one after it. The fetch has
+	// to run in a goroutine: it blocks, and OnInit runs on the JS thread the
+	// callbacks it waits for are delivered on.
+	go c.loadFiles()
 }
 
 // ── template accessors ─────────────────────────────────────────────────────
@@ -171,7 +184,30 @@ func (c *Composer) MethodColor() template.CSS {
 	return methodColor(c.Cur.Method)
 }
 
-func (c *Composer) FileDirty() bool { return c.CurFile != nil && c.Dirty[c.CurFile.ID] }
+// SaveState is the one word the toolbar says about the folder: nothing while
+// the file on disk is up to date, "unsaved" between a keystroke and the
+// write-back, and the reason when that write failed.
+func (c *Composer) SaveState() string {
+	if c.SaveErr != "" {
+		return c.SaveErr
+	}
+	if c.CurFile != nil && c.Dirty[c.CurFile.ID] {
+		return "unsaved"
+	}
+	return ""
+}
+
+// refreshSaveState pokes the indicator without a render. A write-back finishes
+// while the developer is still typing, and re-rendering the editor there would
+// replace the textarea under the caret.
+func (c *Composer) refreshSaveState() {
+	node := c.Ref("saveState")
+	if !node.Truthy() {
+		return
+	}
+	node.Set("textContent", c.SaveState())
+	node.Get("classList").Call("toggle", "err", c.SaveErr != "")
+}
 
 func (c *Composer) FileName() string {
 	if c.CurFile == nil {
@@ -1043,34 +1079,128 @@ func (c *Composer) applyRaw() {
 	c.touch()
 }
 
+// touch marks the current file as edited and schedules the write-back. Every
+// edit reaches the folder on its own: the composer is a scratchpad, and asking
+// a developer to remember a save button between two sends is the kind of step
+// that loses work.
 func (c *Composer) touch() {
-	if c.CurFile != nil {
-		c.Dirty[c.CurFile.ID] = true
+	if c.CurFile == nil {
+		return
 	}
-	c.save()
+	c.Dirty[c.CurFile.ID] = true
+	c.refreshSaveState()
+	c.scheduleSave(c.CurFile)
 }
 
-func (c *Composer) save() {
-	if b, err := json.Marshal(c.Files); err == nil {
-		dom.LocalSet(storeKey, string(b))
-	}
+// autosaveDelay is how long the write-back waits after the last keystroke. Long
+// enough that typing a URL is one write rather than thirty, short enough that
+// the file on disk is what an IDE opened next to the composer would show.
+const autosaveDelay = 600 * time.Millisecond
+
+func (c *Composer) scheduleSave(f *File) {
+	c.saveGen[f.ID]++
+	generation := c.saveGen[f.ID]
+	time.AfterFunc(autosaveDelay, func() {
+		if c.saveGen[f.ID] != generation {
+			return
+		}
+		c.persist(f)
+	})
 }
 
-func (c *Composer) load() {
-	if raw := dom.LocalGet(storeKey); raw != "" {
-		var files []*File
-		if err := json.Unmarshal([]byte(raw), &files); err == nil && len(files) > 0 {
-			c.Files = files
-			for _, f := range files {
-				f.ID = uid()
-				for _, r := range f.Reqs {
-					r.ID = uid()
-				}
-			}
+// saveNow writes a file back without waiting for the debounce — what the Save
+// button does, and what closing the draft on a file needs.
+func (c *Composer) saveNow(f *File) {
+	if f == nil {
+		return
+	}
+	c.saveGen[f.ID]++
+	go c.persist(f)
+}
+
+// persist writes one file to its folder. Only the sidebar and the save
+// indicator are refreshed on the way out: a full re-render would replace the
+// textarea the developer is still typing into, caret and all.
+func (c *Composer) persist(f *File) {
+	content := ToHTTP(f)
+	if c.CurFile == f && c.Tab == tabRaw {
+		content = c.Raw
+	}
+	if err := putHttpFile(f.Name, content); err != nil {
+		c.SaveErr = "could not save " + f.Name + ": " + err.Error()
+	} else {
+		c.SaveErr = ""
+		delete(c.Dirty, f.ID)
+	}
+	c.refreshSaveState()
+	c.files.refresh()
+}
+
+// forget drops a file from the model after it has left the folder, and moves
+// the editor onto whatever is left.
+func (c *Composer) forget(f *File) {
+	kept := make([]*File, 0, len(c.Files))
+	for _, x := range c.Files {
+		if x != f {
+			kept = append(kept, x)
+		}
+	}
+	c.Files = kept
+	delete(c.Dirty, f.ID)
+	delete(c.saveGen, f.ID)
+	if c.CurFile == f {
+		c.CurFile, c.Cur, c.Res = nil, nil, nil
+		c.Raw = ""
+		if len(kept) > 0 {
+			c.openFile(kept[0].ID)
 			return
 		}
 	}
-	c.Files = seed()
+	c.StateHasChanged()
+	c.files.StateHasChanged()
+}
+
+// loadFiles reads the collection the backend keeps on disk. A collection still
+// held in the browser from an earlier version is carried over on the way, so
+// that upgrading does not look like losing every request.
+func (c *Composer) loadFiles() {
+	dto, err := fetchHttpFiles()
+	if err != nil {
+		c.Loading = false
+		c.LoadErr = err.Error()
+		c.StateHasChanged()
+		c.files.StateHasChanged()
+		return
+	}
+	if len(dto.Files) == 0 {
+		dto.Files = migrateLegacyFiles()
+	}
+
+	files := make([]*File, 0, len(dto.Files))
+	for _, file := range dto.Files {
+		files = append(files, ParseHTTP(file.Content, file.Name))
+	}
+
+	c.Loading = false
+	c.LoadErr = ""
+	c.Folder = dto.Folder
+	c.Files = files
+	c.CurFile, c.Cur = nil, nil
+	if len(files) > 0 {
+		files[0].Open = true
+		c.CurFile = files[0]
+		if len(files[0].Reqs) > 0 {
+			c.Cur = files[0].Reqs[0]
+		}
+	}
+	if c.Tab == tabParams && c.Cur != nil {
+		_, c.Params = SplitURL(c.Cur.URL)
+	}
+	// The raw tab opens on the first render, and the textarea is filled from
+	// Raw: without this the editor would come up empty over a painted overlay.
+	c.refreshRaw()
+	c.StateHasChanged()
+	c.files.StateHasChanged()
 }
 
 func removeAt(list []KV, i int) []KV {
@@ -1083,42 +1213,5 @@ func removeAt(list []KV, i int) []KV {
 func toggleAt(list []KV, i int) {
 	if i >= 0 && i < len(list) {
 		list[i].On = !list[i].On
-	}
-}
-
-func seed() []*File {
-	return []*File{
-		ParseHTTP(`@baseUrl = https://api.github.com
-@token = ghp_exampletoken
-
-### Current user
-GET {{baseUrl}}/user
-Authorization: Bearer {{token}}
-Accept: application/vnd.github+json
-
-### Open pull requests
-GET {{baseUrl}}/repos/golang/go/pulls?state=open&per_page=5
-Accept: application/vnd.github+json
-
-### Create issue comment
-POST {{baseUrl}}/repos/golang/go/issues/68412/comments
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "body": "Reproduced on go1.23.2 — trace attached."
-}
-`, "github.http"),
-		ParseHTTP(`@auth = https://auth.corp.local
-
-### Client credentials token
-POST {{auth}}/oauth2/token
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=client_credentials&client_id=hsl-cli&client_secret=s3cret
-
-### JWKS
-GET {{auth}}/.well-known/jwks.json
-`, "corp-auth.http"),
 	}
 }

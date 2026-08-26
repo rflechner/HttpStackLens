@@ -477,6 +477,116 @@ paths:
             text/plain:
               schema:
                 type: string
+  /api/http-files:
+    get:
+      tags: [Composer]
+      summary: List the composer's .http files
+      description: |
+        Reads every `.http` file of the folder configured as `http_files.folder`
+        in `config.yaml`, contents included: the collection is small and the
+        composer lists the requests inside each file, so one round trip is
+        enough. A folder that does not exist yet answers with an empty list.
+      responses:
+        "200":
+          description: The folder and the files it holds, sorted by name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpFiles"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/http-files/open-folder:
+    post:
+      tags: [Composer]
+      summary: Show the .http folder in the file manager
+      description: |
+        Opens the folder in the desktop file manager of the machine running
+        HttpStackLens — Explorer, Finder, or the XDG default. The folder is
+        created when it does not exist yet. This is a local development tool:
+        the Web UI is served from the same machine the folder is on.
+      responses:
+        "204":
+          description: The file manager was asked to open the folder
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/http-files/{name}:
+    put:
+      tags: [Composer]
+      summary: Write a .http file
+      description: |
+        Creates or overwrites the file. The body is the file itself as plain
+        text, so `curl -T` writes one without an envelope. A name without the
+        `.http` extension is given it.
+      parameters:
+        - $ref: "#/components/parameters/HttpFileName"
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: The file as it now stands on disk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          description: The file is larger than the 1 MiB limit
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      tags: [Composer]
+      summary: Delete a .http file
+      description: |
+        Removes the file from the folder. Deleting a file that is already gone
+        succeeds: the outcome the caller asked for is the one they get.
+      parameters:
+        - $ref: "#/components/parameters/HttpFileName"
+      responses:
+        "204":
+          description: The file is no longer in the folder
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/http-files/{name}/rename:
+    post:
+      tags: [Composer]
+      summary: Rename a .http file
+      description: |
+        Moves the file inside the folder. An existing target is refused rather
+        than overwritten.
+      parameters:
+        - $ref: "#/components/parameters/HttpFileName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HttpFileRename"
+      responses:
+        "200":
+          description: The file under its new name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
   /api/proxy/start:
     post:
       tags: [Runtime]
@@ -675,6 +785,16 @@ components:
         type: string
         pattern: "^[^/]+\\.capture$"
       description: Capture file name from `/api/captures`.
+    HttpFileName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[^/\\<>:"|?*]+$'
+      description: |
+        Base name of the file inside `http_files.folder`. It carries no path
+        separator, and the `.http` extension is added when it is missing.
   responses:
     BadRequest:
       description: Invalid request
@@ -723,6 +843,41 @@ components:
           schema:
             type: string
   schemas:
+    HttpFile:
+      type: object
+      required: [name, content, modified_at]
+      properties:
+        name:
+          type: string
+          description: File name inside the folder.
+          examples: ["github.http"]
+        content:
+          type: string
+          description: The file as text.
+        modified_at:
+          type: string
+          format: date-time
+    HttpFiles:
+      type: object
+      required: [folder, files]
+      properties:
+        folder:
+          type: string
+          description: |
+            Absolute path the files were read from, resolved from
+            `http_files.folder` in `config.yaml`.
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/HttpFile"
+    HttpFileRename:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: The new file name.
+          examples: ["github-api.http"]
     Header:
       type: object
       required: [name, value]

@@ -372,3 +372,25 @@ type ComposerResponseDto struct {
 	Upstream string `json:"upstream"`
 	Error    string `json:"error"`
 }
+
+// HttpFileDto is one `.http` file of the composer's collection, content
+// included: the collection is small and the composer needs every file open at
+// once to list the requests inside them, so a second round trip per file would
+// buy nothing.
+type HttpFileDto struct {
+	Name       string `json:"name"`
+	Content    string `json:"content"`
+	ModifiedAt string `json:"modified_at"`
+}
+
+// HttpFilesDto is the answer of GET /api/http-files: the folder the files were
+// read from, so the Web UI can show where they live, and their contents.
+type HttpFilesDto struct {
+	Folder string        `json:"folder"`
+	Files  []HttpFileDto `json:"files"`
+}
+
+// HttpFileRenameDto carries the new name of a `.http` file.
+type HttpFileRenameDto struct {
+	Name string `json:"name"`
+}
