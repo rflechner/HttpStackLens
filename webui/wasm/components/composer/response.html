@@ -40,6 +40,8 @@
     <div class="cx-tabs sub">
       <button class="cx-tab{{if .TabIs "body"}} on{{end}}" data-on-click="SetTab" data-arg="body">Body</button>
       <button class="cx-tab{{if .TabIs "headers"}} on{{end}}" data-on-click="SetTab" data-arg="headers">Headers · {{len $r.Headers}}</button>
+      <button class="cx-tab{{if .TabIs "raw"}} on{{end}}" data-on-click="SetTab" data-arg="raw"
+              title="Status line, headers and body as one message">Raw protocol</button>
       <span class="cx-grow"></span>
       {{if .TabIs "body"}}
         <button class="cx-seg{{if .ModeIs "pretty"}} on{{end}}" data-on-click="SetMode" data-arg="pretty">pretty</button>
@@ -53,6 +55,8 @@
             <div class="cx-hdr"><span class="cx-hk mono">{{index . 0}}</span><span class="cx-hv mono">{{index . 1}}</span></div>
           {{end}}
         </div>
+      {{else if .TabIs "raw"}}
+        <pre class="cx-pre mono">{{.RawProtocol}}</pre>
       {{else}}
         <pre class="cx-pre mono">{{.Text}}</pre>
       {{end}}

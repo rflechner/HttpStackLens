@@ -907,15 +907,24 @@ components:
           description: Sent as-is; empty means no body.
     ComposerResponse:
       type: object
-      required: [status, status_text, headers, body, duration_ms, truncated, upstream, error]
+      required: [status, status_text, proto, headers, body, duration_ms, truncated, upstream, error]
       properties:
         status:
           type: integer
           description: Zero when the request never reached a response.
         status_text:
           type: string
+        proto:
+          type: string
+          description: |
+            Version the response came back on. Empty when the request never
+            reached a response.
+          examples: ["HTTP/1.1", "HTTP/2.0"]
         headers:
           type: array
+          description: |
+            Sorted by name, then value. The order the server sent them in is not
+            preserved.
           items:
             $ref: "#/components/schemas/Header"
         body:

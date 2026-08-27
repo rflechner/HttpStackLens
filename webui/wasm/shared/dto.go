@@ -359,10 +359,13 @@ type ComposerRequestDto struct {
 // reported with Error set and a zero Status — it is a result to display, not an
 // API failure.
 type ComposerResponseDto struct {
-	Status     int         `json:"status"`
-	StatusText string      `json:"status_text"`
-	Headers    []HeaderDto `json:"headers"`
-	Body       string      `json:"body"`
+	Status     int    `json:"status"`
+	StatusText string `json:"status_text"`
+	// Proto is the version the response came back on ("HTTP/1.1", "HTTP/2.0"),
+	// which is what the raw view needs to write a status line.
+	Proto   string      `json:"proto"`
+	Headers []HeaderDto `json:"headers"`
+	Body    string      `json:"body"`
 	// DurationMs covers the whole exchange, pipeline included.
 	DurationMs int `json:"duration_ms"`
 	// Truncated reports that the body was cut at the size limit.

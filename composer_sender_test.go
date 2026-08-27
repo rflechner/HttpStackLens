@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -221,4 +222,66 @@ func hasHeader(headers []shared.HeaderDto, name, value string) bool {
 		}
 	}
 	return false
+}
+
+// The raw view writes a status line, so the version has to survive the trip;
+// and it lists the headers in the order the DTO carries them, which is only
+// stable because they are sorted here.
+func TestComposerSenderReportsProtoAndSortedHeaders(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Zulu", "last")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Add("Set-Cookie", "theme=dark")
+		w.Header().Add("Set-Cookie", "session=abc")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "done")
+	}))
+	defer target.Close()
+
+	sender := newTestSender(&middlewares.TunnelServer{}, &recordingEventLogger{})
+
+	response, err := sender.Send(context.Background(), shared.ComposerRequestDto{
+		Method: "GET",
+		Url:    target.URL + "/",
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if response.Proto != "HTTP/1.1" {
+		t.Errorf("Expected proto HTTP/1.1, got %q", response.Proto)
+	}
+
+	names := make([]string, 0, len(response.Headers))
+	for _, header := range response.Headers {
+		names = append(names, header.Name+": "+header.Value)
+	}
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("Expected the headers sorted by name then value, got %v", names)
+	}
+	if !hasHeader(response.Headers, "Set-Cookie", "session=abc") ||
+		!hasHeader(response.Headers, "Set-Cookie", "theme=dark") {
+		t.Errorf("Expected both Set-Cookie values, got %v", response.Headers)
+	}
+}
+
+// An unreachable host is answered by the pipeline itself, so the composer still
+// gets a real response line — and the raw view a status line to print.
+func TestComposerSenderReportsProtoOnAPipelineFailure(t *testing.T) {
+	// Nothing listens on this port, so the tunnel dial fails and the pipeline
+	// answers 502 in its place.
+	sender := newTestSender(&middlewares.TunnelServer{}, &recordingEventLogger{})
+
+	response, err := sender.Send(context.Background(), shared.ComposerRequestDto{
+		Method: "GET",
+		Url:    "http://127.0.0.1:1/unreachable",
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if response.Status == 0 {
+		t.Skip("the pipeline reported a transport error rather than a response")
+	}
+	if response.Proto == "" {
+		t.Errorf("Expected a proto alongside status %d, got none", response.Status)
+	}
 }

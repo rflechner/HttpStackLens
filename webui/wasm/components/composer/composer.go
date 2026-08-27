@@ -895,6 +895,7 @@ func exchange(req outgoing) *Result {
 	out := &Result{
 		Status:     dto.Status,
 		StatusText: dto.StatusText,
+		Proto:      dto.Proto,
 		Body:       dto.Body,
 		MS:         dto.DurationMs,
 		Truncated:  dto.Truncated,

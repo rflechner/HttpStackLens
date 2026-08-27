@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -94,6 +95,7 @@ func (s *composerSender) Send(ctx context.Context, dto shared.ComposerRequestDto
 			DurationMs: int(time.Since(started).Milliseconds()),
 			Status:     response.StatusCode,
 			StatusText: statusText(response),
+			Proto:      response.Proto,
 			Headers:    headerDtos(response.Header),
 			Upstream:   s.upstream(),
 			Error:      fmt.Sprintf("could not read the response body: %v", err),
@@ -103,6 +105,7 @@ func (s *composerSender) Send(ctx context.Context, dto shared.ComposerRequestDto
 	return shared.ComposerResponseDto{
 		Status:     response.StatusCode,
 		StatusText: statusText(response),
+		Proto:      response.Proto,
 		Headers:    headerDtos(response.Header),
 		Body:       string(body),
 		DurationMs: int(time.Since(started).Milliseconds()),
@@ -222,6 +225,10 @@ func statusText(response *http.Response) string {
 	return response.Status
 }
 
+// headerDtos flattens the response headers. http.Header is a map, so the order
+// the server sent them in is already gone by the time we get here; sorting is
+// what is left to make two sends of the same request read the same, in the
+// headers list and in the raw view alike.
 func headerDtos(header http.Header) []shared.HeaderDto {
 	dtos := make([]shared.HeaderDto, 0, len(header))
 	for name, values := range header {
@@ -229,6 +236,12 @@ func headerDtos(header http.Header) []shared.HeaderDto {
 			dtos = append(dtos, shared.HeaderDto{Name: name, Value: value})
 		}
 	}
+	sort.Slice(dtos, func(i, j int) bool {
+		if dtos[i].Name != dtos[j].Name {
+			return dtos[i].Name < dtos[j].Name
+		}
+		return dtos[i].Value < dtos[j].Value
+	})
 	return dtos
 }
 

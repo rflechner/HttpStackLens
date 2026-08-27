@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"strconv"
+	"strings"
 
 	"httpStackLens/webui/wasm/dom"
 )
@@ -19,9 +21,11 @@ var responseHTML string
 type Result struct {
 	Status     int
 	StatusText string
-	Headers    [][2]string
-	Body       string
-	MS         int
+	// Proto is the version the response came back on, as the backend read it.
+	Proto   string
+	Headers [][2]string
+	Body    string
+	MS      int
 	// Truncated reports that the body was cut at the display limit.
 	Truncated bool
 	// Upstream is the outbound proxy the request went through, empty when the
@@ -36,8 +40,8 @@ type ResponsePane struct {
 	dom.Base
 	owner *Composer
 
-	Tab  string // body | headers
-	Mode string // pretty | raw
+	Tab  string // body | headers | raw
+	Mode string // pretty | raw, on the body tab only
 }
 
 func (p *ResponsePane) Template() string { return responseHTML }
@@ -95,6 +99,55 @@ func (p *ResponsePane) Text() string {
 	return out.String()
 }
 
+// defaultProto is the status line's version when the backend reported none —
+// an old build, or the error path, which never read a response line.
+const defaultProto = "HTTP/1.1"
+
+// RawProtocol renders the response the way it reads on the wire: status line,
+// headers, a blank line, then the body. It is the view to reach for when the
+// question is about the exchange rather than the payload — a redirect chain, a
+// cache header, a content type that does not match the body — and it is what
+// pastes into a bug report as one piece.
+//
+// It is a rendering, not a capture. The header order the server used is already
+// lost by the time the backend flattens Go's header map, so they come out
+// sorted, and a body cut at the size limit is shown cut — the "truncated" badge
+// above says so.
+func (p *ResponsePane) RawProtocol() string {
+	r := p.owner.Res
+	if r == nil {
+		return ""
+	}
+
+	proto := r.Proto
+	if proto == "" {
+		proto = defaultProto
+	}
+	var out strings.Builder
+	out.WriteString(proto)
+	out.WriteString(" ")
+	out.WriteString(strconv.Itoa(r.Status))
+	if r.StatusText != "" {
+		out.WriteString(" ")
+		out.WriteString(r.StatusText)
+	}
+	out.WriteString("\n")
+
+	for _, header := range r.Headers {
+		out.WriteString(header[0])
+		out.WriteString(": ")
+		out.WriteString(header[1])
+		out.WriteString("\n")
+	}
+
+	// The blank line belongs to the message, so it is written whether or not a
+	// body follows: a bodiless response ends with it, and that is the shape a
+	// reader is checking for.
+	out.WriteString("\n")
+	out.WriteString(r.Body)
+	return out.String()
+}
+
 // ── handlers ───────────────────────────────────────────────────────────────
 
 func (p *ResponsePane) SetTab(e dom.Event) {
@@ -107,8 +160,15 @@ func (p *ResponsePane) SetMode(e dom.Event) {
 	p.StateHasChanged()
 }
 
+// Copy takes what is on screen: the whole message from the raw tab, the body as
+// displayed from the other two. Copying a pretty-printed body while the raw
+// view is open would be the wrong text every time.
 func (p *ResponsePane) Copy() {
 	if p.owner.Res == nil {
+		return
+	}
+	if p.Tab == "raw" {
+		dom.Clipboard(p.RawProtocol())
 		return
 	}
 	dom.Clipboard(p.Text())
