@@ -184,3 +184,49 @@ func TestFileNameRefusesPathsAndReservedCharacters(t *testing.T) {
 		}
 	}
 }
+
+// Unticking a header must not lose it. The row is written back behind a '#'
+// instead of disappearing, so the value is still there when it is ticked again
+// — and reading that line gives the row back, still unticked.
+func TestUntickedHeaderIsCommentedNotDropped(t *testing.T) {
+	const source = "### Current user\n" +
+		"GET https://api.github.com/user\n" +
+		"Accept: application/json\n" +
+		"Authorization: Bearer ghp_exampletoken\n"
+
+	file := ParseHTTP(source, "requests.http")
+	file.Reqs[0].Headers[1].On = false
+
+	got := ToHTTP(file)
+	want := "### Current user\n" +
+		"GET https://api.github.com/user\n" +
+		"Accept: application/json\n" +
+		"# Authorization: Bearer ghp_exampletoken\n"
+	if got != want {
+		t.Fatalf("ToHTTP =\n%s\nwant\n%s", got, want)
+	}
+
+	back := ParseHTTP(got, "requests.http").Reqs[0]
+	if len(back.Headers) != 2 {
+		t.Fatalf("want both headers read back, got %d", len(back.Headers))
+	}
+	if h := back.Headers[0]; h.Key != "Accept" || !h.On {
+		t.Errorf("first header = %+v, want Accept left ticked and in place", h)
+	}
+	if h := back.Headers[1]; h.Key != "Authorization" || h.Value != "Bearer ghp_exampletoken" || h.On {
+		t.Errorf("second header = %+v, want it unticked with its value kept", h)
+	}
+	assertStable(t, want)
+}
+
+// A file already holding a commented-out header opens with that row unticked
+// rather than showing nothing, and switching to the raw editor and back leaves
+// the comment where the author put it.
+func TestCommentedHeaderOpensUnticked(t *testing.T) {
+	assertStable(t, "### Create issue comment\n"+
+		"POST https://api.github.com/repos/golang/go/issues/1/comments\n"+
+		"# X-Debug: on\n"+
+		"Content-Type: application/json\n"+
+		"\n"+
+		"{}\n")
+}
