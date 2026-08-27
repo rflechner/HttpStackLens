@@ -27,6 +27,9 @@ storage:
   enable: true
   folder: "captures"
 
+http_files:
+  folder: "http_files" # where the composer stores its .http files (relative to the executable, or absolute)
+
 updates:
   check_enabled: false # when true, check GitHub for a newer release on startup (outbound request)
 

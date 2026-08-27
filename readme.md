@@ -1,6 +1,6 @@
 # HttpStackLens
 
-![Logo](images/logo-with-text.png)
+![HttpStackLens](images/splash-screen.png)
 
 [![Release](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml/badge.svg)](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/rflechner/HttpStackLens)](https://github.com/rflechner/HttpStackLens/releases)
@@ -21,7 +21,7 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 - Handles HTTPS tunnels via the `CONNECT` method
 - Can decrypt HTTPS traffic with opt-in local MITM when `decrypt_https.enabled` is enabled
 - Forwards requests and responses bidirectionally
-- Web UI (WASM-based) to inspect live HTTP traffic
+- Wails desktop app with a Go/WASM traffic inspector
 
 ## What it doesn't do (yet)
 
@@ -50,7 +50,7 @@ Additional targets:
 
 ```sh
 go run .\build-tools\main.go webui        # Web UI only (WASM + CSS)
-go run .\build-tools\main.go app          # Native binary only
+go run .\build-tools\main.go app          # Standalone Wails app → build/bin
 go run .\build-tools\main.go --help       # Usage
 ```
 
@@ -60,10 +60,52 @@ Or via npm scripts from `webui/`:
 |---|---|
 | `npm run build` | Web UI + native binary |
 | `npm run build:webui` | WASM + Tailwind CSS only |
-| `npm run build:app` | Native binary only |
+| `npm run build:app` | Standalone Wails app in `build/bin/` |
 | `npm run dev:css` | Tailwind CSS in watch mode (dev) |
 
-The build tool auto-detects the current platform and produces `httpStackLens.exe` on Windows or `httpStackLens` on macOS/Linux.
+The default target rebuilds the Web UI and creates a packaged desktop
+application with the native window, icon and platform metadata:
+
+```sh
+go run .\build-tools\main.go
+```
+
+The standalone application is written to `build/bin/`. On Windows the WebView2
+bootstrapper is embedded in the executable, so there are no frontend or runtime
+sidecar files to distribute. The first build can download the pinned Wails CLI
+when it is not already installed. Running
+`go run -tags=dev .` remains useful during Go development and also opens the
+Wails desktop window.
+
+### JetBrains GoLand
+
+Wails requires build tags; a standard GoLand configuration without tags starts
+an error window instead of the application.
+
+Create a **Go Build** configuration from **Run → Edit Configurations…** with:
+
+| Field | Value |
+|---|---|
+| Name | `HttpStackLens` |
+| Run kind | `Package` |
+| Package path | `httpStackLens` |
+| Working directory | the project root, for example `C:\dev\HttpStackLens` |
+| Go tool arguments (Run) | `-tags=desktop,production` |
+| Go tool arguments (Debug) | `-tags=dev` |
+| Program arguments | empty, unless a proxy option is needed |
+
+Use the `dev` tags when launching with the debugger. In this mode, static Web
+UI files are read from `webui/wwwroot`, so HTML and JavaScript edits are visible
+after a reload. Rebuild the generated WASM and CSS after changing the Go/WASM
+frontend or Tailwind sources:
+
+```powershell
+go run .\build-tools\main.go webui
+```
+
+Then stop the previous application instance completely and launch it again from
+GoLand. HttpStackLens uses a Wails single-instance lock, so an already running
+window prevents a second instance from starting.
 
 ---
 
@@ -112,10 +154,10 @@ npx tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --minify
 
 ```sh
 # macOS / Linux
-go build -ldflags="-s -w" -o httpStackLens .
+go build -tags=desktop,production -ldflags="-s -w" -o httpStackLens .
 
 # Windows
-go build -ldflags="-s -w" -o httpStackLens.exe .
+go build -tags=desktop,production -ldflags="-s -w -H windowsgui" -o httpStackLens.exe .
 ```
 
 </details>
@@ -129,14 +171,14 @@ The `build-tools` target builds for the current platform only. For cross-compila
 **macOS → Windows:**
 
 ```sh
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o httpStackLens.exe .
+GOOS=windows GOARCH=amd64 go build -tags=desktop,production -ldflags="-s -w -H windowsgui" -o httpStackLens.exe .
 ```
 
 **Windows → macOS:**
 
 ```powershell
 $env:GOOS = "darwin"; $env:GOARCH = "amd64"
-go build -ldflags="-s -w" -o httpStackLens .
+go build -tags=desktop,production -ldflags="-s -w" -o httpStackLens .
 ```
 
 ### Windows-specific features
@@ -151,10 +193,11 @@ These rely on the Windows SSPI API (`secur32.dll`) and will return an error if u
 ## Usage
 
 ```sh
-go run .
+go run -tags=dev .
 ```
 
-The proxy listens on `localhost:3128`. You can test it with curl:
+The Wails window opens automatically, and the proxy listens on `localhost:3128`.
+You can test it with curl:
 
 ```sh
 curl -x http://localhost:3128 http://example.com

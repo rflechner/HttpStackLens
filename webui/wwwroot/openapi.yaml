@@ -10,6 +10,7 @@ tags:
   - name: Runtime
   - name: Requests
   - name: Captures
+  - name: Composer
   - name: Events
 paths:
   /config:
@@ -436,6 +437,156 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CaptureState"
+  /api/composer/send:
+    post:
+      tags: [Composer]
+      summary: Send a request built in the composer
+      description: |
+        Executes the request through the proxy middleware pipeline, exactly as a
+        browser configured to use this proxy would: upstream proxy, `no_proxy`
+        rules and HTTPS decryption apply, and the exchange shows up in the
+        traffic view and the capture like any proxied request.
+
+        The pipeline is used directly, not the TCP listener, so the composer
+        keeps working while the proxy is stopped.
+
+        An exchange that never reached a response (DNS failure, refused
+        connection, TLS error, timeout) is reported as `200` with `error` set and
+        a zero `status`: it is a result to display, not an API failure. Only a
+        malformed composer request is a `400`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComposerRequest"
+      responses:
+        "200":
+          description: Outcome of the exchange
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComposerResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "503":
+          description: Sending from the composer is unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/http-files:
+    get:
+      tags: [Composer]
+      summary: List the composer's .http files
+      description: |
+        Reads every `.http` file of the folder configured as `http_files.folder`
+        in `config.yaml`, contents included: the collection is small and the
+        composer lists the requests inside each file, so one round trip is
+        enough. A folder that does not exist yet answers with an empty list.
+      responses:
+        "200":
+          description: The folder and the files it holds, sorted by name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpFiles"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/http-files/open-folder:
+    post:
+      tags: [Composer]
+      summary: Show the .http folder in the file manager
+      description: |
+        Opens the folder in the desktop file manager of the machine running
+        HttpStackLens — Explorer, Finder, or the XDG default. The folder is
+        created when it does not exist yet. This is a local development tool:
+        the Web UI is served from the same machine the folder is on.
+      responses:
+        "204":
+          description: The file manager was asked to open the folder
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/http-files/{name}:
+    put:
+      tags: [Composer]
+      summary: Write a .http file
+      description: |
+        Creates or overwrites the file. The body is the file itself as plain
+        text, so `curl -T` writes one without an envelope. A name without the
+        `.http` extension is given it.
+      parameters:
+        - $ref: "#/components/parameters/HttpFileName"
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: The file as it now stands on disk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          description: The file is larger than the 1 MiB limit
+          content:
+            text/plain:
+              schema:
+                type: string
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      tags: [Composer]
+      summary: Delete a .http file
+      description: |
+        Removes the file from the folder. Deleting a file that is already gone
+        succeeds: the outcome the caller asked for is the one they get.
+      parameters:
+        - $ref: "#/components/parameters/HttpFileName"
+      responses:
+        "204":
+          description: The file is no longer in the folder
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/http-files/{name}/rename:
+    post:
+      tags: [Composer]
+      summary: Rename a .http file
+      description: |
+        Moves the file inside the folder. An existing target is refused rather
+        than overwritten.
+      parameters:
+        - $ref: "#/components/parameters/HttpFileName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HttpFileRename"
+      responses:
+        "200":
+          description: The file under its new name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
   /api/proxy/start:
     post:
       tags: [Runtime]
@@ -634,6 +785,16 @@ components:
         type: string
         pattern: "^[^/]+\\.capture$"
       description: Capture file name from `/api/captures`.
+    HttpFileName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[^/\\<>:"|?*]+$'
+      description: |
+        Base name of the file inside `http_files.folder`. It carries no path
+        separator, and the `.http` extension is added when it is missing.
   responses:
     BadRequest:
       description: Invalid request
@@ -682,6 +843,41 @@ components:
           schema:
             type: string
   schemas:
+    HttpFile:
+      type: object
+      required: [name, content, modified_at]
+      properties:
+        name:
+          type: string
+          description: File name inside the folder.
+          examples: ["github.http"]
+        content:
+          type: string
+          description: The file as text.
+        modified_at:
+          type: string
+          format: date-time
+    HttpFiles:
+      type: object
+      required: [folder, files]
+      properties:
+        folder:
+          type: string
+          description: |
+            Absolute path the files were read from, resolved from
+            `http_files.folder` in `config.yaml`.
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/HttpFile"
+    HttpFileRename:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: The new file name.
+          examples: ["github-api.http"]
     Header:
       type: object
       required: [name, value]
@@ -690,6 +886,61 @@ components:
           type: string
         value:
           type: string
+    ComposerRequest:
+      type: object
+      required: [method, url, headers, body]
+      properties:
+        method:
+          type: string
+          example: GET
+        url:
+          type: string
+          description: Absolute http:// or https:// URL, variables already substituted.
+          example: https://api.ipify.org?format=json
+        headers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Header"
+          description: A `Host` header overrides the host sent to the server.
+        body:
+          type: string
+          description: Sent as-is; empty means no body.
+    ComposerResponse:
+      type: object
+      required: [status, status_text, proto, headers, body, duration_ms, truncated, upstream, error]
+      properties:
+        status:
+          type: integer
+          description: Zero when the request never reached a response.
+        status_text:
+          type: string
+        proto:
+          type: string
+          description: |
+            Version the response came back on. Empty when the request never
+            reached a response.
+          examples: ["HTTP/1.1", "HTTP/2.0"]
+        headers:
+          type: array
+          description: |
+            Sorted by name, then value. The order the server sent them in is not
+            preserved.
+          items:
+            $ref: "#/components/schemas/Header"
+        body:
+          type: string
+        duration_ms:
+          type: integer
+          description: Whole exchange, pipeline included.
+        truncated:
+          type: boolean
+          description: The body was cut at the 5 MiB display limit.
+        upstream:
+          type: string
+          description: Outbound proxy the request went through; empty when direct.
+        error:
+          type: string
+          description: Transport failure, empty on a completed exchange.
     RequestEvent:
       type: object
       required: [id, correlation_id, method, host, port, path, version, scheme, tls, decrypted]

@@ -36,6 +36,9 @@ go.work.sum
 # .vscode/
 
 /httpStackLens
+/build/
+webui/wailsjs/
+/.cache/
 
 .DS_Store
 
@@ -53,3 +56,6 @@ go.work.sum
 *.crt
 
 *.capture
+
+# The composer's .http collection, which may hold tokens
+/http_files/

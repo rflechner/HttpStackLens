@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const wailsCLIVersion = "v2.13.0"
+
 var allTargets = []string{"webui", "app"}
 
 func main() {
@@ -19,7 +21,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage: build-tools [target...]\n\n")
 		fmt.Fprintf(os.Stderr, "Targets:\n")
 		fmt.Fprintf(os.Stderr, "  webui   Build WASM and CSS (Tailwind)\n")
-		fmt.Fprintf(os.Stderr, "  app     Build the native binary for the current platform\n")
+		fmt.Fprintf(os.Stderr, "  app     Package the standalone Wails app into build/bin\n")
 		fmt.Fprintf(os.Stderr, "\nNo target builds everything.\n\n")
 		flag.PrintDefaults()
 	}
@@ -33,7 +35,9 @@ func main() {
 
 	targets := flag.Args()
 	if len(targets) == 0 {
-		targets = allTargets
+		// The Wails app target invokes the frontend build configured in
+		// wails.json, so it is the complete default publishing pipeline.
+		targets = []string{"app"}
 	}
 
 	for _, target := range targets {
@@ -97,7 +101,11 @@ func buildWebUI(projectRoot string) error {
 }
 
 func copyWasmExec(webuiDir string) error {
-	out, err := exec.Command("go", "env", "GOROOT").Output()
+	goCmd, err := goCommand("env", "GOROOT")
+	if err != nil {
+		return err
+	}
+	out, err := goCmd.Output()
 	if err != nil {
 		return fmt.Errorf("go env GOROOT: %w", err)
 	}
@@ -122,9 +130,13 @@ func buildWasm(webuiDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	cmd := exec.Command("go", "build", "-o", filepath.Join(outDir, "app.wasm"), ".")
+	cmd, err := goCommand("build", "-o", filepath.Join(outDir, "app.wasm"), ".")
+	if err != nil {
+		return err
+	}
 	cmd.Dir = filepath.Join(webuiDir, "wasm")
-	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
+	cmd.Env = environmentWith(cmd.Env, "GOOS", "js")
+	cmd.Env = environmentWith(cmd.Env, "GOARCH", "wasm")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -142,6 +154,11 @@ func npmInstall(webuiDir string) error {
 		cmd = exec.Command("npm", "install")
 	}
 	cmd.Dir = webuiDir
+	var err error
+	cmd.Env, err = buildEnvironment()
+	if err != nil {
+		return err
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -163,6 +180,11 @@ func buildCSS(webuiDir string) error {
 	} else {
 		cmd = exec.Command(bin, "-i", input, "-o", output, "--minify")
 	}
+	var err error
+	cmd.Env, err = buildEnvironment()
+	if err != nil {
+		return err
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -175,21 +197,260 @@ func buildCSS(webuiDir string) error {
 // --- app ---
 
 func buildApp(projectRoot string) error {
-	fmt.Printf("→ Building app for %s/%s...\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("→ Packaging standalone Wails app for %s/%s...\n", runtime.GOOS, runtime.GOARCH)
+	compiler, err := currentGoCompiler()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  Go compiler: %s (%s)\n", compiler, runtime.Version())
 
-	output := filepath.Join(projectRoot, "httpStackLens")
-	if runtime.GOOS == "windows" {
-		output += ".exe"
+	if err := ensureWailsIcon(projectRoot); err != nil {
+		return fmt.Errorf("prepare Wails app icon: %w", err)
 	}
 
-	cmd := exec.Command("go", "build", "-ldflags", versionLdflags(projectRoot), "-o", output, ".")
+	args := []string{
+		"build",
+		"-clean",
+		"-skipbindings",
+		"-trimpath",
+		"-compiler", compiler,
+		"-ldflags", versionLdflags(projectRoot),
+	}
+	if runtime.GOOS == "windows" {
+		// Keep the distributable to one executable while still allowing Wails
+		// to install WebView2 on machines where the runtime is missing.
+		args = append(args, "-webview2", "embed")
+	}
+
+	cmd, source, err := wailsCommand(args...)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  Wails CLI: %s\n", source)
 	cmd.Dir = projectRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("wails build: %w", err)
+	}
+
+	output := filepath.Join(projectRoot, "build", "bin", "HttpStackLens")
+	if runtime.GOOS == "windows" {
+		output += ".exe"
+	} else if runtime.GOOS == "darwin" {
+		output += ".app"
+	}
+	if _, err := os.Stat(output); err != nil {
+		return fmt.Errorf("Wails reported success but output %q is unavailable: %w", output, err)
+	}
+	fmt.Printf("✓ Standalone Wails app built → %s\n", output)
+	return nil
+}
+
+// wailsCommand prefers an installed CLI, including the default GOPATH/bin
+// location when it is absent from PATH. As a final fallback, `go run` downloads
+// and executes the version matching the runtime dependency in go.mod.
+func wailsCommand(args ...string) (*exec.Cmd, string, error) {
+	if path, err := exec.LookPath("wails"); err == nil {
+		cmd := exec.Command(path, args...)
+		cmd.Env, err = buildEnvironment()
+		if err != nil {
+			return nil, "", err
+		}
+		return cmd, path, nil
+	}
+
+	goEnvCmd, err := goCommand("env", "GOPATH")
+	if err != nil {
+		return nil, "", err
+	}
+	goPathOutput, err := goEnvCmd.Output()
+	if err != nil {
+		return nil, "", fmt.Errorf("locate GOPATH for Wails CLI: %w", err)
+	}
+	goPath := strings.TrimSpace(string(goPathOutput))
+	cliName := "wails"
+	if runtime.GOOS == "windows" {
+		cliName += ".exe"
+	}
+	goPathCLI := filepath.Join(goPath, "bin", cliName)
+	if info, statErr := os.Stat(goPathCLI); statErr == nil && !info.IsDir() {
+		cmd := exec.Command(goPathCLI, args...)
+		cmd.Env, err = buildEnvironment()
+		if err != nil {
+			return nil, "", err
+		}
+		return cmd, goPathCLI, nil
+	}
+
+	packageName := "github.com/wailsapp/wails/v2/cmd/wails@" + wailsCLIVersion
+	goArgs := append([]string{"run", packageName}, args...)
+	cmd, err := goCommand(goArgs...)
+	if err != nil {
+		return nil, "", err
+	}
+	return cmd, "go run " + packageName, nil
+}
+
+// currentGoCompiler locates a compiler whose version exactly matches the one
+// that built this tool. In particular, it does not trust GOROOT: GoLand may
+// leave that variable pointing at its project SDK even when Go's automatic
+// toolchain selection compiled this module with a newer downloaded toolchain.
+func currentGoCompiler() (string, error) {
+	wanted := runtime.Version()
+	found := make([]string, 0)
+	for _, compiler := range goCompilerCandidates() {
+		info, err := os.Stat(compiler)
+		if err != nil || info.IsDir() {
+			continue
+		}
+
+		cmd := exec.Command(compiler, "version")
+		cmd.Env = goProbeEnvironment()
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		fields := strings.Fields(string(out))
+		if len(fields) < 3 {
+			continue
+		}
+		actual := fields[2]
+		found = append(found, fmt.Sprintf("%s (%s)", compiler, actual))
+		if actual == wanted {
+			return compiler, nil
+		}
+	}
+	return "", fmt.Errorf("Go compiler %s was not found; candidates: %s", wanted, strings.Join(found, ", "))
+}
+
+func goCompilerCandidates() []string {
+	name := "go"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	candidates := make([]string, 0)
+	add := func(path string) {
+		if path == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if strings.EqualFold(existing, path) {
+				return
+			}
+		}
+		candidates = append(candidates, path)
+	}
+
+	if goRoot := os.Getenv("GOROOT"); goRoot != "" {
+		add(filepath.Join(goRoot, "bin", name))
+	}
+	if goToolDir := os.Getenv("GOTOOLDIR"); goToolDir != "" {
+		add(filepath.Join(filepath.Clean(filepath.Join(goToolDir, "..", "..", "..")), "bin", name))
+	}
+	for _, directory := range filepath.SplitList(os.Getenv("PATH")) {
+		add(filepath.Join(directory, name))
+	}
+	if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
+		add(filepath.Join(programFiles, "Go", "bin", name))
+	}
+	if runtime.GOOS != "windows" {
+		add(filepath.Join("/usr/local/go/bin", name))
+	}
+
+	goPaths := filepath.SplitList(os.Getenv("GOPATH"))
+	if len(goPaths) == 0 {
+		if home, err := os.UserHomeDir(); err == nil {
+			goPaths = []string{filepath.Join(home, "go")}
+		}
+	}
+	toolchainVersion := strings.TrimPrefix(runtime.Version(), "go")
+	toolchainFolder := fmt.Sprintf("toolchain@v0.0.1-go%s.%s-%s", toolchainVersion, runtime.GOOS, runtime.GOARCH)
+	for _, goPath := range goPaths {
+		add(filepath.Join(goPath, "pkg", "mod", "golang.org", toolchainFolder, "bin", name))
+	}
+	return candidates
+}
+
+func goCommand(args ...string) (*exec.Cmd, error) {
+	compiler, err := currentGoCompiler()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(compiler, args...)
+	cmd.Env, err = buildEnvironmentFor(compiler)
+	if err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+func buildEnvironment() ([]string, error) {
+	compiler, err := currentGoCompiler()
+	if err != nil {
+		return nil, err
+	}
+	return buildEnvironmentFor(compiler)
+}
+
+func buildEnvironmentFor(compiler string) ([]string, error) {
+	goRoot := filepath.Dir(filepath.Dir(compiler))
+	if _, err := os.Stat(filepath.Join(goRoot, "src", "runtime")); err != nil {
+		return nil, fmt.Errorf("invalid GOROOT derived from Go compiler %q: %w", compiler, err)
+	}
+
+	env := os.Environ()
+	env = environmentWith(env, "GOROOT", goRoot)
+	env = environmentWith(env, "GOTOOLCHAIN", "local")
+
+	goBin := filepath.Dir(compiler)
+	pathValue := os.Getenv("PATH")
+	if pathValue == "" {
+		pathValue = goBin
+	} else {
+		pathValue = goBin + string(os.PathListSeparator) + pathValue
+	}
+	return environmentWith(env, "PATH", pathValue), nil
+}
+
+func goProbeEnvironment() []string {
+	env := environmentWithout(os.Environ(), "GOROOT")
+	return environmentWith(env, "GOTOOLCHAIN", "local")
+}
+
+func environmentWith(env []string, key, value string) []string {
+	prefix := key + "="
+	return append(environmentWithout(env, key), prefix+value)
+}
+
+func environmentWithout(env []string, key string) []string {
+	result := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		name, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(name, key) {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
+func ensureWailsIcon(projectRoot string) error {
+	source := filepath.Join(projectRoot, "images", "logo-v2.png")
+	destination := filepath.Join(projectRoot, "build", "appicon.png")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}
-	fmt.Printf("✓ App built → %s\n", output)
+	if err := copyFile(source, destination); err != nil {
+		return err
+	}
+
+	// Wails only generates icon.ico when it is absent. Remove the generated
+	// cache so a branding update is always reflected in the packaged binary.
+	generatedIcon := filepath.Join(projectRoot, "build", "windows", "icon.ico")
+	if err := os.Remove(generatedIcon); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
 }
 
@@ -199,6 +460,9 @@ func buildApp(projectRoot string) error {
 // flags are omitted and main's compiled-in defaults ("dev"/"none") stand.
 func versionLdflags(projectRoot string) string {
 	flags := "-s -w"
+	if runtime.GOOS == "windows" {
+		flags += " -H windowsgui"
+	}
 	if version := gitOutput(projectRoot, "describe", "--tags", "--always", "--dirty"); version != "" {
 		flags += " -X main.version=" + version
 	}

@@ -963,6 +963,8 @@ func main() {
 	model.connectSSE()
 	model.loadCaptureState()
 
+	initModeSwitch()
+
 	dismissLoader()
 
 	select {}

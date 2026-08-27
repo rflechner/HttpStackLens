@@ -77,10 +77,14 @@ type Dependencies struct {
 	Capture               *storage.CaptureController
 	// Storage reports whether traffic is persisted to disk (read-only here; the
 	// on/off toggle goes through the SetStorageEnabled runtime command).
-	Storage               *storage.StorageSink
-	Proxy                 *storage.ProxyController
-	Commands              chan<- RuntimeCommand
-	Build                 shared.BuildInfoDto
+	Storage  *storage.StorageSink
+	Proxy    *storage.ProxyController
+	Commands chan<- RuntimeCommand
+	// SendComposerRequest executes a request built in the composer through the
+	// proxy pipeline. Left nil, the composer routes report the feature as
+	// unavailable instead of falling back to a browser-issued request.
+	SendComposerRequest ComposerSender
+	Build               shared.BuildInfoDto
 	// GitHubRepo is "owner/name", used to query the releases API for updates.
 	GitHubRepo string
 	// UpdateCheckEnabled gates the automatic GitHub update check (opt-in).
@@ -328,6 +332,12 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	mux.HandleFunc("/api/proxy/start", proxyRuntimeHandler(true, hub, updateProxy, captureState))
 	mux.HandleFunc("/api/proxy/stop", proxyRuntimeHandler(false, hub, updateProxy, captureState))
 	mux.HandleFunc("/api/proxy/state", captureStateHandler(captureState))
+	// The composer sends through the backend, not from the browser: the request
+	// then follows the same pipeline as any proxied traffic.
+	mux.HandleFunc("/api/composer/send", composerSendHandler(deps.SendComposerRequest))
+	// The composer's collection lives on disk, in http_files.folder, so the same
+	// .http files can be opened from an IDE or committed alongside a project.
+	registerHttpFileRoutes(mux, newHttpFileStore(config.HttpFiles.GetResolvedFolder()))
 	mux.HandleFunc("/api/runtime/stats", runtimeStatsHandler)
 	mux.HandleFunc("/api/version", buildInfoHandler(deps.Build))
 	mux.HandleFunc("/api/update-check", updateCheckHandler(newUpdateChecker(deps.UpdateCheckEnabled, deps.Build.Version, deps.GitHubRepo)))
@@ -1119,6 +1129,44 @@ func mimeTypeRulesFromDto(rules []shared.MimeTypeRuleDto) ([]configuration.MimeT
 		}
 	}
 	return out, nil
+}
+
+// ComposerSender executes a composer request through the proxy pipeline. It is
+// implemented by the application (which owns the pipeline) and injected here,
+// since the Web UI server knows nothing about middlewares.
+type ComposerSender func(ctx context.Context, request shared.ComposerRequestDto) (shared.ComposerResponseDto, error)
+
+// composerSendHandler answers with the exchange as it happened. A request that
+// never reached a response comes back as 200 with the error in the payload —
+// the composer displays it where the status goes. Only a malformed composer
+// request (bad URL, bad method) is a 400.
+func composerSendHandler(send ComposerSender) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if send == nil {
+			http.Error(w, "sending from the composer is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		var request shared.ComposerRequestDto
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			http.Error(w, "invalid composer request", http.StatusBadRequest)
+			return
+		}
+
+		response, err := send(r.Context(), request)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, response)
+	}
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

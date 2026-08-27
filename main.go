@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"httpStackLens/configuration"
@@ -14,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -84,6 +84,10 @@ func main() {
 	logResolvedPaths(config)
 
 	stopChan := make(chan bool)
+	var stopOnce sync.Once
+	requestStop := func() {
+		stopOnce.Do(func() { close(stopChan) })
+	}
 
 	// Keeps the most recent request/response records in memory so the Web UI can
 	// fetch their full headers and bodies on demand.
@@ -117,6 +121,11 @@ func main() {
 	}
 	captureWriter := storageSink
 
+	// The composer sends through the proxy pipeline rather than from the browser.
+	// It is created before the Web UI (which exposes it) and completed further
+	// down, once the event logger and the stores it reports to exist.
+	composerSend := newComposerSender(runtimeConfig.Snapshot, decryptHttpsSettings)
+
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
 		InitialConfig:         config,
 		CurrentConfig:         runtimeConfig.Snapshot,
@@ -128,6 +137,7 @@ func main() {
 		Storage:               storageSink,
 		Proxy:                 proxyCtl,
 		Commands:              runtimeCommands,
+		SendComposerRequest:   composerSend.Send,
 		Build:                 buildInfo(),
 		GitHubRepo:            repoSlug,
 		UpdateCheckEnabled:    config.Updates.CheckEnabled,
@@ -137,6 +147,18 @@ func main() {
 	// pipeline so the HTTPS interceptor can surface the decrypted requests and
 	// responses it sees (they are otherwise only written to the capture file).
 	logger := logging.CreateWebUiEventLogger(hub)
+
+	// Entry point into the pipeline for composer sends: a proxy server without a
+	// listener. Composer requests are therefore reported to the UI and recorded
+	// like any proxied traffic, and stay available while the proxy is stopped —
+	// only the accept loop is stopped, never the pipeline.
+	composerSend.attach(&ProxyServer{
+		appContext:  appContext,
+		EventLogger: logger,
+		capture:     captureWriter,
+		store:       requestStore,
+		captureCtl:  captureCtl,
+	})
 
 	decryptRuntime := newDecryptHttpsRuntime(config, basePipeline, activePipeline, decryptHttpsSettings, captureWriter, logger, requestStore, captureCtl, configuration.PersistDecryptHttpsEnabled)
 	if err := decryptRuntime.ApplyInitial(); err != nil {
@@ -167,22 +189,12 @@ func main() {
 	go proxyServer.Run()
 	go supervisor.Run(runtimeCommands, stopChan)
 
-	keyboard := bufio.NewReader(os.Stdin)
-
-	go func() {
-		fmt.Println("Type 'exit' to quit")
-		for {
-			line, _, _ := keyboard.ReadLine()
-			if string(line) == "exit" {
-				close(stopChan)
-			}
-		}
-	}()
-
-	select {
-	case <-stopChan:
-		supervisor.closeAllProxies()
+	if err := runDesktopApp(appContext.webUiPort, requestStop); err != nil {
+		slog.Error("Wails application stopped with an error", "error", err)
 	}
+
+	requestStop()
+	supervisor.closeAllProxies()
 }
 
 // logResolvedPaths reports the on-disk locations the app will actually use, once
