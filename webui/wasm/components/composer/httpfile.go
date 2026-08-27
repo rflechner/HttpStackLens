@@ -91,6 +91,22 @@ var (
 	placeholder = regexp.MustCompile(`\{\{\s*([\w.-]+)\s*\}\}`)
 )
 
+// headerComment is the marker ToHTTP writes an unticked header behind. It is
+// '#' and not '//' because the shared parser only reads '#' as a comment
+// between headers: a header hidden behind '//' would still go out when the play
+// button runs the block, which reads the file text rather than this model.
+const headerComment = "# "
+
+// uncomment strips the comment marker off a header line, reporting whether
+// there was one to strip.
+func uncomment(line string) (string, bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if !strings.HasPrefix(trimmed, "#") {
+		return line, false
+	}
+	return strings.TrimLeft(strings.TrimPrefix(trimmed, "#"), " \t"), true
+}
+
 // ParseHTTP reads the .http / .rest format: `@name = value` variables, then one
 // `### title` block per request followed by its request line, headers, a blank
 // line and a body.
@@ -153,6 +169,15 @@ func ParseHTTP(text, name string) *File {
 				section = "body"
 				continue
 			}
+			if rest, commented := uncomment(line); commented {
+				// A header the form left unchecked. It stays in the file behind its
+				// marker rather than being deleted, so unticking a row and ticking
+				// it again gives the value back instead of asking for it twice.
+				if m := headerLine.FindStringSubmatch(rest); m != nil {
+					cur.Headers = append(cur.Headers, KV{Key: m[1], Value: strings.TrimSpace(m[2]), On: false})
+				}
+				continue
+			}
 			if m := headerLine.FindStringSubmatch(line); m != nil {
 				cur.Headers = append(cur.Headers, KV{Key: m[1], Value: strings.TrimSpace(m[2]), On: true})
 			}
@@ -169,8 +194,10 @@ func ParseHTTP(text, name string) *File {
 	return f
 }
 
-// ToHTTP serialises a file back to .http text. Disabled rows are dropped, so a
-// round-trip through the raw editor is lossy by design — same as the format.
+// ToHTTP serialises a file back to .http text. A header the form has unticked
+// is written behind a '#' rather than dropped: the row keeps its value, and the
+// file keeps the record of a header someone deliberately turned off. Disabled
+// variables have nowhere comparable to go and are still dropped.
 //
 // What it must never be is *additive*: ParseHTTP(ToHTTP(f)) has to give the same
 // text back, or every switch between the form and the raw editor grows the file.
@@ -198,9 +225,14 @@ func ToHTTP(f *File) string {
 			b.WriteString(strings.TrimRight(r.Method+" "+r.URL, " ") + "\n")
 		}
 		for _, h := range r.Headers {
-			if h.On && h.Key != "" {
-				b.WriteString(h.Key + ": " + h.Value + "\n")
+			if h.Key == "" {
+				continue
 			}
+			if !h.On {
+				b.WriteString(headerComment + h.Key + ": " + h.Value + "\n")
+				continue
+			}
+			b.WriteString(h.Key + ": " + h.Value + "\n")
 		}
 		if strings.TrimSpace(r.Body) != "" {
 			b.WriteString("\n" + r.Body + "\n")
