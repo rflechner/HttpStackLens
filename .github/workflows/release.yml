@@ -102,9 +102,19 @@ jobs:
           - os: windows-latest
             goos: windows
             ext: ".exe"
+            # Pure Go on this side: no cgo in app_windows.go, and Wails'
+            # Windows backend is go-webview2, so a static build stays
+            # dependency-free.
+            cgo: "0"
           - os: macos-latest
             goos: darwin
             ext: ""
+            # darwin has no choice: app_darwin.go links UniformTypeIdentifiers
+            # through cgo and Wails' darwin backend is Objective-C. With
+            # CGO_ENABLED=0 Go silently DROPS every file importing "C", so
+            # app_darwin.go vanishes and CreateOsSpecificProxyPipeline ends up
+            # undefined.
+            cgo: "1"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -131,7 +141,7 @@ jobs:
 
       - name: Build binaries
         env:
-          CGO_ENABLED: "0"
+          CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           set -eu
           ldflags="-s -w \
@@ -142,14 +152,25 @@ jobs:
           for arch in amd64 arm64; do
             out="dist/${{ matrix.goos }}_${arch}/${APP_NAME}${{ matrix.ext }}"
             echo "→ ${{ matrix.goos }}/${arch}"
+
+            # The macOS runner is arm64, so darwin/amd64 is a cross-compile.
+            # cgo shells out to clang, which targets the host arch unless told
+            # otherwise, and the link then fails on mismatched objects.
+            if [ "${{ matrix.goos }}" = "darwin" ]; then
+              if [ "${arch}" = "amd64" ]; then clang_arch="x86_64"; else clang_arch="arm64"; fi
+              export CGO_CFLAGS="-arch ${clang_arch}"
+              export CGO_LDFLAGS="-arch ${clang_arch}"
+            fi
+
             GOOS="${{ matrix.goos }}" GOARCH="${arch}" \
               go build -trimpath -ldflags "$ldflags" -o "$out" .
           done
 
-      # No codesign step for darwin: cmd/link already applies an ad-hoc signature
-      # to arm64 Mach-O output (flags=adhoc,linker-signed), which is what Apple
-      # Silicon requires. amd64 needs no signature at all. Notarization would be a
-      # different matter — it needs a Developer ID and is not set up here.
+      # No codesign step for darwin: with cgo the external linker (clang/ld)
+      # is used, and it applies the same ad-hoc signature to arm64 Mach-O
+      # output (flags=adhoc,linker-signed) that Apple Silicon requires. amd64
+      # needs no signature at all. Notarization would be a different matter —
+      # it needs a Developer ID and is not set up here.
 
       - uses: actions/upload-artifact@v4
         with:
