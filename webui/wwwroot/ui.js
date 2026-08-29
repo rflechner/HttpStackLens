@@ -1165,6 +1165,32 @@
   }
   function closeModal() { modalKind = null; $('#modal-root').innerHTML = ''; $('#modal-root').style.pointerEvents = 'none'; }
 
+  // window.confirm() cannot be used here. The desktop window is a WKWebView whose
+  // Wails UI delegate implements none of the JavaScript panel callbacks, so
+  // confirm() returns false immediately without ever showing a dialog — every
+  // action it guards is silently cancelled, with nothing reaching the backend and
+  // nothing in the logs. askConfirmation draws our own dialog instead, behaving
+  // identically in the desktop window and in a browser tab. It lives in its own
+  // layer above #modal-root so re-rendering the modal underneath cannot wipe the
+  // question away.
+  let pendingConfirm = null;
+  function askConfirmation(message, onConfirm) {
+    pendingConfirm = onConfirm;
+    const root = $('#confirm-root');
+    root.innerHTML = `<div style="position:absolute;inset:0;background:rgba(43,41,38,.34);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center">
+      <div style="width:440px;max-width:92%;background:${C.bg1};border:1px solid ${C.line};border-radius:12px;box-shadow:0 24px 60px rgba(43,41,38,.22);color:${C.ink};font-family:Inter">
+        <div style="padding:18px 18px 14px;font-size:12.5px;line-height:1.65;color:${C.dim}">${esc(message)}</div>
+        ${modalFooter(btn('Cancel', 'confirm-cancel', 'ghost') + btn('Confirm', 'confirm-accept', 'danger'))}
+      </div></div>`;
+    root.style.pointerEvents = 'auto';
+  }
+  function closeConfirmation() {
+    pendingConfirm = null;
+    const root = $('#confirm-root');
+    root.innerHTML = '';
+    root.style.pointerEvents = 'none';
+  }
+
   function modalHeader(title, subtitle) {
     return `<div style="padding:14px 18px 12px;border-bottom:1px solid ${C.line};display:flex;align-items:flex-start;gap:10px">
       <div class="flex-1"><div style="font-size:13.5px;font-weight:600">${title}</div>${subtitle ? `<div style="font-size:11.5px;color:${C.dim};margin-top:3px">${subtitle}</div>` : ''}</div>
@@ -1199,9 +1225,17 @@
     else { ca.loading = false; ca.error = 'Backend bridge unavailable.'; }
   }
   function certificateAction(action) {
+    if (state.certificate.busy) return;
+    if (action === 'regenerate') {
+      askConfirmation('Regenerate the root CA? Existing trust and previously issued site certificates will stop working.',
+        () => runCertificateAction(action));
+      return;
+    }
+    runCertificateAction(action);
+  }
+  function runCertificateAction(action) {
     const ca = state.certificate;
     if (ca.busy) return;
-    if (action === 'regenerate' && !window.confirm('Regenerate the root CA? Existing trust and previously issued site certificates will stop working.')) return;
     ca.busy = true; ca.action = action; ca.error = null;
     if (modalKind === 'cert') renderCert(); else renderSettings();
     const fn = window.hslCertificateAction;
@@ -1651,8 +1685,9 @@
             : state.access.mode === 'loopback'
               ? 'Apply loopback-only access to both the proxy and Web UI? Any current remote session will disconnect immediately.'
               : 'Apply private-LAN access to both the proxy and Web UI? Clients outside private networks will disconnect.';
-        if (!window.confirm(warning)) break;
-        state.access.networks = networks.filter(Boolean); state.access.saving = true; state.access.error = null; state.access.saved = false; renderSettings(); setAccessMode(state.access);
+        askConfirmation(warning, () => {
+          state.access.networks = networks.filter(Boolean); state.access.saving = true; state.access.error = null; state.access.saved = false; renderSettings(); setAccessMode(state.access);
+        });
         break;
       }
       case 'access-revert':
@@ -1685,14 +1720,16 @@
       case 'open-access': openSettings('access'); break;
       case 'open-settings': openSettings('body'); break;
       case 'close-modal': closeModal(); break;
+      case 'confirm-cancel': closeConfirmation(); break;
+      case 'confirm-accept': { const run = pendingConfirm; closeConfirmation(); if (run) run(); break; }
       case 'close-detail': state.selId = null; renderList(); renderDetail(); break;
       case 'cert-generate':
         cert.step = 1; renderCert(); certificateAction('generate');
         break;
       case 'cert-regenerate': certificateAction('regenerate'); break;
       case 'cert-cleanup':
-        if (!window.confirm('Remove all HttpStackLens certificates from the OS trust store and delete the local CA files and per-domain certificates folder? HTTPS decryption will need a fresh CA afterwards.')) break;
-        state.certificate.cleanup = null; certificateAction('cleanup');
+        askConfirmation('Remove all HttpStackLens certificates from the OS trust store and delete the local CA files and per-domain certificates folder? HTTPS decryption will need a fresh CA afterwards.',
+          () => { state.certificate.cleanup = null; certificateAction('cleanup'); });
         break;
       case 'cert-install': certificateAction('install'); break;
       case 'cert-refresh': loadCertificateStatus(true); renderSettings(); break;

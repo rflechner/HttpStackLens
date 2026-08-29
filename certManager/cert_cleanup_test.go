@@ -1,6 +1,7 @@
 package certManager
 
 import (
+	"errors"
 	"httpStackLens/configuration"
 	"os"
 	"path/filepath"
@@ -89,5 +90,58 @@ func TestCleanupAppCertificatesToleratesMissingArtifacts(t *testing.T) {
 	}
 	if len(report.RemovedFiles) != 0 {
 		t.Errorf("RemovedFiles = %v, want none", report.RemovedFiles)
+	}
+}
+
+// failingStoreInstaller stands in for a trust-store cleanup that cannot
+// complete: on macOS the removal needs an interactive authorization the user can
+// cancel, or leave unanswered until it times out.
+type failingStoreInstaller struct{ noopInstaller }
+
+func (failingStoreInstaller) IsSupported() bool { return true }
+
+func (failingStoreInstaller) CleanupStore(string) (int, int, bool, error) {
+	return 0, 0, true, errors.New("the authorization was canceled by the user")
+}
+
+// TestCleanupAppCertificatesCleansDiskDespiteStoreFailure pins the ordering: the
+// on-disk cleanup needs no authorization, so it must already be done by the time
+// the trust store is touched. Otherwise a single unanswered system dialog leaves
+// the user with nothing removed at all.
+func TestCleanupAppCertificatesCleansDiskDespiteStoreFailure(t *testing.T) {
+	dir := t.TempDir()
+	caCert := filepath.Join(dir, "debug-https-ca.crt")
+	caKey := filepath.Join(dir, "debug-https-ca.key")
+	domains := filepath.Join(dir, "domains")
+
+	if err := GenerateCA(caCert, caKey); err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+	if err := os.MkdirAll(domains, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	report, err := CleanupAppCertificates(configuration.CertManagerConfig{
+		CaCertFile:        caCert,
+		CaKeyFile:         caKey,
+		DomainCertsFolder: domains,
+	}, failingStoreInstaller{})
+	if err != nil {
+		t.Fatalf("CleanupAppCertificates: %v", err)
+	}
+
+	if len(report.RemovedFiles) != 2 {
+		t.Errorf("RemovedFiles = %v, want the CA certificate and key", report.RemovedFiles)
+	}
+	if !report.DomainFolderRemoved {
+		t.Error("DomainFolderRemoved = false, want true")
+	}
+	for _, path := range []string{caCert, caKey, domains} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Errorf("%s still exists after cleanup", path)
+		}
+	}
+	if len(report.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want the trust store failure to be reported", report.Warnings)
 	}
 }

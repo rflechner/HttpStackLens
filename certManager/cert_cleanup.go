@@ -26,7 +26,8 @@ const caCommonNameSuffix = " - " + caCommonNameMarker
 // CleanupReport summarizes what CleanupAppCertificates removed.
 type CleanupReport struct {
 	// RootCertsRemoved / DomainCertsRemoved count entries deleted from the OS
-	// trust store (the current user's Root and personal stores on Windows).
+	// trust store: the current user's Root and personal stores on Windows, the
+	// current user's login keychain on macOS.
 	RootCertsRemoved   int
 	DomainCertsRemoved int
 	// StoreCleanupSupported is false when automatic OS trust-store cleanup is not
@@ -44,10 +45,17 @@ type CleanupReport struct {
 }
 
 // CleanupAppCertificates removes every trace this application left behind:
-//   - the debug root CA(s) from the OS trust store and every per-domain leaf they
-//     issued (matched by caCommonNameMarker), when the OS is supported;
 //   - the per-domain certificates folder;
-//   - the root CA certificate and key files.
+//   - the root CA certificate and key files;
+//   - the debug root CA(s) from the OS trust store and every per-domain leaf they
+//     issued (matched by caCommonNameMarker), when the OS is supported.
+//
+// The trust store comes last on purpose: it is the only step that can raise an
+// interactive authorization prompt, and a prompt the user cancels or never sees
+// must not cost the on-disk cleanup, which needs no authorization at all. A
+// leftover trust-store entry is reported as a warning and can be removed by
+// hand; the alternative — everything left in place because one dialog went
+// unanswered — leaves the user with nothing.
 //
 // It is best-effort: a failure on one item is recorded in the report's Warnings
 // rather than aborting the rest. The returned error is non-nil only for an
@@ -56,18 +64,7 @@ type CleanupReport struct {
 func CleanupAppCertificates(certConfig configuration.CertManagerConfig, installer CertInstaller) (CleanupReport, error) {
 	report := CleanupReport{}
 
-	// 1. OS trust store.
-	if installer != nil {
-		root, domain, supported, err := installer.CleanupStore(caCommonNameMarker)
-		report.RootCertsRemoved = root
-		report.DomainCertsRemoved = domain
-		report.StoreCleanupSupported = supported
-		if err != nil {
-			report.Warnings = append(report.Warnings, fmt.Sprintf("trust store cleanup: %v", err))
-		}
-	}
-
-	// 2. Per-domain certificates folder.
+	// 1. Per-domain certificates folder.
 	if folder := strings.TrimSpace(certConfig.GetResolvedDomainCertsFolder()); folder != "" {
 		removed, err := removeDomainCertsFolder(folder)
 		if err != nil {
@@ -76,7 +73,7 @@ func CleanupAppCertificates(certConfig configuration.CertManagerConfig, installe
 		report.DomainFolderRemoved = removed
 	}
 
-	// 3. Root CA certificate + key files.
+	// 2. Root CA certificate + key files.
 	for _, file := range []string{certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile()} {
 		file = strings.TrimSpace(file)
 		if file == "" {
@@ -89,6 +86,17 @@ func CleanupAppCertificates(certConfig configuration.CertManagerConfig, installe
 			continue
 		}
 		report.RemovedFiles = append(report.RemovedFiles, file)
+	}
+
+	// 3. OS trust store, last: see the note on the interactive prompt above.
+	if installer != nil {
+		root, domain, supported, err := installer.CleanupStore(caCommonNameMarker)
+		report.RootCertsRemoved = root
+		report.DomainCertsRemoved = domain
+		report.StoreCleanupSupported = supported
+		if err != nil {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("trust store cleanup: %v", err))
+		}
 	}
 
 	return report, nil

@@ -248,6 +248,9 @@
 
 <!-- modal layer -->
 <div id="modal-root" style="position:fixed;inset:0;pointer-events:none;z-index:50"></div>
+<!-- Confirmations live in their own layer, above #modal-root: they are raised from inside
+     an open modal, and re-rendering that modal must not wipe the question being asked. -->
+<div id="confirm-root" style="position:fixed;inset:0;pointer-events:none;z-index:60"></div>
 
 <script src="ui.js"></script>
 <script src="js/wasm_exec.js"></script>
