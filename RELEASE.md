@@ -33,7 +33,11 @@ Versions follow [Semantic Versioning](https://semver.org).
   saving a file no longer reformats or loses parts of it (`775dfcf`).
 - Parent components no longer re-dispatch their children's events, which caused
   duplicated actions in the UI (`6561c5d`).
-- Fixed the macOS build and debug runs, which were failing (`d612b55`, `6fb6a78`).
+- Certificate cleanup on macOS now removes the certificates from the login
+  keychain, no longer hangs on the authorization prompt, and always deletes the
+  on-disk files — even if you cancel the system dialog (#20).
+- Fixed the macOS build and debug runs, which were failing (`d612b55`, `6fb6a78`),
+  and the Darwin release build, which needed cgo enabled (#19).
 
 ### Maintenance
 
