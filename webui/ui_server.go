@@ -702,6 +702,11 @@ func certificateCleanupHandler(certConfig configuration.CertManagerConfig, insta
 			return
 		}
 		warnings = append(warnings, report.Warnings...)
+		// Always log the outcome, not just the failures: a cleanup that silently
+		// did nothing is indistinguishable from one that never ran.
+		log.Printf("Certificate cleanup: trust store supported=%t, %d root and %d domain certificate(s) removed, %d file(s) deleted, domain folder removed=%t",
+			report.StoreCleanupSupported, report.RootCertsRemoved, report.DomainCertsRemoved,
+			len(report.RemovedFiles), report.DomainFolderRemoved)
 		if len(warnings) > 0 {
 			log.Printf("Certificate cleanup completed with warnings: %s", strings.Join(warnings, "; "))
 		}
