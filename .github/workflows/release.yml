@@ -149,6 +149,17 @@ jobs:
             -X main.commit=${{ needs.prepare.outputs.commit }} \
             -X main.date=${{ needs.prepare.outputs.date }}"
 
+          # Wails requires both tags for distributable binaries. Without the
+          # production tag its runtime deliberately displays the "correct
+          # build flags" error dialog on startup.
+          build_tags="desktop,production"
+
+          # Match the documented Windows release build and the Wails CLI:
+          # suppress the console window for the desktop executable.
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            ldflags="${ldflags} -H windowsgui"
+          fi
+
           for arch in amd64 arm64; do
             out="dist/${{ matrix.goos }}_${arch}/${APP_NAME}${{ matrix.ext }}"
             echo "→ ${{ matrix.goos }}/${arch}"
@@ -163,7 +174,7 @@ jobs:
             fi
 
             GOOS="${{ matrix.goos }}" GOARCH="${arch}" \
-              go build -trimpath -ldflags "$ldflags" -o "$out" .
+              go build -trimpath -tags="$build_tags" -ldflags "$ldflags" -o "$out" .
           done
 
       # No codesign step for darwin: with cgo the external linker (clang/ld)
