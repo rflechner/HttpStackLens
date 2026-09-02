@@ -101,19 +101,35 @@ jobs:
         include:
           - os: windows-latest
             goos: windows
-            ext: ".exe"
+            arch: amd64
+            source: build/bin/HttpStackLens.exe
+            artifact: httpStackLens.exe
             # Pure Go on this side: no cgo in app_windows.go, and Wails'
             # Windows backend is go-webview2, so a static build stays
             # dependency-free.
             cgo: "0"
+          - os: windows-latest
+            goos: windows
+            arch: arm64
+            source: build/bin/HttpStackLens.exe
+            artifact: httpStackLens.exe
+            cgo: "0"
           - os: macos-latest
             goos: darwin
-            ext: ""
+            arch: amd64
+            source: build/bin/HttpStackLens.app
+            artifact: HttpStackLens.app
             # darwin has no choice: app_darwin.go links UniformTypeIdentifiers
             # through cgo and Wails' darwin backend is Objective-C. With
             # CGO_ENABLED=0 Go silently DROPS every file importing "C", so
             # app_darwin.go vanishes and CreateOsSpecificProxyPipeline ends up
             # undefined.
+            cgo: "1"
+          - os: macos-latest
+            goos: darwin
+            arch: arm64
+            source: build/bin/HttpStackLens.app
+            artifact: HttpStackLens.app
             cgo: "1"
     runs-on: ${{ matrix.os }}
     defaults:
@@ -144,38 +160,24 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           set -eu
-          ldflags="-s -w \
-            -X main.version=${{ needs.prepare.outputs.version }} \
-            -X main.commit=${{ needs.prepare.outputs.commit }} \
-            -X main.date=${{ needs.prepare.outputs.date }}"
-
-          # Wails requires both tags for distributable binaries. Without the
-          # production tag its runtime deliberately displays the "correct
-          # build flags" error dialog on startup.
-          build_tags="desktop,production"
-
-          # Match the documented Windows release build and the Wails CLI:
-          # suppress the console window for the desktop executable.
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            ldflags="${ldflags} -H windowsgui"
+          # The macOS runner is arm64, so darwin/amd64 is a cgo cross-compile.
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            if [ "${{ matrix.arch }}" = "amd64" ]; then clang_arch="x86_64"; else clang_arch="arm64"; fi
+            export CGO_CFLAGS="-arch ${clang_arch}"
+            export CGO_LDFLAGS="-arch ${clang_arch}"
           fi
 
-          for arch in amd64 arm64; do
-            out="dist/${{ matrix.goos }}_${arch}/${APP_NAME}${{ matrix.ext }}"
-            echo "→ ${{ matrix.goos }}/${arch}"
+          go run ./build-tools/main.go \
+            -platform "${{ matrix.goos }}/${{ matrix.arch }}" \
+            -skip-frontend \
+            -version "${{ needs.prepare.outputs.version }}" \
+            -commit "${{ needs.prepare.outputs.commit }}" \
+            -date "${{ needs.prepare.outputs.date }}" \
+            app
 
-            # The macOS runner is arm64, so darwin/amd64 is a cross-compile.
-            # cgo shells out to clang, which targets the host arch unless told
-            # otherwise, and the link then fails on mismatched objects.
-            if [ "${{ matrix.goos }}" = "darwin" ]; then
-              if [ "${arch}" = "amd64" ]; then clang_arch="x86_64"; else clang_arch="arm64"; fi
-              export CGO_CFLAGS="-arch ${clang_arch}"
-              export CGO_LDFLAGS="-arch ${clang_arch}"
-            fi
-
-            GOOS="${{ matrix.goos }}" GOARCH="${arch}" \
-              go build -trimpath -tags="$build_tags" -ldflags "$ldflags" -o "$out" .
-          done
+          out="dist/${{ matrix.goos }}_${{ matrix.arch }}/${{ matrix.artifact }}"
+          mkdir -p "$(dirname "$out")"
+          cp -R "${{ matrix.source }}" "$out"
 
       # No codesign step for darwin: with cgo the external linker (clang/ld)
       # is used, and it applies the same ad-hoc signature to arm64 Mach-O
@@ -185,7 +187,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: bin-${{ matrix.goos }}
+          name: bin-${{ matrix.goos }}-${{ matrix.arch }}
           path: dist
           retention-days: 1
 
@@ -212,6 +214,7 @@ jobs:
             cp readme.md LICENSE RELEASE.md "dist/${target}/"
             # upload-artifact does not preserve the Unix executable bit
             chmod +x "dist/${target}/${APP_NAME}" 2>/dev/null || true
+            find "dist/${target}" -type f -path '*/Contents/MacOS/*' -exec chmod +x {} +
             (cd "dist/${target}" && zip -qr "../../artifacts/${APP_NAME}_${version}_${target}.zip" .)
           done
 

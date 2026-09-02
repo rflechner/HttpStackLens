@@ -54,6 +54,17 @@ go run .\build-tools\main.go app          # Standalone Wails app → build/bin
 go run .\build-tools\main.go --help       # Usage
 ```
 
+Release and cross-architecture builds can select an explicit Wails platform:
+
+```sh
+go run .\build-tools\main.go -platform windows/arm64 app
+go run .\build-tools\main.go -platform darwin/amd64 app
+```
+
+The build tool is also the source of truth for Wails production tags, native
+resources, the embedded WebView2 bootstrap on Windows, and version metadata.
+Use `-skip-frontend` only when `webui/wwwroot` has already been built.
+
 Or via npm scripts from `webui/`:
 
 | Command | What it does |
@@ -166,20 +177,25 @@ go build -tags=desktop,production -ldflags="-s -w -H windowsgui" -o httpStackLen
 
 ### Cross-compilation
 
-The `build-tools` target builds for the current platform only. For cross-compilation, use `go build` directly:
+Prefer the build tool so cross-architecture output receives the same Wails
+production tags and native resources as a local release build:
 
-**macOS → Windows:**
-
-```sh
-GOOS=windows GOARCH=amd64 go build -tags=desktop,production -ldflags="-s -w -H windowsgui" -o httpStackLens.exe .
-```
-
-**Windows → macOS:**
+**Windows ARM64:**
 
 ```powershell
-$env:GOOS = "darwin"; $env:GOARCH = "amd64"
-go build -tags=desktop,production -ldflags="-s -w" -o httpStackLens .
+go run .\build-tools\main.go -platform windows/arm64 app
 ```
+
+**macOS Intel from an Apple Silicon runner:**
+
+```sh
+CGO_CFLAGS="-arch x86_64" CGO_LDFLAGS="-arch x86_64" \
+  go run ./build-tools/main.go -platform darwin/amd64 app
+```
+
+Wails does not support cross-compiling a macOS app from Windows. The release
+workflow therefore uses native Windows and macOS runners and only crosses the
+CPU architecture where necessary.
 
 ### Windows-specific features
 

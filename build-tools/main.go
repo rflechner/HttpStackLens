@@ -16,9 +16,31 @@ const wailsCLIVersion = "v2.13.0"
 
 var allTargets = []string{"webui", "app"}
 
+type options struct {
+	platform     string
+	skipFrontend bool
+	noPackage    bool
+	version      string
+	commit       string
+	date         string
+}
+
+type buildMetadata struct {
+	version string
+	commit  string
+	date    string
+}
+
 func main() {
+	var opts options
+	flag.StringVar(&opts.platform, "platform", "", "Wails target platform (for example windows/amd64 or darwin/arm64)")
+	flag.BoolVar(&opts.skipFrontend, "skip-frontend", false, "Use the already-built Web UI assets")
+	flag.BoolVar(&opts.noPackage, "no-package", false, "Build the native executable without an installer or app bundle")
+	flag.StringVar(&opts.version, "version", "", "Version embedded in the application (defaults to git describe)")
+	flag.StringVar(&opts.commit, "commit", "", "Commit embedded in the application (defaults to git rev-parse)")
+	flag.StringVar(&opts.date, "date", "", "UTC build date embedded in the application (defaults to the current time)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: build-tools [target...]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: build-tools [flags] [target...]\n\n")
 		fmt.Fprintf(os.Stderr, "Targets:\n")
 		fmt.Fprintf(os.Stderr, "  webui   Build WASM and CSS (Tailwind)\n")
 		fmt.Fprintf(os.Stderr, "  app     Package the standalone Wails app into build/bin\n")
@@ -41,7 +63,7 @@ func main() {
 	}
 
 	for _, target := range targets {
-		if err := runTarget(target, projectRoot); err != nil {
+		if err := runTarget(target, projectRoot, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "build error [%s]: %v\n", target, err)
 			os.Exit(1)
 		}
@@ -68,12 +90,12 @@ func findProjectRoot() (string, error) {
 	return "", fmt.Errorf("cannot find go.mod from %s", cwd)
 }
 
-func runTarget(target, projectRoot string) error {
+func runTarget(target, projectRoot string, opts options) error {
 	switch target {
 	case "webui":
 		return buildWebUI(projectRoot)
 	case "app":
-		return buildApp(projectRoot)
+		return buildApp(projectRoot, opts)
 	default:
 		return fmt.Errorf("unknown target %q (available: %s)", target, strings.Join(allTargets, ", "))
 	}
@@ -196,8 +218,12 @@ func buildCSS(webuiDir string) error {
 
 // --- app ---
 
-func buildApp(projectRoot string) error {
-	fmt.Printf("→ Packaging standalone Wails app for %s/%s...\n", runtime.GOOS, runtime.GOARCH)
+func buildApp(projectRoot string, opts options) error {
+	platform, targetOS, err := resolvePlatform(opts.platform)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("→ Packaging standalone Wails app for %s...\n", platform)
 	compiler, err := currentGoCompiler()
 	if err != nil {
 		return err
@@ -214,9 +240,20 @@ func buildApp(projectRoot string) error {
 		"-skipbindings",
 		"-trimpath",
 		"-compiler", compiler,
-		"-ldflags", versionLdflags(projectRoot),
+		"-platform", platform,
+		"-ldflags", versionLdflags(projectRoot, targetOS, buildMetadata{
+			version: opts.version,
+			commit:  opts.commit,
+			date:    opts.date,
+		}),
 	}
-	if runtime.GOOS == "windows" {
+	if opts.skipFrontend {
+		args = append(args, "-s")
+	}
+	if opts.noPackage {
+		args = append(args, "-nopackage")
+	}
+	if targetOS == "windows" {
 		// Keep the distributable to one executable while still allowing Wails
 		// to install WebView2 on machines where the runtime is missing.
 		args = append(args, "-webview2", "embed")
@@ -235,9 +272,9 @@ func buildApp(projectRoot string) error {
 	}
 
 	output := filepath.Join(projectRoot, "build", "bin", "HttpStackLens")
-	if runtime.GOOS == "windows" {
+	if targetOS == "windows" {
 		output += ".exe"
-	} else if runtime.GOOS == "darwin" {
+	} else if targetOS == "darwin" && !opts.noPackage {
 		output += ".app"
 	}
 	if _, err := os.Stat(output); err != nil {
@@ -245,6 +282,17 @@ func buildApp(projectRoot string) error {
 	}
 	fmt.Printf("✓ Standalone Wails app built → %s\n", output)
 	return nil
+}
+
+func resolvePlatform(platform string) (resolved string, targetOS string, err error) {
+	if platform == "" {
+		return runtime.GOOS + "/" + runtime.GOARCH, runtime.GOOS, nil
+	}
+	parts := strings.Split(platform, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid platform %q (expected os/arch)", platform)
+	}
+	return platform, parts[0], nil
 }
 
 // wailsCommand prefers an installed CLI, including the default GOPATH/bin
@@ -458,18 +506,30 @@ func ensureWailsIcon(projectRoot string) error {
 // main package's version/commit/date variables. Version and commit come from
 // git; when git is unavailable (not a repo, not installed) the corresponding -X
 // flags are omitted and main's compiled-in defaults ("dev"/"none") stand.
-func versionLdflags(projectRoot string) string {
+func versionLdflags(projectRoot, targetOS string, metadata buildMetadata) string {
 	flags := "-s -w"
-	if runtime.GOOS == "windows" {
+	if targetOS == "windows" {
 		flags += " -H windowsgui"
 	}
-	if version := gitOutput(projectRoot, "describe", "--tags", "--always", "--dirty"); version != "" {
+	version := metadata.version
+	if version == "" {
+		version = gitOutput(projectRoot, "describe", "--tags", "--always", "--dirty")
+	}
+	if version != "" {
 		flags += " -X main.version=" + version
 	}
-	if commit := gitOutput(projectRoot, "rev-parse", "--short", "HEAD"); commit != "" {
+	commit := metadata.commit
+	if commit == "" {
+		commit = gitOutput(projectRoot, "rev-parse", "--short", "HEAD")
+	}
+	if commit != "" {
 		flags += " -X main.commit=" + commit
 	}
-	flags += " -X main.date=" + time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	date := metadata.date
+	if date == "" {
+		date = time.Now().UTC().Format("2006-01-02T15:04:05Z")
+	}
+	flags += " -X main.date=" + date
 	fmt.Printf("  ldflags: %s\n", flags)
 	return flags
 }
