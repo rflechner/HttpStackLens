@@ -165,11 +165,14 @@ npx tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --minify
 
 ```sh
 # macOS / Linux
-go build -tags=desktop,production -ldflags="-s -w" -o httpStackLens .
+go build -tags=desktop,production -o httpStackLens .
 
 # Windows
-go build -tags=desktop,production -ldflags="-s -w -H windowsgui" -o httpStackLens.exe .
+go build -tags=desktop,production -ldflags="-H windowsgui" -o httpStackLens.exe .
 ```
+
+> No `-s -w` here, so this manual build keeps its symbols. Release builds go
+> through the Wails CLI, which strips them itself on every production build.
 
 </details>
 

@@ -42,13 +42,36 @@ func TestVersionLdflagsUsesProvidedReleaseMetadata(t *testing.T) {
 		date:    "2026-09-02T10:00:00Z",
 	})
 	for _, want := range []string{
-		"-s -w -H windowsgui",
+		"-H windowsgui",
 		"-X main.version=v1.2.3",
 		"-X main.commit=abc1234",
 		"-X main.date=2026-09-02T10:00:00Z",
 	} {
 		if !strings.Contains(flags, want) {
 			t.Errorf("versionLdflags() = %q, missing %q", flags, want)
+		}
+	}
+}
+
+// We no longer pass -s/-w ourselves. This only guards against re-adding a
+// duplicate: the Wails CLI appends "-w -s" to every Production build, so the
+// shipped binary stays stripped regardless of what this function returns.
+func TestVersionLdflagsDoesNotStripSymbols(t *testing.T) {
+	for _, targetOS := range []string{"windows", "darwin"} {
+		flags := versionLdflags(t.TempDir(), targetOS, buildMetadata{
+			version: "v1.2.3",
+			commit:  "abc1234",
+			date:    "2026-09-02T10:00:00Z",
+		})
+		for _, unwanted := range []string{"-s", "-w"} {
+			for _, field := range strings.Fields(flags) {
+				if field == unwanted {
+					t.Errorf("versionLdflags(%s) = %q, strips symbols with %q", targetOS, flags, unwanted)
+				}
+			}
+		}
+		if strings.HasPrefix(flags, " ") {
+			t.Errorf("versionLdflags(%s) = %q, has a leading space", targetOS, flags)
 		}
 	}
 }

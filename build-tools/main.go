@@ -254,9 +254,10 @@ func buildApp(projectRoot string, opts options) error {
 		args = append(args, "-nopackage")
 	}
 	if targetOS == "windows" {
-		// Keep the distributable to one executable while still allowing Wails
-		// to install WebView2 on machines where the runtime is missing.
-		args = append(args, "-webview2", "embed")
+		// "browser" rather than "embed": embedding the bootstrapper puts a
+		// second PE inside the executable, which the app then drops to disk and
+		// runs — the exact shape AV heuristics score as a dropper.
+		args = append(args, "-webview2", "browser")
 	}
 
 	cmd, source, err := wailsCommand(args...)
@@ -506,30 +507,44 @@ func ensureWailsIcon(projectRoot string) error {
 // main package's version/commit/date variables. Version and commit come from
 // git; when git is unavailable (not a repo, not installed) the corresponding -X
 // flags are omitted and main's compiled-in defaults ("dev"/"none") stand.
+//
+// Deliberately no -s/-w here, but note this does NOT produce an unstripped
+// binary: the Wails CLI appends "-w -s" to the ldflags of every Production
+// build (pkg/commands/build/base.go), so the released executable is stripped
+// either way. Passing them again only duplicated what Wails already does. Do
+// not add them back thinking it changes the output — it does not, and the only
+// ways to actually keep symbols are `-debug` mode (wrong for a release) or
+// dropping the Wails CLI for a plain `go build`, which loses the icon,
+// manifest and version resources that packaging provides.
+//
+// -H windowsgui is likewise redundant (Wails adds it for Windows Production and
+// deduplicates), kept explicit so the subsystem choice is visible here.
 func versionLdflags(projectRoot, targetOS string, metadata buildMetadata) string {
-	flags := "-s -w"
+	parts := make([]string, 0, 4)
 	if targetOS == "windows" {
-		flags += " -H windowsgui"
+		parts = append(parts, "-H windowsgui")
 	}
 	version := metadata.version
 	if version == "" {
 		version = gitOutput(projectRoot, "describe", "--tags", "--always", "--dirty")
 	}
 	if version != "" {
-		flags += " -X main.version=" + version
+		parts = append(parts, "-X main.version="+version)
 	}
 	commit := metadata.commit
 	if commit == "" {
 		commit = gitOutput(projectRoot, "rev-parse", "--short", "HEAD")
 	}
 	if commit != "" {
-		flags += " -X main.commit=" + commit
+		parts = append(parts, "-X main.commit="+commit)
 	}
 	date := metadata.date
 	if date == "" {
 		date = time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	}
-	flags += " -X main.date=" + date
+	parts = append(parts, "-X main.date="+date)
+
+	flags := strings.Join(parts, " ")
 	fmt.Printf("  ldflags: %s\n", flags)
 	return flags
 }
