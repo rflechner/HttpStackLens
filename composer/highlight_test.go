@@ -31,6 +31,18 @@ func expectTokens(t *testing.T, source string, expected ...string) {
 }
 
 func TestTokenize(t *testing.T) {
+	t.Run("function names, named parameters and both string delimiters", func(t *testing.T) {
+		expectTokens(t, `@token = oauth(clientId: "xxxxx", clientSecret: 'dwdwdw')`,
+			"variable:@token", "function:oauth", "parameter:clientId", `string:"xxxxx"`,
+			"parameter:clientSecret", "string:'dwdwdw'",
+		)
+	})
+	t.Run("multiline function spans preserve unicode and placeholders", func(t *testing.T) {
+		expectTokens(t, "@token = oauth(\r\n clientId: 'démo 🚀',\r\n scope: \"{{scope}}\",\r\n)\r\n",
+			"variable:@token", "function:oauth", "parameter:clientId", "string:'démo 🚀'",
+			"parameter:scope", `string:"`, "placeholder:{{scope}}", `string:"`,
+		)
+	})
 	t.Run("Success: a complete block", func(t *testing.T) {
 		source := "### Current user\n" +
 			"# the token comes from the file variables\n" +

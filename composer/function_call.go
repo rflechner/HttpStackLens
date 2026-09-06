@@ -11,11 +11,13 @@ import (
 )
 
 // FunctionCall describes syntax only: parsing never invokes a handler.
-// Parameters are named strings, with double-quoted values decoded using Go
+// Parameters are named strings, with single- or double-quoted values decoded using Go
 // string escapes. Bare values such as clientSecret: demo-secret are also strings.
 type FunctionCall struct {
 	Name       string
 	Parameters map[string]string
+	// tokens retain source spans for the shared syntax highlighter.
+	tokens []Token
 }
 
 // FunctionHandler is provided by the caller when it explicitly evaluates a
@@ -94,9 +96,9 @@ func functionExpected[T any](parser p.Parser[T], message string) p.Parser[T] {
 	}
 }
 
-func functionQuotedValueParser() p.Parser[string] {
+func functionQuotedValueParser(quote rune) p.Parser[string] {
 	plain := p.Map(p.Satisfy(func(c rune) bool {
-		return !strings.ContainsRune("\\\"\r\n", c)
+		return c != quote && c != '\\' && c != '\r' && c != '\n'
 	}), func(c rune) string { return string(c) })
 	escaped := p.Map(p.Combine(p.OneChar('\\'), p.Satisfy(func(c rune) bool {
 		return c != '\r' && c != '\n'
@@ -109,18 +111,27 @@ func functionQuotedValueParser() p.Parser[string] {
 	content := p.Map(p.Many(p.OrElse(escaped, plain)), func(parts []string) string {
 		return strings.Join(parts, "")
 	})
-	quoted := p.Right(p.OneChar('"'), p.Left(content,
-		functionExpected(p.OneChar('"'), "unterminated quoted value")))
+	quoted := p.Right(p.OneChar(quote), p.Left(content,
+		functionExpected(p.OneChar(quote), "unterminated quoted value")))
 	return func(context p.ParsingContext) (p.ParseResult[string], error) {
 		result, err := quoted(context)
 		if err != nil {
 			return p.ParseResult[string]{Context: context}, err
 		}
-		value, err := strconv.Unquote(`"` + result.Result + `"`)
-		if err != nil {
-			return p.ParseResult[string]{Context: context}, functionError(result.Context, "invalid string escape")
+		var value strings.Builder
+		for remaining := result.Result; remaining != ""; {
+			character, multibyte, tail, err := strconv.UnquoteChar(remaining, byte(quote))
+			if err != nil {
+				return p.ParseResult[string]{Context: context}, functionError(result.Context, "invalid string escape")
+			}
+			if multibyte {
+				value.WriteRune(character)
+			} else {
+				value.WriteByte(byte(character))
+			}
+			remaining = tail
 		}
-		return p.ParseResult[string]{Result: value, Context: result.Context}, nil
+		return p.ParseResult[string]{Result: value.String(), Context: result.Context}, nil
 	}
 }
 
@@ -128,11 +139,15 @@ func functionValueParser() p.Parser[string] {
 	bare := p.Map(p.Many(p.Satisfy(func(c rune) bool {
 		return !strings.ContainsRune(",) \t\r\n", c)
 	})), func(value []rune) string { return string(value) })
-	quoted := functionQuotedValueParser()
+	doubleQuoted := functionQuotedValueParser('"')
+	singleQuoted := functionQuotedValueParser('\'')
 	return func(context p.ParsingContext) (p.ParseResult[string], error) {
 		// Commit to a quoted value: an invalid escape must never fall back to bare text.
 		if startsWith(context, `"`) {
-			return quoted(context)
+			return doubleQuoted(context)
+		}
+		if startsWith(context, "'") {
+			return singleQuoted(context)
 		}
 		result, err := bare(context)
 		if err != nil {
@@ -149,6 +164,19 @@ func functionValueParser() p.Parser[string] {
 	}
 }
 
+func functionValueSpanParser() p.Parser[PositionedText[string]] {
+	parser := functionValueParser()
+	return func(context p.ParsingContext) (p.ParseResult[PositionedText[string]], error) {
+		result, err := parser(context)
+		if err != nil {
+			return p.ParseResult[PositionedText[string]]{Context: context}, err
+		}
+		return p.ParseResult[PositionedText[string]]{
+			Result: positioned(context, result.Context, "", result.Result), Context: result.Context,
+		}, nil
+	}
+}
+
 // FunctionCallParser reads name(key: "value", other: bare-value), allowing
 // whitespace and line breaks between arguments and an optional trailing comma.
 // Positional arguments, nested calls and duplicate parameter names are rejected.
@@ -158,7 +186,7 @@ func FunctionCallParser() p.Parser[FunctionCall] {
 	nameParser := functionExpected(functionIdentifierParser(), "expected named parameter")
 	valueParser := p.Right(functionSpaces(), p.Right(
 		functionExpected(p.OneChar(':'), "expected colon after parameter name"),
-		p.Right(functionSpaces(), functionValueParser()),
+		p.Right(functionSpaces(), functionValueSpanParser()),
 	))
 	delimiter := functionExpected(p.OrElse(p.OneChar(','), p.OneChar(')')), "expected comma or closing parenthesis")
 	return func(context p.ParsingContext) (p.ParseResult[FunctionCall], error) {
@@ -170,6 +198,7 @@ func FunctionCallParser() p.Parser[FunctionCall] {
 			return fail(err)
 		}
 		call := FunctionCall{Name: name.Result, Parameters: make(map[string]string)}
+		call.tokens = append(call.tokens, Token{TokenFunction, context.Position.Offset, context.Position.Offset + len([]rune(name.Result))})
 		next := name.Context
 		// SeparatedBy stops on an invalid argument. Keep this loop explicit so
 		// malformed arguments retain their diagnostics and duplicates are rejected.
@@ -193,7 +222,9 @@ func FunctionCallParser() p.Parser[FunctionCall] {
 			if err != nil {
 				return fail(err)
 			}
-			call.Parameters[key.Result] = value.Result
+			call.Parameters[key.Result] = value.Result.Text
+			call.tokens = append(call.tokens, Token{TokenParameter, next.Position.Offset, key.Context.Position.Offset})
+			call.tokens = appendSpan(call.tokens, TokenString, value.Result)
 			space, _ = functionSpaces()(value.Context)
 			if space.Context.AtEnd() {
 				return fail(functionError(space.Context, "unterminated function call"))

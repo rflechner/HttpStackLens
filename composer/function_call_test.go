@@ -15,6 +15,8 @@ func TestFunctionCallParser(t *testing.T) {
 		source string
 		want   map[string]string
 	}{
+		{`oauth(clientId: "xxxxx", clientSecret: 'dwdwdw')`, map[string]string{"clientId": "xxxxx", "clientSecret": "dwdwdw"}},
+		{`oauth(secret: 'l\'été "démo" 🚀\n\\', empty: '')`, map[string]string{"secret": "l'été \"démo\" 🚀\n\\", "empty": ""}},
 		{`oauth(clientId:"xxxxx", clientSecret: popopopo)`, map[string]string{"clientId": "xxxxx", "clientSecret": "popopopo"}},
 		{"oauth(\r\n clientId: \"démo 🚀\",\r\n scope: \"demo:read other\",\r\n)", map[string]string{"clientId": "démo 🚀", "scope": "demo:read other"}},
 		{`oauth(secret: "a,):\"b\\c\n", empty: "")`, map[string]string{"secret": "a,):\"b\\c\n", "empty": ""}},
@@ -39,8 +41,9 @@ func TestFunctionCallParserRejectsInvalidSyntax(t *testing.T) {
 		`oauth`, `oauth(`, `oauth("positional")`, `oauth(key value)`,
 		`oauth(key:)`, `oauth(key: a key2: b)`, `oauth(key:a,key:b)`,
 		`oauth(key: "unterminated)`, `oauth(key: "\q")`,
+		`oauth(key: 'unterminated)`, `oauth(key: '\q')`, `oauth(key: 'mismatch")`,
 		`oauth(key: env(name:"SECRET"))`, `oauth(key:a,,)`,
-		"oauth(key: \"line\nbreak\")", `oauth(key: 'single quotes')`,
+		"oauth(key: \"line\nbreak\")",
 	} {
 		if _, err := FunctionCallParser()(p.NewParsingContext(source)); err == nil {
 			t.Errorf("accepted invalid syntax: %q", source)
@@ -73,7 +76,7 @@ func TestFunctionVariableFileAndSpans(t *testing.T) {
 			t.Fatalf("invalid token span: %+v", token)
 		}
 	}
-	if !strings.Contains(HighlightHTML(source), "clientId:") {
+	if !strings.Contains(HighlightHTML(source), `class="hl-parameter">clientId</span>`) {
 		t.Fatal("multiline call disappeared from highlighting")
 	}
 }

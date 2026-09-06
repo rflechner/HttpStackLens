@@ -13,6 +13,9 @@ import (
 type TokenKind string
 
 const (
+	TokenFunction    TokenKind = "function"
+	TokenParameter   TokenKind = "parameter"
+	TokenString      TokenKind = "string"
 	TokenSeparator   TokenKind = "separator"
 	TokenComment     TokenKind = "comment"
 	TokenVariable    TokenKind = "variable"
@@ -38,6 +41,7 @@ var placeholderHosts = map[TokenKind]bool{
 	TokenTarget: true,
 	TokenValue:  true,
 	TokenBody:   true,
+	TokenString: true,
 }
 
 // Tokenize turns a `.http` source into the spans a syntax highlighter paints.
@@ -53,7 +57,11 @@ func Tokenize(source string) []Token {
 	var tokens []Token
 	for _, variable := range file.Variables {
 		tokens = appendSpan(tokens, TokenVariable, variable.Name)
-		tokens = appendSpan(tokens, TokenValue, variable.Value)
+		if variable.Call != nil {
+			tokens = append(tokens, variable.Call.tokens...)
+		} else {
+			tokens = appendSpan(tokens, TokenValue, variable.Value)
+		}
 	}
 
 	for _, request := range file.Requests {
@@ -131,10 +139,11 @@ func lexLine(runes []rune, start, end int) []Token {
 	context := lineContextAt(runes, start, end)
 
 	if variable, err := FileVariableParser()(context); err == nil {
-		return []Token{
-			{TokenVariable, variable.Result.Name.Start.Offset, variable.Result.Name.End.Offset},
-			{TokenValue, variable.Result.Value.Start.Offset, variable.Result.Value.End.Offset},
+		tokens := []Token{{TokenVariable, variable.Result.Name.Start.Offset, variable.Result.Name.End.Offset}}
+		if variable.Result.Call != nil {
+			return append(tokens, variable.Result.Call.tokens...)
 		}
+		return appendSpan(tokens, TokenValue, variable.Result.Value)
 	}
 	if comment, err := HeaderCommentsParser()(context); err == nil {
 		return []Token{{TokenSeparator, comment.Result.Start.Offset, comment.Result.End.Offset}}

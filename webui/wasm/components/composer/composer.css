@@ -38,6 +38,9 @@
 .hl-target { color:var(--ink) }
 .hl-version { color:var(--faint) }
 .hl-header { color:var(--info) }
+.hl-function { color:var(--info); font-weight:500 }
+.hl-parameter { color:var(--warn) }
+.hl-string { color:var(--mint) }
 .hl-value { color:var(--dim) }
 .hl-body { color:var(--ink) }
 .hl-placeholder { color:var(--pink); background:color-mix(in srgb, var(--pink) 13%, transparent); border-radius:3px }

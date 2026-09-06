@@ -54,7 +54,8 @@ This parser API is not yet connected to the Composer's request execution or its
 separate UI file editor parser.
 
 Arguments must be named. All values are strings: bare `true` and `12` remain
-strings. Double-quoted values support Go string escapes; use quotes for spaces,
+strings. Single- and double-quoted values support Go string escapes (including escaped
+matching quotes); use quotes for spaces,
 commas or parentheses. Empty strings are allowed. Calls can span lines and may
 end with a trailing comma. Duplicate names, positional arguments, nested calls
 (including `env(...)`) and text after a call are rejected. Function and parameter
