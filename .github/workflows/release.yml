@@ -211,7 +211,7 @@ jobs:
 
           for target in windows_amd64 windows_arm64 darwin_amd64 darwin_arm64; do
             cp "${SAMPLE_CONFIG}" "dist/${target}/config.yaml"
-            cp readme.md LICENSE RELEASE.md "dist/${target}/"
+            cp readme.md readme.fr.md LICENSE RELEASE.md "dist/${target}/"
             # upload-artifact does not preserve the Unix executable bit
             chmod +x "dist/${target}/${APP_NAME}" 2>/dev/null || true
             find "dist/${target}" -type f -path '*/Contents/MacOS/*' -exec chmod +x {} +

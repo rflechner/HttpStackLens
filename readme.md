@@ -1,5 +1,7 @@
 # HttpStackLens
 
+**English** · [Français](readme.fr.md)
+
 ![HttpStackLens](images/splash-screen.png)
 
 [![Release](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml/badge.svg)](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml)
@@ -26,6 +28,42 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 ## What it doesn't do (yet)
 
 - Not intended for production use or shared networks
+
+## Getting the application
+
+Every tagged version publishes prebuilt archives on the
+[Releases page](https://github.com/rflechner/HttpStackLens/releases), for
+Windows and macOS on both `amd64` and `arm64`. Each archive carries the binary,
+a sample `config.yaml`, and the release notes; a `checksums_<version>.txt` file
+next to them lets you verify what you downloaded:
+
+```sh
+sha256sum -c checksums_v0.2.0-alpha1.txt
+```
+
+On Windows, without `sha256sum`:
+
+```powershell
+Get-FileHash .\httpStackLens_v0.2.0-alpha1_windows_amd64.zip -Algorithm SHA256
+```
+
+**That said, building it yourself is the better option.** Three reasons:
+
+1. **The binaries are unsigned.** No Authenticode certificate is attached, so
+   Windows SmartScreen will warn on them and antivirus engines may flag them
+   outright. Those detections are false positives, but from the outside there is
+   no way to tell a false positive from a real one.
+2. **The application looks like malware by design.** It installs a root CA into
+   your trust store and intercepts TLS — that is the whole point of a debugging
+   proxy, and it is also exactly what an attacker's tool does. Heuristic scanners
+   cannot distinguish the two, and neither can you, from a binary alone.
+3. **It asks for real trust.** Running this grants a program the ability to read
+   your HTTPS traffic in clear text. That is a lot to hand to a binary compiled
+   on someone else's machine. Building from source means the code you audited is
+   the code you run.
+
+The build is a single command and needs only Go and Node.js — see
+[Build](#build) below.
 
 ## Prerequisites
 
@@ -62,7 +100,7 @@ go run .\build-tools\main.go -platform darwin/amd64 app
 ```
 
 The build tool is also the source of truth for Wails production tags, native
-resources, the embedded WebView2 bootstrap on Windows, and version metadata.
+resources, the WebView2 strategy on Windows, and version metadata.
 Use `-skip-frontend` only when `webui/wwwroot` has already been built.
 
 Or via npm scripts from `webui/`:
@@ -81,10 +119,13 @@ application with the native window, icon and platform metadata:
 go run .\build-tools\main.go
 ```
 
-The standalone application is written to `build/bin/`. On Windows the WebView2
-bootstrapper is embedded in the executable, so there are no frontend or runtime
-sidecar files to distribute. The first build can download the pinned Wails CLI
-when it is not already installed. Running
+The standalone application is written to `build/bin/`. On Windows the build
+relies on the WebView2 runtime already present on the machine — it ships with
+Windows 11 and current Windows 10, and a machine without it is sent to
+Microsoft's download page. The bootstrapper is deliberately *not* embedded: that
+would place a second executable inside the binary to be dropped to disk and run,
+which antivirus heuristics score as malware. The first build can download the
+pinned Wails CLI when it is not already installed. Running
 `go run -tags=dev .` remains useful during Go development and also opens the
 Wails desktop window.
 
