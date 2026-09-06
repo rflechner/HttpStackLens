@@ -21,9 +21,16 @@ func ParseHttpFile(source string) HttpFile {
 			return file
 		}
 
-		if variable, err := FileVariableParser()(context); err == nil {
-			file.Variables = append(file.Variables, variable.Result)
-			context = consumeEndOfLine(variable.Context)
+		if startsWith(context, "@") {
+			variable, err := FileVariableParser()(context)
+			if err != nil {
+				issue, next := skipUnreadableBlock(context, err.Error())
+				file.Issues = append(file.Issues, issue)
+				context = next
+			} else {
+				file.Variables = append(file.Variables, variable.Result)
+				context = consumeEndOfLine(variable.Context)
+			}
 			continue
 		}
 

@@ -39,6 +39,9 @@ type PositionedHeader struct {
 type FileVariable struct {
 	Name  PositionedText[string]
 	Value PositionedText[string]
+	// Call is non-nil when Value is a function expression. Value keeps the
+	// original source, including line breaks, for editors and highlighting.
+	Call *FunctionCall
 }
 
 type PositionedHttpRequestLine struct {

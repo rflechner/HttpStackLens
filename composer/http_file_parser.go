@@ -133,8 +133,8 @@ func HttpRequestLineParser() p.Parser[PositionedHttpRequestLine] {
 	}
 }
 
-// FileVariableParser reads an `@name = value` line. The value runs to the end
-// of the line; the spaces around the '=' belong to neither half.
+// FileVariableParser reads an `@name = value` declaration. Literal values end
+// at the line break; function calls can span several lines.
 func FileVariableParser() p.Parser[FileVariable] {
 	return func(context p.ParsingContext) (p.ParseResult[FileVariable], error) {
 		marker, err := p.StringMatch("@")(context)
@@ -153,6 +153,32 @@ func FileVariableParser() p.Parser[FileVariable] {
 		assign, err := p.Right(helpers.SpacesParser(), p.StringMatch("="))(nameResult.Context)
 		if err != nil {
 			return p.ParseResult[FileVariable]{Context: context}, err
+		}
+
+		valueStart := assign.Context
+		for !valueStart.AtEnd() && (valueStart.Remaining[0] == ' ' || valueStart.Remaining[0] == '\t') {
+			valueStart = valueStart.Forward(1)
+		}
+		if isFunctionCall(valueStart) {
+			call, err := FunctionCallParser()(valueStart)
+			if err != nil {
+				return p.ParseResult[FileVariable]{Context: context}, err
+			}
+			rest := call.Context
+			for !rest.AtEnd() && (rest.Remaining[0] == ' ' || rest.Remaining[0] == '\t') {
+				rest = rest.Forward(1)
+			}
+			if !rest.AtEnd() && rest.Remaining[0] != '\r' && rest.Remaining[0] != '\n' {
+				return p.ParseResult[FileVariable]{Context: context}, fmt.Errorf("unexpected text after function call")
+			}
+			return p.ParseResult[FileVariable]{
+				Result: FileVariable{
+					Name:  PositionedText[string]{Text: string(nameResult.Result), Start: context.Position, End: nameResult.Context.Position},
+					Value: positionedSource(assign.Context, call.Context, cutSpace),
+					Call:  &call.Result,
+				},
+				Context: rest,
+			}, nil
 		}
 
 		valueResult, err := p.Many(p.Satisfy(func(c rune) bool {
