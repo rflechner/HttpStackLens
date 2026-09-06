@@ -21,6 +21,7 @@ const (
 	OPTIONS HttpMethod = "OPTIONS"
 	DELETE  HttpMethod = "DELETE"
 	CONNECT HttpMethod = "CONNECT"
+	QUERY   HttpMethod = "QUERY"
 )
 
 func ParseHttpMethod(input string) (HttpMethod, error) {
@@ -44,6 +45,9 @@ func ParseHttpMethod(input string) (HttpMethod, error) {
 	}
 	if strings.EqualFold(string(DELETE), input) {
 		return DELETE, nil
+	}
+	if strings.EqualFold(string(QUERY), input) {
+		return QUERY, nil
 	}
 	if strings.EqualFold(string(CONNECT), input) {
 		return CONNECT, nil

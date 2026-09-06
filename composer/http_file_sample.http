@@ -1,0 +1,10 @@
+### GET request example for calling API of ipify.org
+### enforcing IPv4
+GET https://api.ipify.org?format=json
+Accept: application/json
+
+### Accept IPv4 or IPv6
+GET https://api64.ipify.org?format=json
+Accept: application/json
+
+###

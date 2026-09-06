@@ -1,6 +1,8 @@
 # HttpStackLens
 
-![Logo](images/logo-with-text.png)
+**English** · [Français](readme.fr.md)
+
+![HttpStackLens](images/splash-screen.png)
 
 [![Release](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml/badge.svg)](https://github.com/rflechner/HttpStackLens/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/rflechner/HttpStackLens)](https://github.com/rflechner/HttpStackLens/releases)
@@ -21,11 +23,47 @@ This project is primarily a **Go** learning exercise. The goal is to get familia
 - Handles HTTPS tunnels via the `CONNECT` method
 - Can decrypt HTTPS traffic with opt-in local MITM when `decrypt_https.enabled` is enabled
 - Forwards requests and responses bidirectionally
-- Web UI (WASM-based) to inspect live HTTP traffic
+- Wails desktop app with a Go/WASM traffic inspector
 
 ## What it doesn't do (yet)
 
 - Not intended for production use or shared networks
+
+## Getting the application
+
+Every tagged version publishes prebuilt archives on the
+[Releases page](https://github.com/rflechner/HttpStackLens/releases), for
+Windows and macOS on both `amd64` and `arm64`. Each archive carries the binary,
+a sample `config.yaml`, and the release notes; a `checksums_<version>.txt` file
+next to them lets you verify what you downloaded:
+
+```sh
+sha256sum -c checksums_v0.2.0-alpha1.txt
+```
+
+On Windows, without `sha256sum`:
+
+```powershell
+Get-FileHash .\httpStackLens_v0.2.0-alpha1_windows_amd64.zip -Algorithm SHA256
+```
+
+**That said, building it yourself is the better option.** Three reasons:
+
+1. **The binaries are unsigned.** No Authenticode certificate is attached, so
+   Windows SmartScreen will warn on them and antivirus engines may flag them
+   outright. Those detections are false positives, but from the outside there is
+   no way to tell a false positive from a real one.
+2. **The application looks like malware by design.** It installs a root CA into
+   your trust store and intercepts TLS — that is the whole point of a debugging
+   proxy, and it is also exactly what an attacker's tool does. Heuristic scanners
+   cannot distinguish the two, and neither can you, from a binary alone.
+3. **It asks for real trust.** Running this grants a program the ability to read
+   your HTTPS traffic in clear text. That is a lot to hand to a binary compiled
+   on someone else's machine. Building from source means the code you audited is
+   the code you run.
+
+The build is a single command and needs only Go and Node.js — see
+[Build](#build) below.
 
 ## Prerequisites
 
@@ -50,9 +88,20 @@ Additional targets:
 
 ```sh
 go run .\build-tools\main.go webui        # Web UI only (WASM + CSS)
-go run .\build-tools\main.go app          # Native binary only
+go run .\build-tools\main.go app          # Standalone Wails app → build/bin
 go run .\build-tools\main.go --help       # Usage
 ```
+
+Release and cross-architecture builds can select an explicit Wails platform:
+
+```sh
+go run .\build-tools\main.go -platform windows/arm64 app
+go run .\build-tools\main.go -platform darwin/amd64 app
+```
+
+The build tool is also the source of truth for Wails production tags, native
+resources, the WebView2 strategy on Windows, and version metadata.
+Use `-skip-frontend` only when `webui/wwwroot` has already been built.
 
 Or via npm scripts from `webui/`:
 
@@ -60,10 +109,55 @@ Or via npm scripts from `webui/`:
 |---|---|
 | `npm run build` | Web UI + native binary |
 | `npm run build:webui` | WASM + Tailwind CSS only |
-| `npm run build:app` | Native binary only |
+| `npm run build:app` | Standalone Wails app in `build/bin/` |
 | `npm run dev:css` | Tailwind CSS in watch mode (dev) |
 
-The build tool auto-detects the current platform and produces `httpStackLens.exe` on Windows or `httpStackLens` on macOS/Linux.
+The default target rebuilds the Web UI and creates a packaged desktop
+application with the native window, icon and platform metadata:
+
+```sh
+go run .\build-tools\main.go
+```
+
+The standalone application is written to `build/bin/`. On Windows the build
+relies on the WebView2 runtime already present on the machine — it ships with
+Windows 11 and current Windows 10, and a machine without it is sent to
+Microsoft's download page. The bootstrapper is deliberately *not* embedded: that
+would place a second executable inside the binary to be dropped to disk and run,
+which antivirus heuristics score as malware. The first build can download the
+pinned Wails CLI when it is not already installed. Running
+`go run -tags=dev .` remains useful during Go development and also opens the
+Wails desktop window.
+
+### JetBrains GoLand
+
+Wails requires build tags; a standard GoLand configuration without tags starts
+an error window instead of the application.
+
+Create a **Go Build** configuration from **Run → Edit Configurations…** with:
+
+| Field | Value |
+|---|---|
+| Name | `HttpStackLens` |
+| Run kind | `Package` |
+| Package path | `httpStackLens` |
+| Working directory | the project root, for example `C:\dev\HttpStackLens` |
+| Go tool arguments (Run) | `-tags=desktop,production` |
+| Go tool arguments (Debug) | `-tags=dev` |
+| Program arguments | empty, unless a proxy option is needed |
+
+Use the `dev` tags when launching with the debugger. In this mode, static Web
+UI files are read from `webui/wwwroot`, so HTML and JavaScript edits are visible
+after a reload. Rebuild the generated WASM and CSS after changing the Go/WASM
+frontend or Tailwind sources:
+
+```powershell
+go run .\build-tools\main.go webui
+```
+
+Then stop the previous application instance completely and launch it again from
+GoLand. HttpStackLens uses a Wails single-instance lock, so an already running
+window prevents a second instance from starting.
 
 ---
 
@@ -112,11 +206,14 @@ npx tailwindcss -i ./src/input.css -o ./wwwroot/css/output.css --minify
 
 ```sh
 # macOS / Linux
-go build -ldflags="-s -w" -o httpStackLens .
+go build -tags=desktop,production -o httpStackLens .
 
 # Windows
-go build -ldflags="-s -w" -o httpStackLens.exe .
+go build -tags=desktop,production -ldflags="-H windowsgui" -o httpStackLens.exe .
 ```
+
+> No `-s -w` here, so this manual build keeps its symbols. Release builds go
+> through the Wails CLI, which strips them itself on every production build.
 
 </details>
 
@@ -124,20 +221,25 @@ go build -ldflags="-s -w" -o httpStackLens.exe .
 
 ### Cross-compilation
 
-The `build-tools` target builds for the current platform only. For cross-compilation, use `go build` directly:
+Prefer the build tool so cross-architecture output receives the same Wails
+production tags and native resources as a local release build:
 
-**macOS → Windows:**
-
-```sh
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o httpStackLens.exe .
-```
-
-**Windows → macOS:**
+**Windows ARM64:**
 
 ```powershell
-$env:GOOS = "darwin"; $env:GOARCH = "amd64"
-go build -ldflags="-s -w" -o httpStackLens .
+go run .\build-tools\main.go -platform windows/arm64 app
 ```
+
+**macOS Intel from an Apple Silicon runner:**
+
+```sh
+CGO_CFLAGS="-arch x86_64" CGO_LDFLAGS="-arch x86_64" \
+  go run ./build-tools/main.go -platform darwin/amd64 app
+```
+
+Wails does not support cross-compiling a macOS app from Windows. The release
+workflow therefore uses native Windows and macOS runners and only crosses the
+CPU architecture where necessary.
 
 ### Windows-specific features
 
@@ -151,10 +253,11 @@ These rely on the Windows SSPI API (`secur32.dll`) and will return an error if u
 ## Usage
 
 ```sh
-go run .
+go run -tags=dev .
 ```
 
-The proxy listens on `localhost:3128`. You can test it with curl:
+The Wails window opens automatically, and the proxy listens on `localhost:3128`.
+You can test it with curl:
 
 ```sh
 curl -x http://localhost:3128 http://example.com

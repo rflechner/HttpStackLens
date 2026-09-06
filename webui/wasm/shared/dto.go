@@ -342,3 +342,58 @@ type MimeTypeRuleDto struct {
 	MaxSizeKb    *float64 `json:"max_size_kb,omitempty"`
 	MaxSizeMb    *float64 `json:"max_size_mb,omitempty"`
 }
+
+// ComposerRequestDto is a request built in the Web UI composer and sent by
+// POST /api/composer/send. The backend executes it through the proxy pipeline
+// rather than letting the browser issue it, so upstream proxy, no_proxy and
+// HTTPS decryption settings apply exactly as they do for proxied traffic.
+type ComposerRequestDto struct {
+	Method  string      `json:"method"`
+	Url     string      `json:"url"`
+	Headers []HeaderDto `json:"headers"`
+	Body    string      `json:"body"`
+}
+
+// ComposerResponseDto is the outcome of a composer send. A request that never
+// reached a response (DNS failure, refused connection, TLS error, timeout) is
+// reported with Error set and a zero Status — it is a result to display, not an
+// API failure.
+type ComposerResponseDto struct {
+	Status     int    `json:"status"`
+	StatusText string `json:"status_text"`
+	// Proto is the version the response came back on ("HTTP/1.1", "HTTP/2.0"),
+	// which is what the raw view needs to write a status line.
+	Proto   string      `json:"proto"`
+	Headers []HeaderDto `json:"headers"`
+	Body    string      `json:"body"`
+	// DurationMs covers the whole exchange, pipeline included.
+	DurationMs int `json:"duration_ms"`
+	// Truncated reports that the body was cut at the size limit.
+	Truncated bool `json:"truncated"`
+	// Upstream is the outbound proxy the request went through, empty when the
+	// connection was direct.
+	Upstream string `json:"upstream"`
+	Error    string `json:"error"`
+}
+
+// HttpFileDto is one `.http` file of the composer's collection, content
+// included: the collection is small and the composer needs every file open at
+// once to list the requests inside them, so a second round trip per file would
+// buy nothing.
+type HttpFileDto struct {
+	Name       string `json:"name"`
+	Content    string `json:"content"`
+	ModifiedAt string `json:"modified_at"`
+}
+
+// HttpFilesDto is the answer of GET /api/http-files: the folder the files were
+// read from, so the Web UI can show where they live, and their contents.
+type HttpFilesDto struct {
+	Folder string        `json:"folder"`
+	Files  []HttpFileDto `json:"files"`
+}
+
+// HttpFileRenameDto carries the new name of a `.http` file.
+type HttpFileRenameDto struct {
+	Name string `json:"name"`
+}

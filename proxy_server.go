@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 )
 
 type ProxyServer struct {
@@ -27,6 +28,9 @@ type ProxyServer struct {
 	store         *storage.RequestStore
 	captureCtl    *storage.CaptureController
 	accessControl *configuration.AccessControlSettingsStore
+	// requestID numbers the requests shown in the UI. It is atomic because
+	// composer sends run outside the accept loop.
+	requestID atomic.Int64
 }
 
 type ProxyEventLogger interface {
@@ -109,8 +113,20 @@ func isClosedNetworkError(err error) bool {
 	return err != nil && err == net.ErrClosed
 }
 
+// ServeConnection runs the middleware pipeline on an already-established
+// connection: read the proxy request, report it to the UI, hand the stream to
+// the pipeline. Run uses it for each accepted client, and the Web UI composer
+// uses it to send a request through the very same pipeline over an in-memory
+// connection — which is why it must not depend on the listener.
+func (s *ProxyServer) ServeConnection(connection net.Conn) {
+	s.handleRequest(connection, s.nextRequestID())(s.appContext.pipeline)
+}
+
+func (s *ProxyServer) nextRequestID() int {
+	return int(s.requestID.Add(1))
+}
+
 func (s *ProxyServer) Run() {
-	requestId := 0
 	for {
 		browser, err := s.listener.Accept()
 		if err != nil {
@@ -130,11 +146,10 @@ func (s *ProxyServer) Run() {
 			return
 		}
 		fmt.Printf("New connection from %s\n", browser.RemoteAddr().String())
-		requestId++
-		go func(connection net.Conn, id int) {
+		go func(connection net.Conn) {
 			defer s.untrackConnection(connection)
-			s.handleRequest(connection, id)(s.appContext.pipeline)
-		}(browser, requestId)
+			s.ServeConnection(connection)
+		}(browser)
 	}
 }
 

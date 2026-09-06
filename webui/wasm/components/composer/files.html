@@ -1,0 +1,73 @@
+<div class="cx-side-head">
+  <span class="cx-side-title">Request files</span>
+  <button class="cx-mini" data-on-click="NewFile">+ File</button>
+</div>
+<div class="cx-side-note">
+  Each file is a plain <span class="mono">.http</span> file in the folder below; each entry is one request inside it.
+</div>
+
+{{if .Naming}}
+  <div class="cx-namefield">
+    <input class="cx-name-input mono" data-ref="nameInput" value="{{.NameDraft}}"
+           placeholder="my-api.http" spellcheck="false" autocomplete="off"
+           data-on-keydown="NameKey" {{attr .BusyAttrs}} />
+    <button class="cx-mini" data-on-click="ConfirmName" {{attr .BusyAttrs}}>
+      {{if .Busy}}…{{else if .NamingNew}}Create{{else}}Rename{{end}}
+    </button>
+    <button class="cx-mini" data-on-click="CancelName" title="Cancel">✕</button>
+    {{if .NameErr}}<div class="cx-name-err">{{.NameErr}}</div>{{end}}
+  </div>
+{{end}}
+
+<div class="cx-files hsl-scroll">
+  {{range $f := .Files}}
+    <div class="cx-file{{if $.IsActiveFile $f}} active{{end}}">
+      <button class="cx-file-head" data-on-click="OpenFile" data-arg="{{$f.ID}}">
+        <span class="cx-caret" data-on-click="ToggleFile" data-arg="{{$f.ID}}">{{if $f.Open}}▾{{else}}▸{{end}}</span>
+        <svg class="cx-file-ico" width="13" height="14" viewBox="0 0 13 14" fill="none">
+          <path d="M2 1.5h5l4 3.5v7.5H2z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+          <path d="M7 1.5V5h4" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+        </svg>
+        <span class="cx-file-name">{{$f.Name}}</span>
+        {{if $.IsDirty $f}}<span class="cx-dot-dirty" title="unsaved changes"></span>{{end}}
+        <span class="cx-rename" data-on-click="RenameFile" data-arg="{{$f.ID}}" title="Rename {{$f.Name}}">✎</span>
+        <span class="cx-file-count">{{len $f.Reqs}}</span>
+      </button>
+      {{if $f.Open}}
+        {{range $r := $f.Reqs}}
+          <button class="cx-req{{if $.IsActiveReq $r}} on{{end}}"
+                  data-on-click="Select" data-arg-file="{{$f.ID}}" data-arg-req="{{$r.ID}}"
+                  title="{{$r.Method}} {{$r.URL}}">
+            <span class="cx-m" style="color:{{$.MethodColor $r.Method}}">{{$r.Method}}</span>
+            <span class="cx-req-name">{{$r.Title}}</span>
+          </button>
+        {{end}}
+        <button class="cx-add-req" data-on-click="NewRequest" data-arg="{{$f.ID}}">+ New request</button>
+      {{end}}
+    </div>
+  {{else}}
+    {{if .Loading}}
+      <div class="cx-empty">Reading the folder…</div>
+    {{else if .LoadErr}}
+      <div class="cx-empty">
+        The folder could not be read.
+        <div class="cx-name-err">{{.LoadErr}}</div>
+      </div>
+    {{else}}
+      <div class="cx-empty">
+        No .http file in this folder yet.
+        <button class="cx-btn" data-on-click="NewFile" style="margin-top:10px">+ New .http file</button>
+      </div>
+    {{end}}
+  {{end}}
+</div>
+
+<div class="cx-side-foot">
+  <button class="cx-side-path mono" data-on-click="OpenFolder"
+          title="{{if .Folder}}Open {{.Folder}} in the file manager{{else}}Reading the folder…{{end}}">
+    {{if .Folder}}{{.Folder}}{{else}}…{{end}}
+  </button>
+  {{if .FootErr}}<div class="cx-name-err">{{.FootErr}}</div>{{end}}
+  <button class="cx-mini" data-on-click="SaveFile" title="Write this .http file to the folder now">Save .http</button>
+  <button class="cx-mini danger" data-on-click="DeleteFile" title="Delete this .http file from the folder">Delete</button>
+</div>

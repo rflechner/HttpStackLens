@@ -1,0 +1,11 @@
+/* mode-seg styles the host element, which the page owns — the switch ships the
+   rule so the markup stays in one place. */
+.mode-seg { display:flex; gap:3px; background:var(--bg0); border:1px solid var(--line); border-radius:9px; padding:3px }
+.mode-btn { display:inline-flex; align-items:center; gap:6px; height:24px; padding:0 12px; border-radius:6px;
+  font-size:11.5px; font-family:Inter; font-weight:500; cursor:pointer; background:transparent; color:var(--dim);
+  border:1px solid transparent }
+.mode-btn:hover { color:var(--ink) }
+.mode-btn.on { background:var(--pill-bg); color:var(--mint); font-weight:600; border-color:var(--pill-border); box-shadow:var(--pill-shadow) }
+.mode-badge { font-size:9.5px; color:var(--faint); background:var(--bg3); border-radius:4px; padding:1px 4px }
+.mode-btn.on .mode-badge { color:var(--mint); background:color-mix(in srgb, var(--mint) 14%, transparent) }
+.mode-badge.mono { font-family:'JetBrains Mono', ui-monospace, monospace }

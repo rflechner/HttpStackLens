@@ -1,16 +1,15 @@
 package parser
 
 import (
-	"fmt"
 	"httpStackLens/http/models"
 	"net/url"
 	"strconv"
 	"strings"
 	"unicode"
-
-	"github.com/rflechner/EasyParsingForGo/helpers"
 )
 import p "github.com/rflechner/EasyParsingForGo/combinator"
+import helpers "httpStackLens/helpers"
+import parsing_helpers "github.com/rflechner/EasyParsingForGo/helpers"
 
 func VersionParser() p.Parser[models.Version] {
 	return p.Map(
@@ -44,33 +43,8 @@ func HostParser() p.Parser[string] {
 		func(host []rune) string { return string(host) })
 }
 
-func SpacesParser() p.Parser[struct{}] {
-	return p.Skip(p.Spaces())
-}
-func NewLineParser() p.Parser[string] {
-	return p.OrElse(
-		p.StringMatch("\r\n"),
-		p.StringMatch("\n"))
-}
-
-func ResourceEndpointParser() p.Parser[models.ResourceEndpoint] {
-	onlyHostPortParser := p.Map(
-		p.Left(
-			p.Combine(
-				HostParser(),
-				p.Optional(p.Right(p.OneChar(':'), p.Integer())),
-			),
-			SpacesParser(),
-		),
-		func(hostPort struct {
-			Left  string
-			Right helpers.Option[int]
-		}) models.ResourceEndpoint {
-			return models.ResourceEndpoint{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
-		},
-	)
-
-	urlParser := p.Map(UrlParser(), func(url url.URL) models.ResourceEndpoint {
+func EnrichedUrlParser() p.Parser[models.ResourceEndpoint] {
+	return p.Map(helpers.UrlParser(), func(url url.URL) models.ResourceEndpoint {
 
 		var defaultPort int
 		if strings.ToLower(url.Scheme) == "https" {
@@ -109,51 +83,58 @@ func ResourceEndpointParser() p.Parser[models.ResourceEndpoint] {
 			PathAndQuery: pathAndQuery,
 		}
 	})
-
-	return p.OrElse(urlParser, onlyHostPortParser)
 }
 
-func UrlParser() p.Parser[url.URL] {
-	return func(context p.ParsingContext) (p.ParseResult[url.URL], error) {
-		text, err := p.UntilText(p.Many(p.Satisfy(func(r rune) bool { return true })), " HTTP/", false)(context)
+func ResourceEndpointParser() p.Parser[models.ResourceEndpoint] {
+	onlyHostPortParser := p.Map(
+		p.Left(
+			p.Combine(
+				HostParser(),
+				p.Optional(p.Right(p.OneChar(':'), p.Integer())),
+			),
+			helpers.SpacesParser(),
+		),
+		func(hostPort struct {
+			Left  string
+			Right parsing_helpers.Option[int]
+		}) models.ResourceEndpoint {
+			return models.ResourceEndpoint{Host: hostPort.Left, Port: hostPort.Right.UnwrapOrDefault(443)}
+		},
+	)
+
+	return p.OrElse(EnrichedUrlParser(), onlyHostPortParser)
+}
+
+func HttpMethodParser() p.Parser[models.HttpMethod] {
+	return func(context p.ParsingContext) (p.ParseResult[models.HttpMethod], error) {
+		vp := p.Map(p.Many(p.Alphanumeric()), func(runes []rune) string { return string(runes) })
+		verbParser := p.Left(
+			vp,
+			helpers.SpacesParser(),
+		)
+
+		verbResult, err := verbParser(context)
 		if err != nil {
-			return p.ParseResult[url.URL]{Context: context}, err
+			return p.ParseResult[models.HttpMethod]{Context: context}, err
+		}
+		httpMethod, err := models.ParseHttpMethod(verbResult.Result)
+		if err != nil {
+			return p.ParseResult[models.HttpMethod]{Context: context}, err
 		}
 
-		urlString := string(text.Result)
-		if strings.Contains(urlString, "://") == false {
-			return p.ParseResult[url.URL]{Context: context}, fmt.Errorf("URL must contain protocol")
-		}
-		parsedUrl, err := url.Parse(urlString)
-		if err != nil {
-			return p.ParseResult[url.URL]{Context: context}, err
-		}
-
-		return p.ParseResult[url.URL]{
-			Result:  *parsedUrl,
-			Context: text.Context,
-		}, nil
+		return p.ParseResult[models.HttpMethod]{Context: verbResult.Context, Result: httpMethod}, nil
 	}
 }
 
 func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
 	return func(context p.ParsingContext) (p.ParseResult[models.HttpRequestLine], error) {
-		vp := p.Map(p.Many(p.Alphanumeric()), func(runes []rune) string { return string(runes) })
-		verbParser := p.Left(
-			vp,
-			SpacesParser(),
-		)
 
-		verbResult, err := verbParser(context)
-		if err != nil {
-			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
-		}
-		httpMethod, err := models.ParseHttpMethod(verbResult.Result)
+		httpMethod, err := HttpMethodParser()(context)
 		if err != nil {
 			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
 
-		hostPortResult, err := ResourceEndpointParser()(verbResult.Context)
+		hostPortResult, err := ResourceEndpointParser()(httpMethod.Context)
 		if err != nil {
 			return p.ParseResult[models.HttpRequestLine]{Context: context}, err
 		}
@@ -165,7 +146,7 @@ func HttpRequestLineParser() p.Parser[models.HttpRequestLine] {
 
 		return p.ParseResult[models.HttpRequestLine]{
 			Result: models.HttpRequestLine{
-				HttpMethod: httpMethod,
+				HttpMethod: httpMethod.Result,
 				Endpoint:   hostPortResult.Result,
 				Version:    versionResult.Result,
 			},
@@ -187,7 +168,7 @@ func HeaderParser() p.Parser[models.Header] {
 				p.Many(p.Satisfy(func(c rune) bool {
 					return c != '\r' && c != '\n'
 				})),
-				p.Optional(NewLineParser()),
+				p.Optional(helpers.NewLineParser()),
 			),
 			func(v []rune) string { return strings.TrimSpace(string(v)) })
 
@@ -228,7 +209,7 @@ func responseStatusParser() p.Parser[responseStatus] {
 			p.Combine(
 				p.Left(
 					VersionParser(),
-					SpacesParser(),
+					helpers.SpacesParser(),
 				),
 				p.Integer(),
 			), p.Spaces()),
@@ -264,11 +245,11 @@ func ResponseHeadParser() p.Parser[models.HttpResponseHead] {
 		p.Combine(
 			p.Left(
 				responseStatusParser(),
-				p.Optional(NewLineParser()),
+				p.Optional(helpers.NewLineParser()),
 			),
 			p.Left(
 				headersParser,
-				p.Optional(NewLineParser()),
+				p.Optional(helpers.NewLineParser()),
 			),
 		),
 		func(r struct {

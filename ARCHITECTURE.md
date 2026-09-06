@@ -168,6 +168,8 @@ it from `config.yaml` with `goccy/go-yaml`. Key flags:
 - `proxy.output_proxy_uri` — upstream proxy.
 - `proxy.require_windows_authentication` / `add_windows_authentication_to_output_proxy`.
 - `decrypt_https.cert_manager.ca_cert_file` / `ca_key_file` / `domain_certs_folder`.
+- `storage.folder` — where `.capture` files are written.
+- `http_files.folder` — where the composer keeps its `.http` files.
 
 `AppConfig.ToDto()` converts to a sanitized DTO (`webui/wasm/shared`) that is
 safe to expose to the browser over `/config` — a deliberate duplicate type so
@@ -177,6 +179,20 @@ Runtime APIs may expose UI-first settings flows for values that originate in
 `config.yaml`. When an API changes one of those values, it should also persist
 the updated configuration back to `config.yaml`, so the setting survives the next
 application start for users who prefer the Web UI over editing YAML manually.
+
+## The composer's `.http` files (`webui/http_files.go`)
+
+The composer edits ordinary `.http` files in the folder `http_files.folder`
+names, not a collection hidden in the browser. That is what makes the same
+requests openable from an IDE, committable next to a project, and shareable with
+a colleague — and it is why the sidebar can show the folder and open it in the
+file manager.
+
+`httpFileStore` is the whole of it: list, save, rename, delete, and reveal. Every
+path it hands the filesystem is rebuilt by `httpFileName` from a validated base
+name, so a name arriving over `/api/http-files/{name}` can never point outside
+the folder. The Web UI writes back on a short debounce after the last keystroke,
+so the file on disk is what an editor opened beside the composer would show.
 
 ## Web UI (`webui/`)
 
@@ -204,6 +220,186 @@ status codes, or SSE event payloads should update this file in the same change.
 `wwwroot/wasm/app.wasm` and loaded by `wwwroot/index.html` via `wasm_exec.js`.
 `webui/wasm/shared/dto.go` holds the DTOs shared between the Go backend and the
 WASM frontend (same types on both sides of the wire).
+
+Two styles coexist in the client:
+
+- **Bridge style** (`main.go`, `wwwroot/ui.js`) — the WASM side exposes functions
+  on `window` (`hslLoadDetail`, `hslCapture`, …) and hand-written JavaScript
+  renders the traffic view. This is the original UI.
+- **Component style** (`webui/wasm/dom` + `webui/wasm/components/*`) — screens
+  written entirely in Go as components with their own template and CSS. New
+  screens go here; the traffic view is expected to migrate piece by piece.
+
+The two live side by side in the same page: the title-bar switch
+(`components/modeswitch`, wired in `webui/wasm/mode.go`) shows either the traffic
+regions of `index.html` or the `#compose-view` element the composer is mounted
+on.
+
+### Component runtime (`webui/wasm/dom`)
+
+A component is a struct embedding `dom.Base`, paired with an HTML template that
+lives next to it — the equivalent of a `Foo.razor` / `Foo.razor.cs` pair. The
+template carries the wiring, resolved at mount time:
+
+| Attribute | Meaning | Blazor equivalent |
+|---|---|---|
+| `data-on-click="Save"` | calls the `Save` method | `@onclick` |
+| `data-bind="Title"` | two-way binds a field | `@bind` |
+| `data-ref="input"` | exposes the node as `c.Ref("input")` | `@ref` |
+| `data-child="response"` | hosts a nested component | `<Response />` |
+| `data-arg="…"`, `data-arg-i="…"` | handler parameters, read with `e.Arg()` / `e.ArgIntOf("i")` | method arguments |
+
+Optional interfaces add lifecycle: `OnInit()` (once, before the first render),
+`OnAfterRender(first bool)`, `OnDispose()`, `Styles() string` (CSS injected once
+per component type) and `TemplateFuncs()` (extra template functions on top of the
+built-in `css`, `attr`, `html`, `add`, `join`).
+
+Two properties of the runtime drive most design decisions:
+
+- **A render replaces the component's whole subtree.** Focus, caret, selection
+  and scroll position inside it are lost, so components must stay small — that is
+  the point of splitting a screen into several of them.
+- **Event handlers are delegated to the component root**, one listener per event
+  type. They survive re-renders, and rows inserted dynamically are live with no
+  extra work.
+
+### Writing a component
+
+The walkthrough below builds a `filterbox` — a search field with a clear button —
+and mounts it in the title bar. Its full-size counterparts are
+`components/modeswitch` (small, callback to the host) and `components/composer`
+(a three-component tree sharing one model).
+
+**1. Create the package** — one folder per component, three files:
+
+```
+webui/wasm/components/filterbox/
+  filterbox.go     state + handlers
+  filterbox.html   markup
+  filterbox.css    styles (optional)
+```
+
+**2. Write the component.** `dom.Base` is embedded by value; `Template()` is the
+only mandatory method. The template reaches exported fields and methods only —
+an unexported one is a render error.
+
+```go
+//go:build js && wasm
+
+package filterbox
+
+import (
+	_ "embed"
+
+	"httpStackLens/webui/wasm/dom"
+)
+
+//go:embed filterbox.html
+var filterHTML string
+
+//go:embed filterbox.css
+var filterCSS string
+
+type FilterBox struct {
+	dom.Base
+
+	Text     string
+	OnChange func(text string) // report outwards, don't reach into the page
+}
+
+func (f *FilterBox) Template() string { return filterHTML }
+func (f *FilterBox) Styles() string   { return filterCSS }
+
+// HasText drives the clear button's visibility from the template.
+func (f *FilterBox) HasText() bool { return f.Text != "" }
+
+// Changed runs on every keystroke. Text is already written by the two-way
+// binding, so there is nothing to render — re-rendering here would destroy the
+// caret in the field being typed into.
+func (f *FilterBox) Changed() {
+	if f.OnChange != nil {
+		f.OnChange(f.Text)
+	}
+}
+
+// Clear does change what is displayed, so it asks for a render.
+func (f *FilterBox) Clear() {
+	f.Text = ""
+	f.StateHasChanged()
+	f.Changed()
+}
+```
+
+**3. Write the template.** It is a plain `html/template` executed with the
+component as its data:
+
+```html
+<input class="fb-in" data-bind="Text" data-on-input="Changed"
+       placeholder="Search host, path, method, status…" />
+{{if .HasText}}<button class="fb-x" data-on-click="Clear">×</button>{{end}}
+```
+
+**4. Style it.** `Styles()` is injected once per component type into `<head>` and
+is **not scoped** — prefix every selector (`fb-`, `cx-`, `mode-`). Use the theme
+variables (`var(--mint)`, `var(--panel)`, …) so the component follows the theme
+picker for free.
+
+**5. Mount it.** Either on an element of `wwwroot/index.html`:
+
+```html
+<div id="filter-box" class="fb-seg"></div>
+```
+
+```go
+host := js.Global().Get("document").Call("getElementById", "filter-box")
+dom.Mount(host, &filterbox.FilterBox{OnChange: applyFilter})
+```
+
+…or as a child of another component, which is the usual case:
+
+```go
+func (c *Composer) OnInit() {
+	c.filter = &filterbox.FilterBox{OnChange: c.applyFilter}
+	c.SetChild("filter", c.filter) // rendered into <div data-child="filter"></div>
+}
+```
+
+A child is remounted automatically when its parent re-renders: the DOM node is
+recreated, the Go state is kept.
+
+**6. Build and check:**
+
+```bash
+go run ./build-tools/main.go webui
+```
+
+For UI-only work, the standalone harness in `webui/wasm/demo` mounts a single
+component without booting the proxy. Point `demo/main.go` at your component,
+build next to its `index.html` and serve the folder:
+
+```bash
+GOOS=js GOARCH=wasm go build -o webui/wasm/demo/demo.wasm ./webui/wasm/demo
+```
+
+`demo/index.html` also expects a `wasm_exec.js` beside it — copy the one from
+`webui/wwwroot/js/`.
+
+#### Rules of thumb
+
+- **Split by what must not be re-rendered.** In the composer, typing in the raw
+  `.http` editor re-renders only the file sidebar, and sending a request
+  re-renders only the response pane — each keeps the other's caret and scroll.
+- **Update hot spots directly** with `Ref("name")` instead of asking for a render
+  (`Composer.RawChanged` refreshes the gutter and the counter that way).
+- **`StateHasChanged` coalesces**: calling it several times in one handler renders
+  once, on the next animation frame.
+- **Never block a handler.** `dom.Fetch` waits on JS callbacks that need the
+  single JS thread — call it from a goroutine, then `StateHasChanged`.
+- **Talk outwards through callbacks or an interface**, not by reaching for
+  `document`. Children in the same package may hold a pointer to their parent (a
+  cascading parameter); across packages, pass a narrow interface.
+- **Components own their content, not their host node.** The element passed to
+  `Mount` belongs to the page — that is where its layout class goes.
 
 ### Asset embedding: dev vs prod
 
@@ -469,6 +665,9 @@ http/models/, http/parser/                            HTTP types and combinator 
 security/                                             SSPI / Windows authentication
 webui/                                                Embedded Web UI server + SSE hub
 webui/wasm/                                           Go/WASM client + shared DTOs
+webui/wasm/dom/                                       Component runtime (mount, render, bind, events)
+webui/wasm/components/                                UI components (one package per component)
+webui/wasm/demo/                                      Standalone harness to run one component
 webui/wwwroot/                                        Static assets (html/css/js/wasm) + openapi.yaml
 logging/                                              Event loggers + structured logging
 build-tools/                                          WASM/CSS/native build orchestration

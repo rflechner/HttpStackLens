@@ -1,0 +1,4 @@
+<button class="mode-btn{{if .IsOn "capture"}} on{{end}}" data-on-click="Select" data-arg="capture"
+        title="Inspect the captured traffic">Traffic</button>
+<button class="mode-btn{{if .IsOn "compose"}} on{{end}}" data-on-click="Select" data-arg="compose"
+        title="Compose and replay requests from .http files">Composer<span class="mode-badge mono">.http</span></button>

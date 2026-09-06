@@ -42,6 +42,14 @@ func AsNetworkStream(conn net.Conn) *NetworkStream {
 	return NewNetworkStream(conn)
 }
 
+// Local forwards the marker carried by connections the application creates for
+// itself (see middlewares.LocalConn), which would otherwise be hidden by this
+// wrapper from the middlewares that look for it.
+func (s *NetworkStream) Local() bool {
+	marker, ok := s.conn.(interface{ Local() bool })
+	return ok && marker.Local()
+}
+
 func (s *NetworkStream) ReadBytesCount(buffer *[]byte, maxBufferLength int) (NetworkBuffer, error) {
 	if cap(*buffer) < maxBufferLength {
 		*buffer = make([]byte, maxBufferLength)
