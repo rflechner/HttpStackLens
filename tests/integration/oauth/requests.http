@@ -1,0 +1,35 @@
+### Public API: 200
+GET http://localhost:18081/public
+
+### Missing token: 401
+GET http://localhost:18081/protected
+
+### Client credentials with permission (copy access_token from the response)
+POST http://localhost:18080/realms/httpstacklens/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=composer-service&client_secret=composer-demo-secret&scope=demo%3Aread
+
+### Valid token: 200 (replace PASTE_ACCESS_TOKEN)
+GET http://localhost:18081/protected
+Authorization: Bearer PASTE_ACCESS_TOKEN
+
+### Token with demo:read: 200; without it: 403
+GET http://localhost:18081/scoped
+Authorization: Bearer PASTE_ACCESS_TOKEN
+
+### Client credentials without permission
+POST http://localhost:18080/realms/httpstacklens/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=composer-service&client_secret=composer-demo-secret
+
+### Invalid token: 401
+GET http://localhost:18081/protected
+Authorization: Bearer invalid-token
+
+### Invalid client secret: 401
+POST http://localhost:18080/realms/httpstacklens/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=composer-service&client_secret=wrong-secret

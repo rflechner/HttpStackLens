@@ -1,0 +1,28 @@
+name: httpstacklens-oauth
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.3
+    command: [start-dev, --import-realm]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin-demo-only
+      KC_HOSTNAME: http://localhost:18080
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ./keycloak/httpstacklens-realm.json:/opt/keycloak/data/import/httpstacklens-realm.json:ro
+  api:
+    build: ./api
+    environment:
+      OAUTH_ISSUER: http://localhost:18080/realms/httpstacklens
+      OAUTH_INTROSPECTION_URL: http://keycloak:8080/realms/httpstacklens/protocol/openid-connect/token/introspect
+    ports:
+      - "127.0.0.1:18081:8080"
+    depends_on:
+      - keycloak
+    healthcheck:
+      test: [CMD, /api, -healthcheck]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s

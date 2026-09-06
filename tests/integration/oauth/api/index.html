@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HttpStackLens — OAuth demo</title>
+<style>
+body { font: 16px system-ui; max-width: 850px; margin: 48px auto; padding: 0 20px; }
+button { padding: 8px 12px; margin: 4px; cursor: pointer; }
+pre { background: #eee; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>OAuth demo</h1>
+<p>HttpStackLens test API · Keycloak · Authorization Code + PKCE</p>
+<p>Username: <b>alice</b> · Password: <b>alice-demo-password</b></p>
+<p id="status">No token</p>
+<button id="login">Sign in with demo:read</button>
+<button id="login-basic">Sign in without demo:read</button>
+<button id="refresh">Refresh token</button>
+<button id="clear">Clear local tokens</button>
+<p>
+<button data-path="/public">GET /public</button>
+<button data-path="/protected">GET /protected</button>
+<button data-path="/scoped">GET /scoped</button>
+</p>
+<p>The token stays in memory. Reloading the page clears it. Clearing tokens does not end the Keycloak session.</p>
+<pre id="result">Sign in, then call the API.</pre>
+<script>
+const base = 'http://localhost:18080/realms/httpstacklens/protocol/openid-connect';
+const redirect = 'http://localhost:18081/';
+const result = document.querySelector('#result');
+let tokens;
+const encode = bytes => btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+const random = () => encode(crypto.getRandomValues(new Uint8Array(32)));
+function updateStatus() {
+  document.querySelector('#status').textContent = tokens ? `Token acquired · lifetime ${tokens.expires_in}s · scopes: ${tokens.scope || '(none)'}` : 'No token';
+}
+async function login(scoped) {
+  const verifier = random();
+  const state = random();
+  sessionStorage.setItem('oauth-demo-pending', JSON.stringify({verifier, state}));
+  const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  const query = new URLSearchParams({client_id:'demo-app', response_type:'code', redirect_uri:redirect, scope:scoped ? 'openid demo:read' : 'openid', state, code_challenge:challenge, code_challenge_method:'S256'});
+  location.assign(`${base}/auth?${query}`);
+}
+async function exchange(parameters) {
+  const response = await fetch(`${base}/token`, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({client_id:'demo-app', ...parameters})});
+  if (!response.ok) throw new Error(`OAuth token exchange failed: HTTP ${response.status}`);
+  tokens = await response.json();
+  updateStatus();
+  result.textContent = 'Token acquired. You can now call the protected endpoints.';
+}
+async function callback() {
+  const query = new URLSearchParams(location.search);
+  if (!query.has('code') && !query.has('error')) return;
+  history.replaceState({}, '', '/');
+  const pending = JSON.parse(sessionStorage.getItem('oauth-demo-pending') || 'null');
+  sessionStorage.removeItem('oauth-demo-pending');
+  if (!pending || query.get('state') !== pending.state) throw new Error('Invalid OAuth state');
+  if (query.has('error')) throw new Error('Sign-in denied or cancelled');
+  await exchange({grant_type:'authorization_code', code:query.get('code'), redirect_uri:redirect, code_verifier:pending.verifier});
+}
+function run(action) { Promise.resolve().then(action).catch(error => { result.textContent = error.message; }); }
+document.querySelector('#login').onclick = () => run(() => login(true));
+document.querySelector('#login-basic').onclick = () => run(() => login(false));
+document.querySelector('#refresh').onclick = () => run(async () => {
+  if (!tokens?.refresh_token) throw new Error('Please sign in first');
+  await exchange({grant_type:'refresh_token', refresh_token:tokens.refresh_token});
+});
+document.querySelector('#clear').onclick = () => { tokens = undefined; updateStatus(); result.textContent = 'Local tokens cleared.'; };
+for (const button of document.querySelectorAll('[data-path]')) button.onclick = () => run(async () => {
+  const response = await fetch(button.dataset.path, {headers:tokens ? {Authorization:`Bearer ${tokens.access_token}`} : {}});
+  result.textContent = `HTTP ${response.status}\n${await response.text()}`;
+});
+run(callback);
+</script>
+</html>
