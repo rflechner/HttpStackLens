@@ -61,15 +61,17 @@ func knownTab(tab string) bool {
 type Composer struct {
 	dom.Base
 
-	Files   []*File
-	CurFile *File
-	Cur     *Request
-	Params  []KV   // query rows, derived from Cur.URL while the Params tab is open
-	Tab     string // body | headers | params | vars | raw
-	Raw     string // .http draft, bound to the raw textarea
-	Sending bool
-	Res     *Result
-	Dirty   map[string]bool
+	Files        []*File
+	CurFile      *File
+	Cur          *Request
+	Params       []KV   // query rows, derived from Cur.URL while the Params tab is open
+	Tab          string // body | headers | params | vars | raw
+	Raw          string // .http draft, bound to the raw textarea
+	Sending      bool
+	LoginPending bool
+	cancelLogin  func()
+	Res          *Result
+	Dirty        map[string]bool
 
 	// Folder is where the .http files live, as the backend resolved it from
 	// config.yaml. It is what the sidebar shows and what the file manager is
@@ -87,6 +89,7 @@ type Composer struct {
 	// bumps it, and a timer that fires holding a stale generation has been
 	// overtaken by a later keystroke.
 	saveGen map[string]int
+	scopes  map[string]*fileScope
 
 	files *FilesPane
 	resp  *ResponsePane
@@ -701,7 +704,8 @@ func (c *Composer) RunCaret() {
 	if index < 0 {
 		return
 	}
-	c.start(fromBlock(file, file.Requests[index]))
+	item := file.Requests[index]
+	c.startScoped(file, func(vars []KV) outgoing { return fromParsed(item, vars) })
 }
 
 // blockStartLine is the first line a request block owns. The comment header
@@ -825,7 +829,10 @@ func (c *Composer) Send() {
 	if c.Tab == tabRaw {
 		c.applyRaw()
 	}
-	c.start(fromForm(c.Cur, c.CurFile.Vars))
+	file := httpfile.ParseHttpFile(ToHTTP(c.CurFile))
+	req := *c.Cur
+	req.Headers = append([]KV(nil), c.Cur.Headers...)
+	c.startScoped(file, func(vars []KV) outgoing { return fromForm(&req, vars) })
 }
 
 // RunLine sends the request the clicked play button sits next to. It reads the
@@ -840,23 +847,8 @@ func (c *Composer) RunLine(e dom.Event) {
 	if index < 0 || index >= len(file.Requests) {
 		return
 	}
-	c.start(fromBlock(file, file.Requests[index]))
-}
-
-// start fires a request. The handler itself must not block — the fetch runs in
-// a goroutine so the JS callbacks it waits on can be delivered.
-func (c *Composer) start(req outgoing) {
-	c.Sending = true
-	c.Res = nil
-	c.StateHasChanged()
-	go c.send(req)
-}
-
-func (c *Composer) send(req outgoing) {
-	c.Sending = false
-	c.Res = exchange(req)
-	c.resp.Tab = "body"
-	c.StateHasChanged()
+	item := file.Requests[index]
+	c.startScoped(file, func(vars []KV) outgoing { return fromParsed(item, vars) })
 }
 
 // sendPath is the backend endpoint that replays a composer request through the
@@ -930,6 +922,10 @@ func fromBlock(file httpfile.HttpFile, item httpfile.HttpRequestFileItem) outgoi
 		vars = append(vars, KV{Key: variable.Name.Text, Value: variable.Value.Text, On: true})
 	}
 
+	return fromParsed(item, vars)
+}
+
+func fromParsed(item httpfile.HttpRequestFileItem, vars []KV) outgoing {
 	method := string(item.HttpRequestLine.HttpMethod.Text)
 	out := outgoing{
 		Method:  method,
@@ -1149,6 +1145,7 @@ func (c *Composer) forget(f *File) {
 	c.Files = kept
 	delete(c.Dirty, f.ID)
 	delete(c.saveGen, f.ID)
+	delete(c.scopes, f.ID)
 	if c.CurFile == f {
 		c.CurFile, c.Cur, c.Res = nil, nil, nil
 		c.Raw = ""

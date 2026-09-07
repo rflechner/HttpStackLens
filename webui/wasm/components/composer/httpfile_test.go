@@ -230,3 +230,12 @@ func TestCommentedHeaderOpensUnticked(t *testing.T) {
 		"\n"+
 		"{}\n")
 }
+
+func TestMultilineFunctionRoundTrip(t *testing.T) {
+	source := "@issuer = http://localhost:18080/realms/httpstacklens\n@token = oauth(\n  issuer: '{{issuer}}',\n  clientId: \"composer-browser\"\n)\n\n### Protected\nGET http://localhost:18081/protected\nAuthorization: Bearer {{token}}\n"
+	assertStable(t, source)
+	file := ParseHTTP(source, "oauth.http")
+	if len(file.Vars) != 2 || len(file.Reqs) != 1 {
+		t.Fatal("lost multiline declaration or request")
+	}
+}

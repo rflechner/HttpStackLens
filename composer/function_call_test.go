@@ -23,6 +23,7 @@ func TestFunctionCallParser(t *testing.T) {
 		{`oauth(url: https://localhost:18080/token, enabled: true, count: 12)`, map[string]string{"url": "https://localhost:18080/token", "enabled": "true", "count": "12"}},
 		{`oauth ()`, map[string]string{}},
 	} {
+
 		result, err := FunctionCallParser()(p.NewParsingContext(test.source + "\nnext"))
 		if err != nil {
 			t.Fatalf("parse: %v", err)

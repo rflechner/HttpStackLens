@@ -1,7 +1,12 @@
 {{if .Sending}}
   <div class="cx-blank">
     <div class="cx-spin"></div>
+    {{if .LoginPending}}
+    <div class="cx-blank-s" style="margin-top:14px">Preparing variables. Complete OAuth login in the popup or your browser.</div>
+    <button class="cx-btn" data-on-click="CancelLogin">Cancel</button>
+    {{else}}
     <div class="cx-blank-s" style="margin-top:14px">Waiting for response…</div>
+    {{end}}
   </div>
 {{else if not .Res}}
   <div class="cx-blank">
@@ -19,7 +24,9 @@
     <span class="cx-meta">{{$r.MS}} ms</span>
     <span class="cx-meta">{{.Size}}</span>
     {{if $r.Truncated}}<span class="cx-src">truncated</span>{{end}}
-    {{if $r.Upstream}}
+    {{if $r.NotSent}}
+      <span class="cx-src">not sent</span>
+    {{else if $r.Upstream}}
       <span class="cx-src live" title="Sent through the upstream proxy">via {{$r.Upstream}}</span>
     {{else}}
       <span class="cx-src live" title="Sent by HttpStackLens through the proxy pipeline">via proxy</span>
@@ -31,9 +38,13 @@
   {{if $r.Err}}
     <div class="cx-pane hsl-scroll">
       <div class="cx-blank">
-        <div class="cx-blank-t">Request failed</div>
+        <div class="cx-blank-t">{{if $r.NotSent}}Request preparation failed{{else}}Request failed{{end}}</div>
         <div class="cx-blank-s mono">{{$r.Err}}</div>
+        {{if $r.NotSent}}
+        <div class="cx-blank-s">The request was not sent. Complete the login or check the file variables, then try again.</div>
+        {{else}}
         <div class="cx-blank-s">HttpStackLens sent the request through the proxy pipeline. Check the URL, the upstream proxy settings and, for HTTPS, the certificate of the target host.</div>
+        {{end}}
       </div>
     </div>
   {{else}}

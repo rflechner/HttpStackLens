@@ -4,6 +4,7 @@ package composer
 
 import (
 	"errors"
+	httpfile "httpStackLens/composer"
 	"path"
 	"regexp"
 	"strconv"
@@ -119,7 +120,20 @@ func ParseHTTP(text, name string) *File {
 	var cur *Request
 	section := "none"
 
+	declarations := map[int]httpfile.FileVariable{}
+	for _, variable := range httpfile.ParseHttpFile(text).Variables {
+		declarations[variable.Name.Start.Line] = variable
+	}
+	skipThrough := 0
 	for n, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		if n+1 <= skipThrough {
+			continue
+		}
+		if variable, ok := declarations[n+1]; ok {
+			f.Vars = append(f.Vars, KV{Key: variable.Name.Text, Value: variable.Value.Text, On: true})
+			skipThrough = variable.Value.End.Line
+			continue
+		}
 		if strings.HasPrefix(line, "###") {
 			if cur != nil && section == "reqline" {
 				cur.Notes = append(cur.Notes, line)

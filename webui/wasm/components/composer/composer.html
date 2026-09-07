@@ -35,6 +35,7 @@
           <button class="cx-file-tag mono" data-on-click="SetTab" data-arg="raw" title="Open the raw {{.FileName}} text">{{.FileName}}</button>
         {{end}}
         <span class="cx-dirty" data-ref="saveState">{{.SaveState}}</span>
+        <button class="cx-mini" data-on-click="ResetScope" {{attr .SendAttrs}} title="Forget evaluated variables and tokens for this file. The next send initializes them again.">Reset scope</button>
         {{if not (.TabIs "raw")}}
           <button class="cx-mini" data-on-click="DuplicateRequest">Duplicate</button>
           <button class="cx-mini danger" data-on-click="DeleteRequest">Delete</button>

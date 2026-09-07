@@ -19,6 +19,8 @@ var responseHTML string
 
 // Result is what a send produced, as reported by the backend.
 type Result struct {
+	// NotSent identifies failures during preparation, before the proxy exchange.
+	NotSent    bool
 	Status     int
 	StatusText string
 	// Proto is the version the response came back on, as the backend read it.
@@ -173,3 +175,6 @@ func (p *ResponsePane) Copy() {
 	}
 	dom.Clipboard(p.Text())
 }
+
+func (p *ResponsePane) LoginPending() bool { return p.owner.LoginPending }
+func (p *ResponsePane) CancelLogin()       { p.owner.CancelLogin() }

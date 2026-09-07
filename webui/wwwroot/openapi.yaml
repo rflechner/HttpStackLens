@@ -437,6 +437,141 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CaptureState"
+  /api/composer/oauth:
+    post:
+      tags: [Composer]
+      summary: Start OAuth for a Composer function call
+      description: |
+        Discovers issuer endpoints and either obtains a client credentials token
+        or creates a five-minute authorization-code attempt with PKCE S256.
+        Requests must be same-origin JSON. Responses are never cached.
+        HTTPS is required except for loopback URLs. Token requests use
+        client_secret_post when a secret is supplied. These exchanges bypass
+        the captured proxy pipeline and use the Go default HTTP transport.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComposerOAuthOptions'
+      responses:
+        '200':
+          description: Token or login URL and private polling handle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposerOAuthAnswer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Cross-origin request refused
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '429':
+          description: Too many pending logins (maximum 64)
+        '502':
+          description: Discovery or token exchange failed; sanitized error text or JSON error
+  /api/composer/oauth/open:
+    post:
+      tags: [Composer]
+      summary: Open a pending OAuth login in the system browser
+      description: |
+        Fallback when a WebView or browser cannot create a popup. Only opens
+        the authorization URL stored for this attempt, at most once on success.
+        Same-origin checks apply. Does not accept a URL from the caller.
+      parameters:
+        - in: header
+          name: X-OAuth-ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Browser launch requested (or already requested)
+        '403':
+          description: Cross-origin request refused
+        '404':
+          description: Unknown, expired or completed login
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          description: System browser could not be launched
+  /api/composer/oauth/result:
+    parameters:
+      - in: header
+        name: X-OAuth-ID
+        required: true
+        schema:
+          type: string
+        description: Private, unguessable handle returned by the start endpoint
+    post:
+      tags: [Composer]
+      summary: Poll and consume an OAuth login result
+      description: Same-origin only. A completed result is delivered once and deleted. Responses use no-store.
+      responses:
+        '200':
+          description: Access token or sanitized login error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposerOAuthAnswer'
+        '202':
+          description: Login still pending
+          content:
+            application/json:
+              schema:
+                type: object
+        '403':
+          description: Cross-origin request refused
+        '404':
+          description: Unknown, expired, cancelled or consumed attempt
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    delete:
+      tags: [Composer]
+      summary: Cancel and forget an OAuth attempt
+      responses:
+        '204':
+          description: Attempt deleted
+        '403':
+          description: Cross-origin request refused
+        '404':
+          description: Attempt no longer exists
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+  /api/composer/oauth/callback:
+    get:
+      tags: [Composer]
+      summary: Receive the identity provider authorization response
+      description: |
+        Register this exact URI under the Web UI origin with the identity provider.
+        Validates one-time state and exchanges the code with its PKCE verifier.
+        Returns a static page without tokens; the original window polls for the result.
+      parameters:
+        - in: query
+          name: state
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: code
+          schema:
+            type: string
+        - in: query
+          name: error
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Login completed or failed; original window receives the outcome
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: Invalid, expired or already consumed state
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
   /api/composer/send:
     post:
       tags: [Composer]
@@ -843,6 +978,48 @@ components:
           schema:
             type: string
   schemas:
+    ComposerOAuthOptions:
+      type: object
+      additionalProperties: false
+      required: [issuer, clientId]
+      properties:
+        issuer:
+          type: string
+          format: uri
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+          writeOnly: true
+          description: Required for client_credentials; optional for a confidential authorization-code client
+        grantType:
+          type: string
+          enum: [authorization_code, client_credentials]
+          default: authorization_code
+        scope:
+          type: string
+          description: Space-separated OAuth scopes
+        prompt:
+          type: string
+          description: Optional authorization prompt such as login
+    ComposerOAuthAnswer:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Private polling handle (authorization code only)
+        authorizationUrl:
+          type: string
+          format: uri
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: Token lifetime in seconds, if provided by the issuer
+        error:
+          type: string
+          description: Sanitized provider failure
+
     HttpFile:
       type: object
       required: [name, content, modified_at]

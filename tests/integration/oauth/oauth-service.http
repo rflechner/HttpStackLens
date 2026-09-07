@@ -1,0 +1,15 @@
+@token = oauth(
+  issuer: 'http://localhost:18080/realms/httpstacklens',
+  grantType: 'client_credentials',
+  clientId: 'composer-service',
+  clientSecret: 'composer-demo-secret',
+  scope: 'demo:read',
+)
+
+### Obtain a service token without opening a login window
+GET http://localhost:18081/protected
+Authorization: Bearer {{token}}
+
+### Reuse the file token with demo:read permission
+GET http://localhost:18081/scoped
+Authorization: Bearer {{token}}

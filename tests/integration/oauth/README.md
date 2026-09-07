@@ -64,16 +64,22 @@ The implicit and password grant flows are disabled.
 
 ## Trying the Composer
 
-Copy `requests.http` into the folder configured by `http_files.folder`, or paste
-the requests into the Composer. Send the Client Credentials request, then replace
-`PASTE_ACCESS_TOKEN` with the `access_token` value from the response.
-This example does not use automatic variable substitution.
+Copy `oauth-login.http` or `oauth-service.http` into the folder configured by
+`http_files.folder`, then send a request from the Composer.
 
-The machine client requests `scope=demo:read` to obtain the permission.
-Without that parameter, `/protected` succeeds and `/scoped` returns `403`.
-Client Credentials does not provide a refresh token: request a new access token.
-Modified `.http` files may contain the copied token; do not commit them.
-The Composer and traffic capture may expose this test data.
+- `oauth-login.http` opens Keycloak with PKCE: Alice / `alice-demo-password`.
+- `oauth-service.http` obtains a client credentials token without a popup.
+- The token is reused for that file in memory only. **Reset scope** forgets it;
+  the next send evaluates variables again. Editing declarations or reaching a
+  known token expiry also invalidates the scope.
+- Reset does not end Keycloak SSO. The example uses `prompt: 'login'` to ask for
+  login again. Closing the popup cancels the pending send.
+- Remove `scope: 'demo:read'` to check the `/scoped` endpoint returns `403`.
+
+`requests.http` remains available for manual tests with a copied token.
+OAuth calls use the backend directly (Go environment proxy settings), outside
+HttpStackLens's configured upstream proxy. API requests use the normal pipeline
+and their headers may appear in traffic capture.
 
 OAuth endpoints:
 
@@ -84,14 +90,27 @@ Authorization: http://localhost:18080/realms/httpstacklens/protocol/openid-conne
 Token:         http://localhost:18080/realms/httpstacklens/protocol/openid-connect/token
 ```
 
-The only configured redirect URI is `http://localhost:18081/`, for the demo
-application. The future Composer callback must be registered in a separate
-public client when implementing that feature.
+The public `composer-browser` client accepts
+`http://localhost:9000/api/composer/oauth/callback` and
+`http://127.0.0.1:9000/api/composer/oauth/callback`. For a different Web UI port,
+register its exact URI in Keycloak. Recreate containers with `down`, then
+`up --build --wait` to import this new client. `demo-app` keeps its own callback
+at `http://localhost:18081/`.
 
 If an upstream proxy is configured in HttpStackLens, include `localhost` and
 `127.0.0.1` in `no_proxy` to reach these local fixtures.
 
 ## Validation
+
+Test the OAuth handler against the running fixture, from the repository root:
+
+```sh
+HSL_TEST_KEYCLOAK=1 go test ./webui -run TestComposerOAuthKeycloak -v
+```
+
+This checks client credentials and API `200`/`403` responses without starting a
+Web UI server. Check the popup manually with `oauth-login.http`.
+
 
 Go tests without Docker, from this folder (independent module, no dependencies):
 

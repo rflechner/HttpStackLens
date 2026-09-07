@@ -1,0 +1,15 @@
+@issuer = http://localhost:18080/realms/httpstacklens
+@token = oauth(
+  issuer: '{{issuer}}',
+  clientId: 'composer-browser',
+  scope: 'demo:read',
+  prompt: 'login',
+)
+
+### Login once, then call the protected API
+GET http://localhost:18081/protected
+Authorization: Bearer {{token}}
+
+### Reuse the file token with demo:read permission
+GET http://localhost:18081/scoped
+Authorization: Bearer {{token}}
