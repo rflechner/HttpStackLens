@@ -1,9 +1,71 @@
 package http
 
 import (
+	"bytes"
 	"httpStackLens/http/models"
+	"strings"
 	"testing"
 )
+
+func TestProxyRequestRoundTripPreservesUpstreamTarget(t *testing.T) {
+	cases := []struct {
+		name   string
+		target string
+		host   string
+		path   string
+	}{
+		{"Ubuntu archive", "http://archive.ubuntu.com/ubuntu/dists/noble-updates/InRelease", "archive.ubuntu.com", "/ubuntu/dists/noble-updates/InRelease"},
+		{"custom port", "http://example.com:8080/download?version=2", "example.com:8080", "/download?version=2"},
+		{"HTTP on port 443", "http://example.com:443/file", "example.com:443", "/file"},
+		{"HTTPS scheme", "https://example.com/file", "example.com", "/file"},
+		{"HTTPS on port 80", "https://example.com:80/file", "example.com:80", "/file"},
+		{"escaped path", "http://example.com/a%2Fb%20c?next=%2Fhome", "example.com", "/a%2Fb%20c?next=%2Fhome"},
+		{"query without path", "http://example.com/?format=json", "example.com", "/?format=json"},
+		{"empty query", "http://example.com/file?", "example.com", "/file?"},
+		{"IPv6", "http://[2001:db8::1]/file", "[2001:db8::1]", "/file"},
+		{"IPv6 custom port", "http://[2001:db8::1]:8080/file", "[2001:db8::1]:8080", "/file"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := createMockConn("GET " + tc.target + " HTTP/1.1\r\nHost: " + tc.host + "\r\nAuthorization: Bearer origin-token\r\n\r\n")
+			defer conn.Close()
+			request, err := ReadProxyRequest(NewNetworkStream(conn))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Both unauthenticated requests and NTLM retries must use absolute-form.
+			for _, token := range []string{"", "NTLM test-type-1", "NTLM test-type-3"} {
+				if token != "" {
+					request.SetHeader("Proxy-Authorization", token)
+				}
+				var upstream bytes.Buffer
+				if _, err := request.WriteTo(&upstream, true); err != nil {
+					t.Fatal(err)
+				}
+				want := "GET " + tc.target + " HTTP/1.1\r\n"
+				if !strings.HasPrefix(upstream.String(), want) {
+					t.Fatalf("upstream request = %q, want prefix %q", upstream.String(), want)
+				}
+				if token != "" && !strings.Contains(upstream.String(), "Proxy-Authorization: "+token+"\r\n") {
+					t.Fatal("upstream request lost its proxy authentication header")
+				}
+			}
+			var origin bytes.Buffer
+			if _, err := request.WriteTo(&origin, false); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(origin.String(), "GET "+tc.path+" HTTP/1.1\r\n") {
+				t.Fatalf("direct request must use origin-form: %q", origin.String())
+			}
+			if strings.Contains(origin.String(), "Proxy-Authorization:") {
+				t.Fatal("direct request leaked proxy credentials to the origin")
+			}
+			if !strings.Contains(origin.String(), "Authorization: Bearer origin-token\r\n") {
+				t.Fatal("direct request lost its origin authentication header")
+			}
+		})
+	}
+}
 
 func TestReadProxyRequest(t *testing.T) {
 	t.Run("Success: CONNECT with multiple headers", func(t *testing.T) {

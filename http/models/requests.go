@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"io"
+	"net"
+	"strconv"
 	"strings"
 )
 
@@ -111,28 +113,42 @@ func (r *ProxyRequest) SetHeader(name, value string) {
 	r.AddHeader(name, value)
 }
 
-func (r *ProxyRequest) WriteTo(w io.Writer, writeProxyHeader bool) (int, error) {
-	var total int
-	var err error
-
-	if r.HttpRequestLine.IsConnect() {
-		total, err = fmt.Fprintf(w, "%s %s:%d HTTP/%d.%d\r\n",
-			r.HttpRequestLine.HttpMethod,
-			r.HttpRequestLine.Endpoint.Host, r.HttpRequestLine.Endpoint.Port,
-			r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
-	} else {
-		total, err = fmt.Fprintf(w, "%s %s HTTP/%d.%d\r\n",
-			r.HttpRequestLine.HttpMethod,
-			r.HttpRequestLine.Endpoint.PathAndQuery,
-			r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
+// WriteTo uses absolute-form and keeps proxy headers when toProxy is true.
+// Direct requests use origin-form and omit proxy headers; CONNECT always uses
+// authority-form, including when retried during proxy authentication.
+func (r *ProxyRequest) WriteTo(w io.Writer, toProxy bool) (int, error) {
+	endpoint := r.HttpRequestLine.Endpoint
+	target := endpoint.PathAndQuery
+	if target == "" || strings.HasPrefix(target, "?") {
+		target = "/" + target
 	}
+	if r.HttpRequestLine.IsConnect() {
+		target = net.JoinHostPort(endpoint.Host, strconv.Itoa(endpoint.Port))
+	} else if toProxy && target != "*" {
+		scheme := endpoint.Scheme
+		if scheme == "" {
+			scheme = "http"
+		}
+		host := endpoint.Host
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		defaultPort := scheme == "http" && endpoint.Port == 80 || scheme == "https" && endpoint.Port == 443
+		if endpoint.Port != 0 && !defaultPort {
+			host = net.JoinHostPort(endpoint.Host, strconv.Itoa(endpoint.Port))
+		}
+		target = scheme + "://" + host + target
+	}
+	total, err := fmt.Fprintf(w, "%s %s HTTP/%d.%d\r\n",
+		r.HttpRequestLine.HttpMethod, target,
+		r.HttpRequestLine.Version.Major, r.HttpRequestLine.Version.Minor)
 
 	if err != nil {
 		return total, err
 	}
 
 	for _, header := range r.Headers {
-		if !writeProxyHeader && strings.HasPrefix(strings.ToLower(header.Name), "proxy-") {
+		if !toProxy && strings.HasPrefix(strings.ToLower(header.Name), "proxy-") {
 			continue
 		}
 		n, err := fmt.Fprintf(w, "%s: %s\r\n", header.Name, header.Value)
