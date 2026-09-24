@@ -1136,7 +1136,7 @@
     up.style.color = state.upstream.on ? C.mint : C.dim;
 
     const acc = $('#btn-access');
-    const modeLabel = { loopback: 'Loopback', lan: 'Private LAN', allowlist: 'Allowlist', open: 'Open' };
+    const modeLabel = { loopback: 'Loopback', lan: 'Private LAN', interfaces: 'All interfaces', allowlist: 'Allowlist', open: 'Open' };
     acc.textContent = `Access · ${modeLabel[state.access.mode] || state.access.mode}`;
     renderProxySummary();
   }
@@ -1440,7 +1440,7 @@
     const status = a.error ? `<span style="color:${C.danger}">${esc(a.error)}</span>` : a.saving ? '<span>Applying…</span>' : a.dirty ? `<span style="color:${C.warn}">Not applied yet</span>` : a.saved ? `<span style="color:${C.mint}">Applied ✓</span>` : '';
     return `<div class="grid gap-[14px]">
       <div style="font-size:12px;color:${C.dim};line-height:1.6">Control which machines can connect to this proxy. By default only loopback (127.0.0.1) is accepted — safer when the machine is on an untrusted network.</div>
-      <div class="grid gap-2">${radio('loopback', 'Loopback only', '127.0.0.1 and ::1 · recommended')}${radio('lan', 'Private LAN', 'RFC 1918 — 10/8 · 172.16/12 · 192.168/16')}${radio('allowlist', 'Explicit allowlist', 'Only the networks below')}${radio('open', 'Open — any source', 'Dangerous on untrusted networks', true)}</div>
+      <div class="grid gap-2">${radio('loopback', 'Loopback only', '127.0.0.1 and ::1 · recommended')}${radio('lan', 'Private LAN', 'RFC 1918 — 10/8 · 172.16/12 · 192.168/16')}${radio('interfaces', 'All interfaces', 'Detected IPv4/IPv6 subnets · physical, VPN, VM and container adapters')}${radio('allowlist', 'Explicit allowlist', 'Only the networks below')}${radio('open', 'Open — any source', 'Dangerous on untrusted networks', true)}</div>
       ${networks}
       ${a.dirty ? `<div style="padding:9px 11px;background:${C.warn}12;border:1px solid ${C.warn}40;border-radius:4px;color:${C.ink};font-size:11.5px">These changes are only a draft. They will not affect active connections until you click <b>Apply</b>.</div>` : ''}
       <div class="flex items-center gap-2">${btn('Apply', 'access-apply', 'primary')}${a.dirty ? btn('Revert', 'access-revert', 'ghost') : ''}<span style="font-size:11.5px;margin-left:4px">${status}</span></div>
@@ -1680,6 +1680,8 @@
         }
         const warning = state.access.mode === 'open'
           ? 'Apply OPEN access to both the proxy and Web UI? Any machine that can reach this computer may connect.'
+          : state.access.mode === 'interfaces'
+            ? 'Apply all-interfaces access to both the proxy and Web UI? Clients on every detected adapter subnet may connect, including physical LANs, VPNs, VMs and containers. Network changes are picked up automatically.'
           : state.access.mode === 'allowlist'
             ? 'Apply this allowlist to both the proxy and Web UI? Remote clients not included will disconnect. Localhost remains allowed over IPv4 and IPv6.'
             : state.access.mode === 'loopback'

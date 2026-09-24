@@ -262,3 +262,36 @@ You can test it with curl:
 ```sh
 curl -x http://localhost:3128 http://example.com
 ```
+
+### Access from VMs and containers
+
+Select **All interfaces** in the access-control settings, or set the proxy's
+`access_control.mode` to `interfaces` in `config.yaml`:
+
+```yaml
+proxy:
+  port: 3128
+  access_control:
+    mode: "interfaces"
+    networks: []
+```
+
+This mode allows localhost and clients in the IPv4/IPv6 subnets assigned to the
+machine's network adapters, including physical LAN, VPN, Hyper-V/WSL, Docker and
+other virtual adapters. For example, an adapter at `172.17.0.1/16` allows a
+container at `172.17.0.2`. It uses Go's native interface discovery on Windows and
+Linux; no `ipconfig` or `ip` command is required. The adapters are queried on each
+access check, so newly created or removed networks are picked up automatically.
+Discovery failures allow only localhost; invalid addresses and `/0` masks are
+ignored.
+
+Unlike `lan`, which allows all private addresses, `interfaces` follows the actual
+adapter subnets, including non-private ones. It also allows other machines on
+those subnets, not just your VMs and containers. The `networks` list is used only
+by `allowlist` mode. The default remains `loopback`.
+
+The UI applies the selected mode to both the proxy and Web UI. To keep the Web UI
+local while allowing VMs to use the proxy, configure `webui.access_control.mode`
+as `loopback` separately in YAML. Point the guest's proxy settings at a reachable
+host address (for example `http://172.17.0.1:3128`), not the guest's `localhost`.
+Host firewall rules and proxy authentication still apply.
