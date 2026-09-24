@@ -53,33 +53,27 @@ func EnrichedUrlParser() p.Parser[models.ResourceEndpoint] {
 			defaultPort = 80
 		}
 
-		var pathAndQuery string
-		if url.RawQuery != "" {
-			pathAndQuery = url.Path + "?" + url.RawQuery
-		} else {
-			pathAndQuery = url.Path
+		// Keep escaped path bytes intact when the request is forwarded or retried.
+		pathAndQuery := url.EscapedPath()
+		if url.RawQuery != "" || url.ForceQuery {
+			pathAndQuery += "?" + url.RawQuery
 		}
 
 		if pathAndQuery == "" {
 			pathAndQuery = "/"
 		}
 
-		if strings.ContainsRune(url.Host, ':') {
-			portText := url.Port()
-			port, err := strconv.Atoi(portText)
-			if err != nil {
-				return models.ResourceEndpoint{Host: url.Hostname(), Port: defaultPort}
-			}
-			return models.ResourceEndpoint{
-				Host:         url.Hostname(),
-				Port:         port,
-				PathAndQuery: pathAndQuery,
+		port := defaultPort
+		if portText := url.Port(); portText != "" {
+			if parsedPort, err := strconv.Atoi(portText); err == nil {
+				port = parsedPort
 			}
 		}
 
 		return models.ResourceEndpoint{
+			Scheme:       strings.ToLower(url.Scheme),
 			Host:         url.Hostname(),
-			Port:         defaultPort,
+			Port:         port,
 			PathAndQuery: pathAndQuery,
 		}
 	})
