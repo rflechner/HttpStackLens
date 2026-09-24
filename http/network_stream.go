@@ -90,6 +90,12 @@ func (s *NetworkStream) Read(p []byte) (n int, err error) {
 	return s.reader.Read(p)
 }
 
+// BufferedReader lets protocol decoders reuse the stream's existing buffer
+// instead of creating another reader that could retain bytes from the next message.
+func (s *NetworkStream) BufferedReader() *bufio.Reader {
+	return s.reader
+}
+
 func (s *NetworkStream) Write(p []byte) (n int, err error) {
 	n, err = s.writer.Write(p)
 	if err != nil {
