@@ -720,7 +720,7 @@ func (m *StateModel) saveAccessMode(accessMode shared.AccessControlConfigDto) {
 					callMockup("setAccessControl", map[string]any{"error": "Could not read saved access control settings."})
 					return nil
 				}
-				out := accessControlToJS(dto.Proxy)
+				out := accessControlToJS(dto)
 				out["saved"] = true
 				callMockup("setAccessControl", out)
 				return nil
@@ -785,12 +785,17 @@ func (m *StateModel) saveUpstream(payload shared.UpstreamSettingsDto) {
 	}
 }
 
-func accessControlToJS(config shared.AccessControlConfigDto) map[string]any {
+func accessControlToJS(dto shared.AccessControlSettingsDto) map[string]any {
+	config := dto.Proxy
 	networks := make([]any, len(config.Networks))
 	for i, network := range config.Networks {
 		networks[i] = network
 	}
-	return map[string]any{"mode": config.Mode, "networks": networks}
+	interfaces := make([]any, len(dto.Interfaces))
+	for i, iface := range dto.Interfaces {
+		interfaces[i] = map[string]any{"name": iface.Name, "address": iface.Address, "network": iface.Network}
+	}
+	return map[string]any{"mode": config.Mode, "networks": networks, "interfaces": interfaces, "interfacesError": dto.InterfacesError}
 }
 
 func (m *StateModel) loadAccessControl() {
@@ -800,7 +805,7 @@ func (m *StateModel) loadAccessControl() {
 			callMockup("setAccessControl", map[string]any{"error": "Could not load access control settings."})
 			return nil
 		}
-		callMockup("setAccessControl", accessControlToJS(dto.Proxy))
+		callMockup("setAccessControl", accessControlToJS(dto))
 		return nil
 	}))
 }

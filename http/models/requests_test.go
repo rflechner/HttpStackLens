@@ -2,8 +2,42 @@ package models
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
+
+func TestProxyRequestWriteToRequestTargetForms(t *testing.T) {
+	cases := []struct {
+		name     string
+		method   HttpMethod
+		endpoint ResourceEndpoint
+		toProxy  bool
+		want     string
+	}{
+		{"HTTP default", GET, ResourceEndpoint{Host: "example.com", Port: 80}, true, "GET http://example.com/ HTTP/1.1"},
+		{"direct empty path", GET, ResourceEndpoint{Host: "example.com", Port: 80}, false, "GET / HTTP/1.1"},
+		{"proxy query without path", GET, ResourceEndpoint{Host: "example.com", Port: 80, PathAndQuery: "?format=json"}, true, "GET http://example.com/?format=json HTTP/1.1"},
+		{"direct query without path", GET, ResourceEndpoint{Host: "example.com", Port: 80, PathAndQuery: "?format=json"}, false, "GET /?format=json HTTP/1.1"},
+		{"proxy OPTIONS", OPTIONS, ResourceEndpoint{Host: "example.com", Port: 80, PathAndQuery: "*"}, true, "OPTIONS * HTTP/1.1"},
+		{"direct OPTIONS", OPTIONS, ResourceEndpoint{Host: "example.com", Port: 80, PathAndQuery: "*"}, false, "OPTIONS * HTTP/1.1"},
+		{"IPv6 CONNECT", CONNECT, ResourceEndpoint{Host: "2001:db8::1", Port: 443}, true, "CONNECT [2001:db8::1]:443 HTTP/1.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			request := ProxyRequest{HttpRequestLine: HttpRequestLine{
+				HttpMethod: tc.method, Endpoint: tc.endpoint, Version: Version{Major: 1, Minor: 1},
+			}}
+			var buf bytes.Buffer
+			n, err := request.WriteTo(&buf, tc.toProxy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n != buf.Len() || !strings.HasPrefix(buf.String(), tc.want+"\r\n") {
+				t.Fatalf("WriteTo = (%d, %q), want prefix %q", n, buf.String(), tc.want)
+			}
+		})
+	}
+}
 
 func TestProxyRequest_WriteTo(t *testing.T) {
 	req := ProxyRequest{

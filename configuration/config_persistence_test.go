@@ -1,11 +1,39 @@
 package configuration
 
 import (
+	"github.com/goccy/go-yaml"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestPersistInterfaceAccessControlRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	input := "proxy:\n  port: 3128\nwebui:\n  port: 9000\n"
+	if err := os.WriteFile(path, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := persistAccessControlSettings(path, AccessControlSettings{
+		Proxy: AccessControlConfig{Mode: AccessControlInterfaces},
+		WebUi: AccessControlConfig{Mode: AccessControlLoopback},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config AppConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	got := AccessControlSettingsFromConfig(config)
+	if got.Proxy.Mode != AccessControlInterfaces || got.WebUi.Mode != AccessControlLoopback || len(got.Proxy.Networks) != 0 {
+		t.Fatalf("reloaded settings = %+v", got)
+	}
+}
 
 func TestPersistStorageEnabledUpdatesExistingValue(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
