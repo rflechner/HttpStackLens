@@ -950,10 +950,31 @@ func accessControlSettingsHandler(settings *configuration.AccessControlSettingsS
 }
 
 func accessControlSettingsDto(settings configuration.AccessControlSettings) shared.AccessControlSettingsDto {
-	return shared.AccessControlSettingsDto{
+	dto := shared.AccessControlSettingsDto{
 		Proxy: accessControlConfigDto(settings.Proxy),
 		WebUi: accessControlConfigDto(settings.WebUi),
 	}
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		dto.InterfacesError = "Could not discover local interfaces."
+		return dto
+	}
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			dto.InterfacesError = "Some interface addresses could not be discovered."
+			continue
+		}
+		for _, addr := range addrs {
+			prefix, ok := configuration.AccessInterfacePrefix(addr)
+			if ok {
+				dto.Interfaces = append(dto.Interfaces, shared.AccessControlInterfaceDto{
+					Name: iface.Name, Address: prefix.String(), Network: prefix.Masked().String(),
+				})
+			}
+		}
+	}
+	return dto
 }
 
 func accessControlConfigDto(config configuration.AccessControlConfig) shared.AccessControlConfigDto {

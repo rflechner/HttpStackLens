@@ -1,6 +1,7 @@
 package models
 
 type ResourceEndpoint struct {
+	Scheme       string
 	Host         string
 	Port         int
 	PathAndQuery string

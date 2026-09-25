@@ -271,3 +271,38 @@ Vous pouvez le tester avec curl :
 ```sh
 curl -x http://localhost:3128 http://example.com
 ```
+
+### Accès depuis les VM et conteneurs
+
+Sélectionnez **All interfaces** dans les paramètres de contrôle d'accès, ou
+définissez `proxy.access_control.mode` à `interfaces` dans `config.yaml` :
+
+```yaml
+proxy:
+  port: 3128
+  access_control:
+    mode: "interfaces"
+    networks: []
+```
+
+Ce mode autorise localhost et les clients appartenant aux sous-réseaux IPv4/IPv6
+des interfaces de la machine : réseau physique, VPN, Hyper-V/WSL, Docker et
+autres interfaces virtuelles. Par exemple, une interface `172.17.0.1/16` autorise
+un conteneur `172.17.0.2`. La détection utilise l'API réseau native de Go sous
+Windows et Linux, sans lancer `ipconfig` ou `ip`. Les interfaces sont relues à
+chaque contrôle d'accès : les réseaux ajoutés ou supprimés sont pris en compte
+automatiquement. Si la détection échoue, seul localhost reste autorisé ; les
+adresses invalides et les masques `/0` sont ignorés.
+
+Le mode `lan` autorise toutes les adresses privées ; `interfaces` suit les
+sous-réseaux réels des interfaces, y compris ceux utilisant des adresses non
+privées. Les autres machines de ces sous-réseaux sont donc également autorisées,
+pas uniquement les VM et conteneurs. La liste `networks` sert uniquement au mode
+`allowlist`. Le mode par défaut reste `loopback`.
+
+L'interface applique le mode au proxy et à la Web UI. Pour garder la Web UI
+locale tout en autorisant les VM sur le proxy, configurez séparément
+`webui.access_control.mode` à `loopback` dans le YAML. Dans la VM ou le conteneur,
+utilisez une adresse accessible de l'hôte comme proxy, par exemple
+`http://172.17.0.1:3128`, et non le `localhost` de l'invité. Les règles du
+pare-feu de l'hôte et l'authentification du proxy restent applicables.

@@ -3,6 +3,7 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/alexbrainman/sspi"
@@ -43,13 +44,16 @@ func NewClientAuth(authPackage AuthPackage) (*ClientAuth, error) {
 }
 
 func (a *ClientAuth) Release() error {
-	if a.Credentials != nil {
-		if err := a.Credentials.Release(); err != nil {
-			return err
-		}
+	var contextErr, credentialsErr error
+	if context, ok := a.Context.(interface{ Release() error }); ok {
+		contextErr = context.Release()
+		a.Context = nil
 	}
-	// Note: ClientContext release is handled internally or needs to be tracked if we keep it
-	return nil
+	if a.Credentials != nil {
+		credentialsErr = a.Credentials.Release()
+		a.Credentials = nil
+	}
+	return errors.Join(contextErr, credentialsErr)
 }
 
 func (a *ClientAuth) Update(token []byte) (authDone bool, outputToken []byte, err error) {

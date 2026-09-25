@@ -2,7 +2,7 @@ proxy:
   port: 3128
   require_windows_authentication: false # only for windows
   access_control:
-    mode: "loopback"
+    mode: "loopback" # loopback | lan | interfaces | allowlist | open
     networks: []
 
   output_proxy_uri:
@@ -15,7 +15,7 @@ proxy:
 webui:
   port: 9000
   access_control:
-    mode: "loopback"
+    mode: "loopback" # loopback | lan | interfaces | allowlist | open
     networks: []
 
 logging:
