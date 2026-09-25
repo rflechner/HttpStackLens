@@ -180,14 +180,8 @@ func (p AccessPolicy) allowsInterfaceIP(ip netip.Addr) bool {
 	// Remote IPv6 addresses may carry an interface zone; prefixes never do.
 	ip = ip.WithZone("")
 	for _, addr := range addrs {
-		network, ok := addr.(*net.IPNet)
-		if !ok || network == nil {
-			continue
-		}
-		prefix, err := netip.ParsePrefix(network.String())
-		if err != nil || prefix.Bits() == 0 || prefix.Addr().IsUnspecified() || prefix.Addr().IsMulticast() {
-			// Ignore invalid addresses and missing masks, including /0, which
-			// would otherwise grant access to every source in that IP family.
+		prefix, ok := AccessInterfacePrefix(addr)
+		if !ok {
 			continue
 		}
 		if prefix.Contains(ip) {
@@ -195,6 +189,20 @@ func (p AccessPolicy) allowsInterfaceIP(ip netip.Addr) bool {
 		}
 	}
 	return false
+}
+
+// AccessInterfacePrefix returns the interface address and mask used by Interfaces mode.
+// Keep discovery for the UI and access checks subject to the same validation.
+func AccessInterfacePrefix(addr net.Addr) (netip.Prefix, bool) {
+	network, ok := addr.(*net.IPNet)
+	if !ok || network == nil {
+		return netip.Prefix{}, false
+	}
+	prefix, err := netip.ParsePrefix(network.String())
+	if err != nil || prefix.Bits() == 0 || prefix.Addr().IsUnspecified() || prefix.Addr().IsMulticast() {
+		return netip.Prefix{}, false
+	}
+	return prefix, true
 }
 
 func (c AccessControlConfig) ListenHost() string {

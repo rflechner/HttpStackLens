@@ -255,3 +255,20 @@ func TestAccessControlListenHostDoesNotOpenForInvalidMode(t *testing.T) {
 		t.Fatalf("ListenHost invalid mode = %q, want 127.0.0.1", got)
 	}
 }
+
+func TestAccessInterfacePrefixPreservesAddressAndSubnet(t *testing.T) {
+	for _, value := range []string{"192.168.42.17/24", "2001:db8::42/64"} {
+		ip, network, err := net.ParseCIDR(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		network.IP = ip
+		prefix, ok := AccessInterfacePrefix(network)
+		if !ok || prefix.String() != value {
+			t.Fatalf("interface address = %v, %v; want %s", prefix, ok, value)
+		}
+		if prefix.Masked() != netip.MustParsePrefix(value).Masked() {
+			t.Fatalf("unexpected allowed subnet: %s", prefix.Masked())
+		}
+	}
+}

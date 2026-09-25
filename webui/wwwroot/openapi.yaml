@@ -1433,6 +1433,27 @@ components:
       type: object
       required: [proxy, web_ui]
       properties:
+        interfaces:
+          type: array
+          readOnly: true
+          description: Current local interface addresses eligible for Interfaces mode, discovered when settings are read or saved. Omitted when empty. Not persisted.
+          items:
+            type: object
+            required: [name, address, network]
+            properties:
+              name:
+                type: string
+                description: Operating system interface name.
+              address:
+                type: string
+                description: Interface IPv4 or IPv6 address with CIDR mask, preserving host bits.
+              network:
+                type: string
+                description: Allowed subnet in canonical CIDR notation.
+        interfaces_error:
+          type: string
+          readOnly: true
+          description: Discovery failure message. Results may be incomplete when present.
         proxy:
           $ref: "#/components/schemas/AccessControlConfig"
         web_ui:
