@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"httpStackLens/configuration"
 	"httpStackLens/logging"
+	"httpStackLens/mcp"
 	"httpStackLens/proxy/middlewares"
 	"httpStackLens/storage"
 	"httpStackLens/webui"
@@ -185,6 +186,8 @@ func main() {
 		captureCtl:    captureCtl,
 		proxyCtl:      proxyCtl,
 	}
+
+	go mcp.CreateMcpService()
 
 	go proxyServer.Run()
 	go supervisor.Run(runtimeCommands, stopChan)
