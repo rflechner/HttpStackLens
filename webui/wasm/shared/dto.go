@@ -326,9 +326,17 @@ type UpstreamSettingsDto struct {
 	AddWindowsAuthentication bool `json:"add_windows_authentication"`
 }
 
+type AccessControlInterfaceDto struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Network string `json:"network"`
+}
+
 type AccessControlSettingsDto struct {
-	Proxy AccessControlConfigDto `json:"proxy"`
-	WebUi AccessControlConfigDto `json:"web_ui"`
+	Interfaces      []AccessControlInterfaceDto `json:"interfaces,omitempty"`
+	InterfacesError string                      `json:"interfaces_error,omitempty"`
+	Proxy           AccessControlConfigDto      `json:"proxy"`
+	WebUi           AccessControlConfigDto      `json:"web_ui"`
 }
 
 type AccessControlConfigDto struct {

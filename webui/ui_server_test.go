@@ -1152,6 +1152,35 @@ func TestAccessControlSettingsHandlerRejectsInvalidNetwork(t *testing.T) {
 	}
 }
 
+func TestAccessControlSettingsHandlerPersistsInterfacesMode(t *testing.T) {
+	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{})
+	var persisted configuration.AccessControlSettings
+	persist := func(s configuration.AccessControlSettings) error {
+		persisted = s
+		return nil
+	}
+	body := `{"proxy":{"mode":"interfaces","networks":[]},"web_ui":{"mode":"interfaces","networks":[]}}`
+	rr := httptest.NewRecorder()
+	accessControlSettingsHandler(settings, persist, nil).ServeHTTP(rr,
+		httptest.NewRequest(http.MethodPut, "/api/settings/access-control", strings.NewReader(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %q", rr.Code, rr.Body.String())
+	}
+	if persisted.Proxy.Mode != configuration.AccessControlInterfaces || persisted.WebUi.Mode != configuration.AccessControlInterfaces {
+		t.Fatalf("interfaces mode was not persisted: %+v", persisted)
+	}
+	get := httptest.NewRecorder()
+	accessControlSettingsHandler(settings, nil, nil).ServeHTTP(get,
+		httptest.NewRequest(http.MethodGet, "/api/settings/access-control", nil))
+	var got shared.AccessControlSettingsDto
+	if err := json.Unmarshal(get.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Proxy.Mode != "interfaces" || got.WebUi.Mode != "interfaces" {
+		t.Fatalf("runtime settings = %+v", got)
+	}
+}
+
 func TestWebUiAccessControlMiddlewareRejectsForbiddenRemote(t *testing.T) {
 	settings := configuration.NewAccessControlSettingsStore(configuration.AccessControlSettings{
 		WebUi: configuration.AccessControlConfig{Mode: configuration.AccessControlLoopback},

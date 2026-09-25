@@ -11,10 +11,11 @@ import (
 type AccessControlMode string
 
 const (
-	AccessControlLoopback  AccessControlMode = "loopback"
-	AccessControlLan       AccessControlMode = "lan"
-	AccessControlAllowlist AccessControlMode = "allowlist"
-	AccessControlOpen      AccessControlMode = "open"
+	AccessControlLoopback   AccessControlMode = "loopback"
+	AccessControlLan        AccessControlMode = "lan"
+	AccessControlInterfaces AccessControlMode = "interfaces"
+	AccessControlAllowlist  AccessControlMode = "allowlist"
+	AccessControlOpen       AccessControlMode = "open"
 )
 
 type AccessControlConfig struct {
@@ -84,13 +85,13 @@ func ValidateAccessControl(config AccessControlConfig) (AccessControlConfig, err
 	config.Mode = AccessControlMode(strings.TrimSpace(string(config.Mode)))
 	config.Networks = cleanNetworks(config.Networks)
 	switch config.Mode {
-	case AccessControlLoopback, AccessControlLan, AccessControlOpen:
+	case AccessControlLoopback, AccessControlLan, AccessControlInterfaces, AccessControlOpen:
 	case AccessControlAllowlist:
 		if len(config.Networks) == 0 {
 			return AccessControlConfig{}, fmt.Errorf("allowlist mode requires at least one network")
 		}
 	default:
-		return AccessControlConfig{}, fmt.Errorf("mode must be one of loopback, lan, allowlist, or open")
+		return AccessControlConfig{}, fmt.Errorf("mode must be one of loopback, lan, interfaces, allowlist, or open")
 	}
 	for _, network := range config.Networks {
 		if _, err := netip.ParsePrefix(network); err != nil {
@@ -101,13 +102,14 @@ func ValidateAccessControl(config AccessControlConfig) (AccessControlConfig, err
 }
 
 type AccessPolicy struct {
-	mode     AccessControlMode
-	prefixes []netip.Prefix
+	mode           AccessControlMode
+	prefixes       []netip.Prefix
+	interfaceAddrs func() ([]net.Addr, error)
 }
 
 func NewAccessPolicy(config AccessControlConfig) AccessPolicy {
 	config = NormalizeAccessControl(config, false)
-	policy := AccessPolicy{mode: config.Mode}
+	policy := AccessPolicy{mode: config.Mode, interfaceAddrs: net.InterfaceAddrs}
 	for _, network := range config.Networks {
 		prefix, err := netip.ParsePrefix(network)
 		if err == nil {
@@ -141,6 +143,8 @@ func (p AccessPolicy) AllowsIP(ip netip.Addr) bool {
 		return true
 	case AccessControlLan:
 		return ip.IsLoopback() || ip.IsPrivate()
+	case AccessControlInterfaces:
+		return ip.IsLoopback() || p.allowsInterfaceIP(ip)
 	case AccessControlAllowlist:
 		// Keep localhost reachable over both IP families. HttpStackLens is a
 		// local development tool, and localhost may resolve to either 127.0.0.1
@@ -161,9 +165,49 @@ func (p AccessPolicy) AllowsIP(ip netip.Addr) bool {
 	}
 }
 
+func (p AccessPolicy) allowsInterfaceIP(ip netip.Addr) bool {
+	if !ip.IsValid() || ip.IsUnspecified() || ip.IsMulticast() || p.interfaceAddrs == nil {
+		return false
+	}
+
+	// Query the OS for each access check so newly created VM/container networks
+	// and removed adapters are reflected without restarting the application.
+	addrs, err := p.interfaceAddrs()
+	if err != nil {
+		// Discovery failures must not turn this mode into an open proxy.
+		return false
+	}
+	// Remote IPv6 addresses may carry an interface zone; prefixes never do.
+	ip = ip.WithZone("")
+	for _, addr := range addrs {
+		prefix, ok := AccessInterfacePrefix(addr)
+		if !ok {
+			continue
+		}
+		if prefix.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// AccessInterfacePrefix returns the interface address and mask used by Interfaces mode.
+// Keep discovery for the UI and access checks subject to the same validation.
+func AccessInterfacePrefix(addr net.Addr) (netip.Prefix, bool) {
+	network, ok := addr.(*net.IPNet)
+	if !ok || network == nil {
+		return netip.Prefix{}, false
+	}
+	prefix, err := netip.ParsePrefix(network.String())
+	if err != nil || prefix.Bits() == 0 || prefix.Addr().IsUnspecified() || prefix.Addr().IsMulticast() {
+		return netip.Prefix{}, false
+	}
+	return prefix, true
+}
+
 func (c AccessControlConfig) ListenHost() string {
 	switch NormalizeAccessControl(c, false).Mode {
-	case AccessControlLan, AccessControlAllowlist, AccessControlOpen:
+	case AccessControlLan, AccessControlInterfaces, AccessControlAllowlist, AccessControlOpen:
 		return "0.0.0.0"
 	default:
 		return "127.0.0.1"
