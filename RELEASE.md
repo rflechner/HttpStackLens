@@ -3,6 +3,22 @@
 All notable changes to this project are documented here, newest first.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## v0.3.0 — 2026-09-25
+
+### Features
+
+- Access control can now allow clients from all local interface subnets, and
+  the "interfaces" mode lists discovered network interfaces in the UI
+  (`74f44e3`, #21).
+- Standardized and expanded cross-architecture release builds (`a0c8ef2`).
+
+### Bug fixes
+
+- Absolute HTTP request targets are now preserved when forwarding to upstream
+  proxies (#22).
+- Upstream NTLM connections are kept alive and automatically restarted after a
+  closed handshake (`eb6bfd9`).
+
 ## v0.2.0-alpha — 2026-08-27
 
 ### Features
