@@ -28,7 +28,7 @@ func readConfigurationFromPath(path string) (AppConfig, error) {
 		log.Printf("Failed to parse configuration file: %v\n", err)
 		return DefaultAppConfig(), fmt.Errorf("failed to read configuration file: %v", err)
 	}
-	var conf AppConfig
+	conf := AppConfig{MCP: DefaultMCPConfig()}
 	err = yaml.Unmarshal(configData, &conf)
 	if err != nil {
 		log.Printf("Failed to parse configuration file: %v\n", err)

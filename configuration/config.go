@@ -15,6 +15,17 @@ type AppConfig struct {
 	HttpFiles    HttpFilesConfig    `yaml:"http_files"`
 	DecryptHttps DecryptHttpsConfig `yaml:"decrypt_https"`
 	Updates      UpdatesConfig      `yaml:"updates"`
+	MCP          MCPConfig          `yaml:"mcp"`
+}
+
+// MCPConfig controls the optional local MCP listener. Changes require restart.
+type MCPConfig struct {
+	Enabled bool `yaml:"enabled"`
+	Port    int  `yaml:"port"`
+}
+
+func DefaultMCPConfig() MCPConfig {
+	return MCPConfig{Enabled: false, Port: 8087}
 }
 
 // UpdatesConfig gates the automatic update check. It is opt-in: when CheckEnabled
@@ -283,6 +294,7 @@ func DefaultAppConfig() AppConfig {
 		Logging:   LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},
 		Storage:   StorageConfig{Enable: false, Folder: "captures"},
 		HttpFiles: HttpFilesConfig{Folder: defaultHttpFilesFolder},
+		MCP:       DefaultMCPConfig(),
 		DecryptHttps: DecryptHttpsConfig{
 			Enabled:     false,
 			CertManager: CertManagerConfig{CaCertFile: "debug_ca.crt", CaKeyFile: "debug_ca.key", DomainCertsFolder: "certificates/domains"},

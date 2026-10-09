@@ -19,6 +19,10 @@ webui:
     mode: "loopback" # loopback | lan | interfaces | allowlist | open
     networks: []
 
+mcp:
+  enabled: true # opt-in local MCP server; changes require restart
+  port: 8087 # listens only on 127.0.0.1
+
 logging:
   level: info # debug | info | warn | error (overridden by --verbose)
   file: logs/httpStackLens.log # empty to disable the file sink

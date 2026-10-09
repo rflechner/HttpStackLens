@@ -2,6 +2,29 @@
 
 Ce document propose des usages et un périmètre pour une future intégration MCP. Les noms d’outils et l’adresse `/mcp` ci-dessous sont des propositions, pas des fonctionnalités déjà disponibles.
 
+## Prototype actuel : configuration
+
+Le prototype expose uniquement l’outil de démonstration `cityTime`. Il est
+désactivé par défaut. Pour l’activer, ajouter dans `config.yaml` :
+
+```yaml
+mcp:
+  enabled: true
+  port: 8087
+```
+
+Redémarrer l’application après modification. Le client MCP se connecte à
+`http://127.0.0.1:8087/` (ou au port choisi), sur un listener distinct de la
+Web UI et du proxy. L’écoute reste limitée à la boucle locale.
+
+Sans section `mcp`, le serveur reste désactivé ; si seul `enabled: true` est
+précisé, le port utilisé est 8087. Le port doit être compris entre 1 et 65535.
+Un port invalide ou occupé désactive MCP pour ce démarrage et produit un
+avertissement dans les logs, sans arrêter le proxy. Le listener MCP est fermé
+à la sortie de l’application.
+
+## Périmètre envisagé
+
 L’objectif serait de permettre à un assistant IA de consulter le trafic observé par HttpStackLens, d’aider à comprendre un problème réseau et, lorsque l’utilisateur le demande, de préparer ou d’exécuter certaines actions de diagnostic.
 
 ## 1. Le principe

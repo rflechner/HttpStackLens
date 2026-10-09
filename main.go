@@ -187,7 +187,12 @@ func main() {
 		proxyCtl:      proxyCtl,
 	}
 
-	go mcp.CreateMcpService()
+	mcpServer, err := mcp.Start(config.MCP)
+	if err != nil {
+		slog.Warn("Could not start MCP server; MCP disabled", "error", err)
+	} else if mcpServer != nil {
+		defer func() { _ = mcpServer.Close() }()
+	}
 
 	go proxyServer.Run()
 	go supervisor.Run(runtimeCommands, stopChan)
