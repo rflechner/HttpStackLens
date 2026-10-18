@@ -204,6 +204,21 @@ on the SSE hub as `http_file_changed`; `main.go` wires that callback, and the
 WASM composer applies the file to its model (`Composer.ApplyExternalChange`)
 unless the file holds unsaved edits, which win and are flagged.
 
+## Composer sends in the traffic view (`composer_sender.go`)
+
+A composer send goes through the pipeline over an in-memory connection, so it
+appears in the traffic view like any proxied request. For plain HTTP the
+pipeline only relays bytes after the request headers: on its own it records
+neither the request body nor the response. The composer's connection
+(`composerConn`) therefore implements `knownExchange`: `handleRequest` records
+the body the composer reports with the request, and hands back the correlation
+id, against which the composer records the response, its timing and the
+`response_occurred` event (`ProxyServer.recordKnownResponse`). Bodies follow the
+same per-content-type capture limits as decrypted HTTPS. An HTTPS send stays an
+opaque `CONNECT` unless HTTPS decryption is on, in which case the interceptor
+records it as usual. Plain HTTP from other clients (curl, browsers) still shows
+headers only.
+
 ## Web UI (`webui/`)
 
 `ui_server.go` runs a standard `net/http` server with:

@@ -18,6 +18,7 @@ import (
 	"httpStackLens/certManager"
 	"httpStackLens/configuration"
 	"httpStackLens/proxy/middlewares"
+	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
 )
 
@@ -72,8 +73,15 @@ func (s *composerSender) Send(ctx context.Context, dto shared.ComposerRequestDto
 		return shared.ComposerResponseDto{}, err
 	}
 
+	// Plain HTTP is relayed as bytes past its headers, so the traffic view only
+	// gets the body and the response when the composer reports them.
+	exchange := &composerExchange{started: make(chan storage.UUID, 1)}
+	if request.URL.Scheme == "http" {
+		exchange.body, exchange.bodySkipped = s.capturable([]byte(dto.Body), request.Header.Get("Content-Type"), false)
+	}
+
 	client := &http.Client{
-		Transport: s.transport(server),
+		Transport: s.transport(server, exchange),
 		Timeout:   composerTimeout,
 		// The composer reports what the server answered, redirects included.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -81,11 +89,11 @@ func (s *composerSender) Send(ctx context.Context, dto shared.ComposerRequestDto
 
 	started := time.Now()
 	response, err := client.Do(request)
-	elapsed := int(time.Since(started).Milliseconds())
+	elapsed := time.Since(started)
 	if err != nil {
 		// A request that never got a response is a result to display, not an API
 		// failure: the composer shows the transport error where the status goes.
-		return shared.ComposerResponseDto{DurationMs: elapsed, Upstream: s.upstream(), Error: transportError(err)}, nil
+		return shared.ComposerResponseDto{DurationMs: int(elapsed.Milliseconds()), Upstream: s.upstream(), Error: transportError(err)}, nil
 	}
 	defer func() { _ = response.Body.Close() }()
 
@@ -102,16 +110,101 @@ func (s *composerSender) Send(ctx context.Context, dto shared.ComposerRequestDto
 		}, nil
 	}
 
+	elapsed = time.Since(started)
+	s.recordResponse(server, exchange, response, body, truncated, elapsed)
+
 	return shared.ComposerResponseDto{
 		Status:     response.StatusCode,
 		StatusText: statusText(response),
 		Proto:      response.Proto,
 		Headers:    headerDtos(response.Header),
 		Body:       string(body),
-		DurationMs: int(time.Since(started).Milliseconds()),
+		DurationMs: int(elapsed.Milliseconds()),
 		Truncated:  truncated,
 		Upstream:   s.upstream(),
 	}, nil
+}
+
+// recordResponse hands the response to the traffic view when the pipeline gave
+// the exchange an id — a plain HTTP request. An HTTPS one is a CONNECT there,
+// and its content is only shown when HTTPS decryption records it.
+func (s *composerSender) recordResponse(server *ProxyServer, exchange *composerExchange, response *http.Response, body []byte, truncated bool, elapsed time.Duration) {
+	var id storage.UUID
+	select {
+	case id = <-exchange.started:
+	default:
+		return
+	}
+
+	contentType := response.Header.Get("Content-Type")
+	stored, skipped := s.capturable(body, contentType, truncated)
+	headers := make([]storage.Header, 0, len(response.Header))
+	for _, header := range headerDtos(response.Header) {
+		headers = append(headers, storage.Header{Name: header.Name, Value: header.Value})
+	}
+	server.recordKnownResponse(storage.ResponseRecord{
+		RequestID:     id,
+		HttpVersion:   storage.NewHttpVersion(response.ProtoMajor, response.ProtoMinor),
+		StatusCode:    int16(response.StatusCode),
+		StatusMessage: statusText(response),
+		Headers:       headers,
+		BodySkipped:   skipped,
+		Body:          stored,
+	}, shared.ResponseEventDto{
+		CorrelationID: id.String(),
+		Status:        response.StatusCode,
+		StatusText:    statusText(response),
+		ContentType:   contentType,
+		Size:          int64(len(body)),
+		DurationMs:    elapsed.Milliseconds(),
+		BodyAvailable: !skipped && len(stored) > 0,
+		BodySkipped:   skipped,
+	}, storage.Timing{Total: elapsed})
+}
+
+// capturable applies the body capture limits configured for HTTPS decryption,
+// so a body sent from the composer is kept exactly when a decrypted one would
+// be. A body the composer itself cut short is never stored in part.
+func (s *composerSender) capturable(body []byte, contentType string, truncated bool) ([]byte, bool) {
+	if len(body) == 0 {
+		return nil, false
+	}
+	var limits configuration.DecryptHttpsConfig
+	if s.decrypt != nil {
+		limits = s.decrypt.Get()
+	}
+	limit, _ := limits.LimitForContentType(contentType)
+	if truncated || int64(len(body)) > limit {
+		return nil, true
+	}
+	return body, false
+}
+
+// composerExchange is what one send knows about its exchange before and after
+// the pipeline sees it.
+type composerExchange struct {
+	body        []byte
+	bodySkipped bool
+	started     chan storage.UUID
+}
+
+// composerConn is the pipeline end of a composer connection. It still reads
+// as local (the embedded LocalConn), and implements knownExchange for the
+// proxy server.
+type composerConn struct {
+	middlewares.LocalConn
+	exchange *composerExchange
+}
+
+func (c composerConn) knownRequestBody() ([]byte, bool) {
+	return c.exchange.body, c.exchange.bodySkipped
+}
+
+func (c composerConn) exchangeStarted(id storage.UUID) {
+	select {
+	case c.exchange.started <- id:
+	default: // one request per connection: a second id cannot happen
+	}
 }
 
 // buildRequest validates the composer input. Errors here are the caller's
@@ -164,14 +257,14 @@ func (s *composerSender) buildRequest(ctx context.Context, dto shared.ComposerRe
 // transport turns every dial into an in-memory connection served by the
 // pipeline. The proxy URL is never contacted — it only tells the transport to
 // speak the proxy protocol, as a browser pointed at HttpStackLens would.
-func (s *composerSender) transport(server *ProxyServer) *http.Transport {
+func (s *composerSender) transport(server *ProxyServer, exchange *composerExchange) *http.Transport {
 	return &http.Transport{
 		Proxy: http.ProxyURL(&url.URL{Scheme: "http", Host: "pipeline.internal"}),
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			client, pipeline := net.Pipe()
 			// Marked local so the browser-authentication layer lets it through:
 			// there is no external client to challenge here.
-			go server.ServeConnection(middlewares.LocalConn{Conn: pipeline})
+			go server.ServeConnection(composerConn{LocalConn: middlewares.LocalConn{Conn: pipeline}, exchange: exchange})
 			return client, nil
 		},
 		TLSClientConfig: &tls.Config{RootCAs: s.trustedRoots()},

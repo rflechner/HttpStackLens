@@ -7,6 +7,7 @@ import (
 	"httpStackLens/http/models"
 	"httpStackLens/proxy/middlewares"
 	"httpStackLens/storage"
+	"httpStackLens/webui/wasm/shared"
 	"log"
 	"net"
 	"sync"
@@ -36,6 +37,17 @@ type ProxyServer struct {
 type ProxyEventLogger interface {
 	LogEvent(event string)
 	LogRequest(id int, correlationID string, request models.ProxyRequest)
+}
+
+// knownExchange is a connection whose client knows more about its exchange than
+// the proxy protocol shows: the composer, which wrote the request body itself
+// and reads the whole response. For a plain HTTP request the pipeline only
+// relays bytes after the headers, so this is how the body and the response
+// reach the traffic view: the body is recorded with the request, and the client
+// is handed the correlation id to record the response against.
+type knownExchange interface {
+	knownRequestBody() (body []byte, skipped bool)
+	exchangeStarted(correlationID storage.UUID)
 }
 
 type pipelineSnapshotter interface {
@@ -215,7 +227,21 @@ func (s *ProxyServer) handleRequest(browser net.Conn, requestId int) func(pipeli
 		if s.isCapturing() && !(decryptingHttps && request.HttpRequestLine.IsConnect()) {
 			s.EventLogger.LogRequest(requestId, correlationID.String(), request)
 		}
-		s.recordTopLevelRequest(correlationID, request, decryptingHttps)
+		// A CONNECT carries no body and its inner traffic is either opaque or
+		// recorded by the HTTPS interceptor: only plain HTTP is completed here.
+		known, _ := browser.(knownExchange)
+		if request.HttpRequestLine.IsConnect() {
+			known = nil
+		}
+		var body []byte
+		var bodySkipped bool
+		if known != nil {
+			body, bodySkipped = known.knownRequestBody()
+		}
+		s.recordTopLevelRequest(correlationID, request, decryptingHttps, body, bodySkipped)
+		if known != nil {
+			known.exchangeStarted(correlationID)
+		}
 
 		// Pass the buffered stream (not the raw connection) down the pipeline so
 		// any request body bytes already pulled into the read buffer alongside
@@ -236,8 +262,9 @@ func snapshotPipeline(pipeline middlewares.Middleware) (middlewares.Middleware, 
 
 // recordTopLevelRequest persists the proxied request line + headers to the
 // capture file. In decryption mode the CONNECT tunnel is skipped here because
-// the HTTPS interceptor records the decrypted requests/responses instead.
-func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest, decryptingHttps bool) {
+// the HTTPS interceptor records the decrypted requests/responses instead. The
+// body is only known when the client reported it (see knownExchange).
+func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request models.ProxyRequest, decryptingHttps bool, body []byte, bodySkipped bool) {
 	toStorage := s.isStoring() && s.capture != nil
 	toView := s.isCapturing() && s.store != nil
 	if !toStorage && !toView {
@@ -247,6 +274,7 @@ func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request 
 		return
 	}
 	rec := proxyRequestToRecord(correlationID, request)
+	rec.Body, rec.BodySkipped = body, bodySkipped
 	if toStorage {
 		if err := s.capture.WriteRequest(rec); err != nil {
 			log.Printf("capture: failed to record request: %v\n", err)
@@ -254,6 +282,30 @@ func (s *ProxyServer) recordTopLevelRequest(correlationID storage.UUID, request 
 	}
 	if toView {
 		s.store.PutRequest(correlationID.String(), rec)
+	}
+}
+
+// recordKnownResponse completes a plain HTTP exchange with the response its
+// client reported — the composer, which reads the whole response anyway. It is
+// gated like the request record, and streams the response event the pipeline
+// cannot produce for relayed bytes, so the row of the traffic view gets its
+// status, size and duration.
+func (s *ProxyServer) recordKnownResponse(rec storage.ResponseRecord, event shared.ResponseEventDto, timing storage.Timing) {
+	if s.isStoring() && s.capture != nil {
+		if err := s.capture.WriteResponse(rec); err != nil {
+			log.Printf("capture: failed to record response: %v\n", err)
+		}
+	}
+	if !s.isCapturing() {
+		return
+	}
+	if s.store != nil {
+		id := rec.RequestID.String()
+		s.store.PutResponse(id, rec)
+		s.store.PutTiming(id, timing)
+	}
+	if sink, ok := s.EventLogger.(middlewares.EventSink); ok {
+		sink.PublishResponseEvent(event)
 	}
 }
 

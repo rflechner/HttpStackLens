@@ -11,8 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	"httpStackLens/configuration"
 	"httpStackLens/http/models"
 	"httpStackLens/proxy/middlewares"
+	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
 )
 
@@ -283,5 +285,119 @@ func TestComposerSenderReportsProtoOnAPipelineFailure(t *testing.T) {
 	}
 	if response.Proto == "" {
 		t.Errorf("Expected a proto alongside status %d, got none", response.Status)
+	}
+}
+
+// sinkEventLogger also takes the response events a plain HTTP composer send
+// reports, as logging.WebUiEventLogger does.
+type sinkEventLogger struct {
+	recordingEventLogger
+	responses []shared.ResponseEventDto
+}
+
+func (l *sinkEventLogger) PublishRequestEvent(shared.RequestEventDto) {}
+
+func (l *sinkEventLogger) PublishResponseEvent(event shared.ResponseEventDto) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.responses = append(l.responses, event)
+}
+
+// The pipeline relays a plain HTTP body as bytes: the composer reports what it
+// sent and received, so the traffic view shows both bodies on the request's row.
+func TestComposerSenderRecordsPlainHttpBodies(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"models":["qwen"]}`)
+	}))
+	defer target.Close()
+
+	logger := &sinkEventLogger{}
+	store := storage.NewRequestStore(10)
+	sender := newComposerSender(nil, configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{}))
+	sender.attach(&ProxyServer{appContext: AppContext{pipeline: &middlewares.TunnelServer{}}, EventLogger: logger, store: store})
+
+	response, err := sender.Send(context.Background(), shared.ComposerRequestDto{
+		Method:  "POST",
+		Url:     target.URL + "/api/v1/chat",
+		Headers: []shared.HeaderDto{{Name: "Content-Type", Value: "application/json"}},
+		Body:    `{"prompt":"hi"}`,
+	})
+	if err != nil || response.Error != "" || response.Status != http.StatusOK {
+		t.Fatalf("Send: %v %+v", err, response)
+	}
+
+	requests := logger.logged()
+	if len(requests) != 1 {
+		t.Fatalf("expected one request on the traffic view, got %d", len(requests))
+	}
+	entries, _, _ := store.Snapshot()
+	if len(entries) != 1 {
+		t.Fatalf("expected one exchange in the store, got %d", len(entries))
+	}
+	exchange := entries[0]
+	if exchange.Request == nil || string(exchange.Request.Body) != `{"prompt":"hi"}` {
+		t.Fatalf("request body not recorded: %+v", exchange.Request)
+	}
+	if exchange.Response == nil || exchange.Response.StatusCode != http.StatusOK || string(exchange.Response.Body) != `{"models":["qwen"]}` {
+		t.Fatalf("response not recorded: %+v", exchange.Response)
+	}
+	if exchange.Timing == nil || exchange.Timing.Total <= 0 {
+		t.Fatalf("timing not recorded: %+v", exchange.Timing)
+	}
+	if len(logger.responses) != 1 || logger.responses[0].CorrelationID != exchange.CorrelationID || !logger.responses[0].BodyAvailable || logger.responses[0].Status != http.StatusOK {
+		t.Fatalf("unexpected response events: %+v", logger.responses)
+	}
+}
+
+// A body over its capture limit is flagged as skipped, not stored in part.
+func TestComposerSenderAppliesTheCaptureLimits(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, strings.Repeat("x", 64))
+	}))
+	defer target.Close()
+
+	limit := int64(16)
+	store := storage.NewRequestStore(10)
+	sender := newComposerSender(nil, configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{DefaultMaxBytes: &limit}))
+	sender.attach(&ProxyServer{appContext: AppContext{pipeline: &middlewares.TunnelServer{}}, EventLogger: &recordingEventLogger{}, store: store})
+
+	if _, err := sender.Send(context.Background(), shared.ComposerRequestDto{Method: "PUT", Url: target.URL + "/", Body: "small"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, _ := store.Snapshot()
+	exchange := entries[0]
+	if string(exchange.Request.Body) != "small" || exchange.Request.BodySkipped {
+		t.Fatalf("unexpected request record: %+v", exchange.Request)
+	}
+	if exchange.Response == nil || exchange.Response.Body != nil || !exchange.Response.BodySkipped {
+		t.Fatalf("an oversized body must be skipped: %+v", exchange.Response)
+	}
+}
+
+// Without HTTPS decryption the traffic view shows an opaque CONNECT: the
+// composer knows the clear content, but recording it would bypass the opt-in.
+func TestComposerSenderKeepsHttpsOpaqueWithoutDecryption(t *testing.T) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "secure")
+	}))
+	defer target.Close()
+
+	store := storage.NewRequestStore(10)
+	sender := newComposerSender(nil, configuration.NewDecryptHttpsConfigStore(configuration.DecryptHttpsConfig{}))
+	sender.attach(&ProxyServer{appContext: AppContext{pipeline: &middlewares.TunnelServer{}}, EventLogger: &recordingEventLogger{}, store: store})
+	pool := x509.NewCertPool()
+	pool.AddCert(target.Certificate())
+	sender.trustedRoots = func() *x509.CertPool { return pool }
+
+	response, err := sender.Send(context.Background(), shared.ComposerRequestDto{Method: "POST", Url: target.URL + "/", Body: "secret"})
+	if err != nil || response.Body != "secure" {
+		t.Fatalf("Send: %v %+v", err, response)
+	}
+	entries, _, _ := store.Snapshot()
+	if len(entries) != 1 || entries[0].Request.Method != "CONNECT" || entries[0].Request.Body != nil || entries[0].Response != nil {
+		t.Fatalf("HTTPS content leaked into the traffic view: %+v", entries)
 	}
 }
