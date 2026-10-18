@@ -238,6 +238,20 @@ func (m *StateModel) connectSSE() {
 		return nil
 	}))
 
+	// A .http file written by an MCP client. A composer not mounted yet reads
+	// the folder when it is, so only a mounted one needs telling.
+	es.Call("addEventListener", "http_file_changed", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var change shared.HttpFileChangedDto
+		if err := json.Unmarshal([]byte(args[0].Get("data").String()), &change); err != nil {
+			consoleLog("Error parsing http_file_changed JSON: " + err.Error())
+			return nil
+		}
+		if composerView != nil {
+			composerView.ApplyExternalChange(change)
+		}
+		return nil
+	}))
+
 	es.Call("addEventListener", "capture_state", js.FuncOf(func(this js.Value, args []js.Value) any {
 		data := args[0].Get("data").String()
 		if data == "" {

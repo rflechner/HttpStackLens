@@ -151,6 +151,7 @@ func (h *Hub) unsubscribe(ch chan string) {
 func (h *Hub) Publish(eventType, data string) {
 	msg := fmt.Sprintf("event: %s\ndata: %s", eventType, data)
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.closed {
 		fmt.Println("hub is closed")
 		return
@@ -161,7 +162,6 @@ func (h *Hub) Publish(eventType, data string) {
 		default: // too slow clients are ignored
 		}
 	}
-	h.mu.Unlock()
 }
 
 func sseHandler(hub *Hub) http.HandlerFunc {

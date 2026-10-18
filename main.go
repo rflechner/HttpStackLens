@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"httpStackLens/composer"
@@ -195,6 +196,13 @@ func main() {
 		Proxy: proxyCtl, Capture: captureCtl, Storage: storageSink,
 		Requests: requestStore, DecryptHTTPS: decryptHttpsSettings, Upstream: upstreamSettings,
 		HttpFiles: httpFiles, SendComposer: composerSend.Send,
+		ComposerFileChanged: func(change shared.HttpFileChangedDto) {
+			// An open composer applies the change instead of overwriting it
+			// with its own copy on the next save.
+			if data, err := json.Marshal(change); err == nil {
+				hub.Publish("http_file_changed", string(data))
+			}
+		},
 	})
 	if err != nil {
 		slog.Warn("Could not start MCP server; MCP disabled", "error", err)

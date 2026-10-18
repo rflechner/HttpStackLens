@@ -115,7 +115,7 @@
 .cx-vbtn .mono { font-size:10.5px }
 .cx-vbtn:hover { color:var(--ink) }
 .cx-vbtn.on { color:var(--mint); border-color:var(--mint); background:color-mix(in srgb, var(--mint) 10%, transparent); font-weight:600 }
-.cx-dirty { font-size:10.5px; color:var(--warn); background:color-mix(in srgb, var(--warn) 14%, transparent); border-radius:5px; padding:2px 6px }
+.cx-dirty { font-size:10.5px; color:var(--warn); background:color-mix(in srgb, var(--warn) 14%, transparent); border-radius:5px; padding:2px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:45% }
 /* The save indicator is written into rather than rendered, so that a write-back
    landing mid-keystroke does not replace the textarea. Empty means saved. */
 .cx-dirty:empty { display:none }

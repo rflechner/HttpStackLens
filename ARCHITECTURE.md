@@ -199,9 +199,10 @@ is what an editor opened beside the composer would show.
 
 The MCP composer tools edit a single request block with
 `composer.AppendRequest` / `composer.ReplaceRequest`, which rewrite only that
-block and reparse the result before it is saved. The Web UI does not reload the
-files on its own: it shows an MCP edit after a reload, and a later save of the
-same file from an open composer overwrites it.
+block and reparse the result before it is saved. Each MCP write is published
+on the SSE hub as `http_file_changed`; `main.go` wires that callback, and the
+WASM composer applies the file to its model (`Composer.ApplyExternalChange`)
+unless the file holds unsaved edits, which win and are flagged.
 
 ## Web UI (`webui/`)
 

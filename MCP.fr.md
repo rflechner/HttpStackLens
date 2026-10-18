@@ -140,7 +140,7 @@ dans le dossier de captures, sans accepter de chemin arbitraire.
 - [x] Retourner le statut de destination et les erreurs réseau, en distinguant `response` et `transport_error`.
 - [ ] Retourner l’identifiant du nouvel échange observé (aujourd’hui : le retrouver avec `search_requests`).
 - [ ] Contrôler l’écriture et l’envoi séparément des outils de lecture (réglage dédié dans `config.yaml`).
-- [ ] Recharger le Composer de la Web UI lorsqu’un fichier est modifié par MCP (événement SSE).
+- [x] Rafraîchir le Composer de la Web UI lorsqu’un fichier est modifié par MCP (événement SSE `http_file_changed`).
 - [ ] `prepare_request` : reconstruire une requête à partir d’un échange et l’ajouter au Composer sans effectuer d’appel réseau.
 - [ ] Signaler les corps manquants et remplacer les secrets masqués par des paramètres explicites, sans inventer leur valeur.
 - [ ] Comparer la reproduction à l’échange initial.
@@ -306,11 +306,25 @@ les blocs illisibles, est conservé tel quel. Les commentaires du bloc sont
 gardés : ceux placés sous la ligne de requête (dont les en-têtes décochés dans
 la Web UI) sont réécrits après les en-têtes. Le résultat est relu par le parser
 avant enregistrement ; une URL avec espaces, une valeur sur plusieurs lignes ou
-une ligne de corps commençant par `###` sont refusées. Avec
+une ligne de corps commençant par `###` sont refusées. Un corps ou un titre
+valant `None`, `null`, `undefined` ou `nil` (ce que certains clients envoient à
+la place d’un champ absent) est traité comme vide ; un corps légitime réduit au
+JSON `null` ne peut donc pas être écrit par MCP. Un corps fourni pour un GET ou
+un HEAD n’est pas écrit, puisqu’il ne serait jamais envoyé, et la `note` du
+résultat le signale. Avec
 `expected_modified_at`, l’écriture échoue si le fichier a changé depuis la
-lecture. La Web UI ne recharge pas les fichiers automatiquement : une
-modification MCP apparaît après rechargement, et une sauvegarde ultérieure du
-même fichier depuis un Composer déjà ouvert l’écrase.
+lecture.
+
+**Rafraîchissement de la Web UI.** Chaque ajout ou modification publie
+l’événement SSE `http_file_changed` (fichier complet, action, index). Un
+Composer ouvert l’applique sans rechargement : si le fichier modifié est celui
+affiché (ou si aucun ne l’est), la requête concernée est sélectionnée et
+l’éditeur s’y place ; sinon la barre latérale se met à jour sans changer le
+fichier affiché. L’indicateur à côté du nom signale « added/updated via MCP ».
+Si le fichier a des modifications pas encore sauvegardées dans la Web UI
+(fenêtre de ~600 ms), elles sont conservées et l’indicateur prévient qu’elles
+remplaceront la version MCP. Un Composer pas encore ouvert lit simplement le
+dossier à son ouverture.
 
 **Envoi.** Une variable non déclarée fait échouer l’outil sans rien envoyer.
 `outcome` vaut `response` lorsque la destination (ou un proxy) a répondu,

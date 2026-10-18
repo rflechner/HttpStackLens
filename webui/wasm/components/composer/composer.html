@@ -34,7 +34,7 @@
           <input class="cx-name" data-bind="Cur.Name" data-on-input="NameChanged" placeholder="Request name" />
           <button class="cx-file-tag mono" data-on-click="SetTab" data-arg="raw" title="Open the raw {{.FileName}} text">{{.FileName}}</button>
         {{end}}
-        <span class="cx-dirty" data-ref="saveState">{{.SaveState}}</span>
+        <span class="cx-dirty{{if .SaveStateIsError}} err{{end}}" data-ref="saveState" title="{{.SaveState}}">{{.SaveState}}</span>
         {{if not (.TabIs "raw")}}
           <button class="cx-mini" data-on-click="DuplicateRequest">Duplicate</button>
           <button class="cx-mini danger" data-on-click="DeleteRequest">Delete</button>

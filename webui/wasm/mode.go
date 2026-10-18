@@ -16,6 +16,10 @@ const modeKey = "hsl-mode"
 // is what the app opens on, so its component tree is built only if asked for.
 var composerMounted bool
 
+// composerView is the mounted composer, nil until the first switch to it. The
+// SSE stream hands it the .http files an MCP client writes.
+var composerView *composer.Composer
+
 // initModeSwitch mounts the title-bar switch and applies the mode the window
 // was left in. The switch itself knows nothing of the views — it hands the mode
 // back here, where the page regions are shown and hidden.
@@ -44,7 +48,8 @@ func applyMode(mode string) {
 	}
 	composerMounted = true
 	view := js.Global().Get("document").Call("getElementById", "compose-view")
-	dom.Mount(view, composer.New())
+	composerView = composer.New()
+	dom.Mount(view, composerView)
 }
 
 // showRegion toggles a top-level region. Every one of them is a flex row, so

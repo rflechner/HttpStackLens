@@ -6,6 +6,7 @@ import (
 	"httpStackLens/composer"
 	"httpStackLens/configuration"
 	"httpStackLens/storage"
+	"httpStackLens/webui/wasm/shared"
 	"runtime"
 	"strings"
 
@@ -25,6 +26,9 @@ type Dependencies struct {
 	// collection and pipeline sender as the Web UI composer.
 	HttpFiles    *composer.HttpFileStore
 	SendComposer ComposerSender
+	// ComposerFileChanged is told about every file the composer tools write, so
+	// that the Web UI can refresh an open composer. Optional.
+	ComposerFileChanged func(shared.HttpFileChangedDto)
 }
 
 type Status struct {

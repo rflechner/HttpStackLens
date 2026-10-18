@@ -401,6 +401,17 @@ type HttpFilesDto struct {
 	Files  []HttpFileDto `json:"files"`
 }
 
+// HttpFileChangedDto is the payload of the http_file_changed SSE event: a
+// `.http` file written by something other than the Web UI — an MCP client — so
+// that an open composer shows the change without a reload.
+type HttpFileChangedDto struct {
+	File HttpFileDto `json:"file"`
+	// Action is "added" or "updated"; RequestIndex is the request it concerns,
+	// counted from 0 in the file.
+	Action       string `json:"action"`
+	RequestIndex int    `json:"request_index"`
+}
+
 // HttpFileRenameDto carries the new name of a `.http` file.
 type HttpFileRenameDto struct {
 	Name string `json:"name"`

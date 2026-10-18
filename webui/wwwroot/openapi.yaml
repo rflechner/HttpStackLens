@@ -303,7 +303,12 @@ paths:
       summary: Subscribe to live proxy events
       description: |
         Server-Sent Events stream. Known event types are `request_occurred`
-        `response_occurred`, and `capture_state`.
+        `response_occurred`, `capture_state`, and `http_file_changed`.
+
+        `http_file_changed` carries a `.http` file of the composer's folder
+        written by an MCP client (schema `HttpFileChanged`), so that an open
+        composer shows the change. Writes made through `/api/http-files` are
+        not echoed.
       responses:
         "200":
           description: SSE stream
@@ -320,6 +325,10 @@ paths:
                   value: |
                     event: capture_state
                     data: {"capturing":false,"buffer_size":0,"decrypt":{"enabled":true},"upstream":{"enabled":false,"ntlm":false},"access":{"mode":"loopback"}}
+                http_file_changed:
+                  value: |
+                    event: http_file_changed
+                    data: {"file":{"name":"api.http","content":"### Health\nGET https://example.com/health\n","modified_at":"2026-10-18T13:46:32.872094519Z"},"action":"added","request_index":0}
   /api/requests/{id}:
     get:
       tags: [Requests]
@@ -870,6 +879,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/HttpFile"
+    HttpFileChanged:
+      type: object
+      description: Payload of the `http_file_changed` SSE event.
+      required: [file, action, request_index]
+      properties:
+        file:
+          $ref: "#/components/schemas/HttpFile"
+        action:
+          type: string
+          enum: [added, updated]
+        request_index:
+          type: integer
+          minimum: 0
+          description: The request added or updated, counted from 0 in the file.
     HttpFileRename:
       type: object
       required: [name]

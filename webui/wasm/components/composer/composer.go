@@ -14,6 +14,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"html/template"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -82,6 +83,12 @@ type Composer struct {
 	Loading bool
 	LoadErr string
 	SaveErr string
+
+	// Notice reports a change made to the folder by an MCP client: an
+	// information once it is shown, or, with NoticeErr, a change that could not
+	// be shown because the file had unsaved edits.
+	Notice    string
+	NoticeErr bool
 
 	// saveGen debounces the write-back, one generation per file: every edit
 	// bumps it, and a timer that fires holding a stale generation has been
@@ -194,7 +201,18 @@ func (c *Composer) SaveState() string {
 	if c.CurFile != nil && c.Dirty[c.CurFile.ID] {
 		return "unsaved"
 	}
-	return ""
+	return c.Notice
+}
+
+// SaveStateIsError says whether the indicator reports a failure.
+func (c *Composer) SaveStateIsError() bool {
+	if c.SaveErr != "" {
+		return true
+	}
+	if c.CurFile != nil && c.Dirty[c.CurFile.ID] {
+		return false
+	}
+	return c.NoticeErr && c.Notice != ""
 }
 
 // refreshSaveState pokes the indicator without a render. A write-back finishes
@@ -206,7 +224,8 @@ func (c *Composer) refreshSaveState() {
 		return
 	}
 	node.Set("textContent", c.SaveState())
-	node.Get("classList").Call("toggle", "err", c.SaveErr != "")
+	node.Set("title", c.SaveState())
+	node.Get("classList").Call("toggle", "err", c.SaveStateIsError())
 }
 
 func (c *Composer) FileName() string {
@@ -1033,6 +1052,7 @@ func (c *Composer) openFile(id string) {
 		c.Cur = f.Reqs[0]
 	}
 	c.Res = nil
+	c.Notice, c.NoticeErr = "", false
 	c.Tab = tabRaw
 	c.Raw = ToHTTP(f)
 	c.rawTop, c.rawLeft = 0, 0
@@ -1089,6 +1109,9 @@ func (c *Composer) touch() {
 		return
 	}
 	c.Dirty[c.CurFile.ID] = true
+	if !c.NoticeErr {
+		c.Notice = ""
+	}
 	c.refreshSaveState()
 	c.scheduleSave(c.CurFile)
 }
@@ -1202,6 +1225,76 @@ func (c *Composer) loadFiles() {
 	c.refreshRaw()
 	c.StateHasChanged()
 	c.files.StateHasChanged()
+}
+
+// ApplyExternalChange shows a file an MCP client has just written. The file
+// being edited follows the change and selects the request it concerns; another
+// file being edited is left on screen, the sidebar showing the new requests.
+//
+// A file with unsaved edits is not touched: replacing it would throw away what
+// was typed, and the write-back of those edits will replace the change on disk
+// in turn. The indicator says so rather than letting it happen silently.
+func (c *Composer) ApplyExternalChange(change shared.HttpFileChangedDto) {
+	if c.Loading {
+		// The first read of the folder is still on its way and will see it.
+		return
+	}
+	name := change.File.Name
+	f := c.fileNamed(name)
+	if f != nil && c.Dirty[f.ID] {
+		c.Notice, c.NoticeErr = name+" changed via MCP; your unsaved edits will replace it", true
+		c.refreshSaveState()
+		return
+	}
+
+	parsed := ParseHTTP(change.File.Content, name)
+	if f == nil {
+		f = parsed
+		c.Files = append(c.Files, f)
+		sort.SliceStable(c.Files, func(i, j int) bool {
+			return strings.ToLower(c.Files[i].Name) < strings.ToLower(c.Files[j].Name)
+		})
+	} else {
+		f.Vars, f.Reqs = parsed.Vars, parsed.Reqs
+	}
+	f.Open = true
+	// The indicator sits next to the open file's name: a change to another
+	// file has to say which one.
+	if c.CurFile != nil && c.CurFile != f {
+		c.Notice, c.NoticeErr = name+" "+change.Action+" via MCP", false
+		c.files.refresh()
+		c.refreshSaveState()
+		return
+	}
+	c.Notice, c.NoticeErr = change.Action+" via MCP", false
+	previous := c.CurFile
+	c.CurFile = f
+	c.Cur = nil
+	if len(f.Reqs) > 0 {
+		c.Cur = f.Reqs[min(max(change.RequestIndex, 0), len(f.Reqs)-1)]
+	}
+	if previous != f {
+		c.Res = nil
+		c.rawTop, c.rawLeft = 0, 0
+	}
+	if c.Tab == tabRaw {
+		c.Raw = ToHTTP(f)
+		c.revealLine = lineOfRequest(c.Raw, change.RequestIndex)
+	}
+	if c.Tab == tabParams && c.Cur != nil {
+		_, c.Params = SplitURL(c.Cur.URL)
+	}
+	c.StateHasChanged()
+	c.files.refresh()
+}
+
+func (c *Composer) fileNamed(name string) *File {
+	for _, f := range c.Files {
+		if strings.EqualFold(f.Name, name) {
+			return f
+		}
+	}
+	return nil
 }
 
 func removeAt(list []KV, i int) []KV {

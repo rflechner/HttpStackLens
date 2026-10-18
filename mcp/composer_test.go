@@ -229,3 +229,70 @@ func TestSendComposerRequestUnavailable(t *testing.T) {
 	ctx, session, _ := composerSession(t, nil)
 	_, _ = callComposer[ComposerSendResult](t, ctx, session, "send_composer_request", map[string]any{"file": "api", "index": 0}, true)
 }
+
+// Every write tells the Web UI which file changed and which request, so that
+// an open composer can show it; a refused write tells it nothing.
+func TestComposerWritesNotifyTheWebUI(t *testing.T) {
+	store := composer.NewHttpFileStore(t.TempDir())
+	if _, err := store.Save("api.http", composerSample); err != nil {
+		t.Fatal(err)
+	}
+	var changes []shared.HttpFileChangedDto
+	ctx, session := connectStatusClient(t, Dependencies{HttpFiles: store, ComposerFileChanged: func(change shared.HttpFileChangedDto) {
+		changes = append(changes, change)
+	}})
+
+	_, _ = callComposer[ComposerWriteResult](t, ctx, session, "add_composer_request", map[string]any{"file": "api", "method": "GET", "url": "https://example.com/new"}, false)
+	_, _ = callComposer[ComposerWriteResult](t, ctx, session, "update_composer_request", map[string]any{"file": "api", "index": 1, "title": "Renamed"}, false)
+	_, _ = callComposer[ComposerWriteResult](t, ctx, session, "update_composer_request", map[string]any{"file": "api", "index": 0, "url": "https://x/a b"}, true)
+	_, _ = callComposer[ComposerRequestDetail](t, ctx, session, "get_composer_request", map[string]any{"file": "api", "index": 0}, false)
+
+	if len(changes) != 2 {
+		t.Fatalf("expected 2 notifications, got %+v", changes)
+	}
+	if changes[0].Action != "added" || changes[0].RequestIndex != 2 || changes[0].File.Name != "api.http" || !strings.Contains(changes[0].File.Content, "example.com/new") {
+		t.Fatalf("unexpected add notification: %+v", changes[0])
+	}
+	onDisk, _ := store.Read("api.http")
+	if changes[1].Action != "updated" || changes[1].RequestIndex != 1 || changes[1].File != onDisk {
+		t.Fatalf("the update notification does not match the file on disk: %+v", changes[1])
+	}
+}
+
+// Some clients send "None" or "null" for a field the model left empty, and a
+// GET body is never sent: neither must end up in the file.
+func TestComposerWritesIgnoreNullTextAndGetBodies(t *testing.T) {
+	ctx, session, store := composerSession(t, nil)
+
+	added, _ := callComposer[ComposerWriteResult](t, ctx, session, "add_composer_request", map[string]any{
+		"file": "lm", "title": "Lister les modèles LM Studio", "method": "GET",
+		"url":     "http://10.0.0.109:1234/api/v1/models",
+		"headers": []map[string]any{{"name": "Accept", "value": "application/json"}},
+		"body":    "None",
+	}, false)
+	written, _ := store.Read("lm.http")
+	if written.Content != "### Lister les modèles LM Studio\nGET http://10.0.0.109:1234/api/v1/models\nAccept: application/json\n" {
+		t.Fatalf("unexpected file:\n%s", written.Content)
+	}
+	if strings.Contains(added.Note, "not written") {
+		t.Fatalf("a None body is no body, not a dropped one: %q", added.Note)
+	}
+
+	added, _ = callComposer[ComposerWriteResult](t, ctx, session, "add_composer_request", map[string]any{
+		"file": "lm", "title": "null", "method": "HEAD", "url": "http://10.0.0.109:1234/", "body": "{\"x\":1}",
+	}, false)
+	written, _ = store.Read("lm.http")
+	if !strings.HasSuffix(written.Content, "\n###\nHEAD http://10.0.0.109:1234/\n") || !strings.Contains(added.Note, "not written") {
+		t.Fatalf("unexpected file or note %q:\n%s", added.Note, written.Content)
+	}
+
+	// On a POST, "null" removes the body like an empty string does.
+	_, _ = callComposer[ComposerWriteResult](t, ctx, session, "update_composer_request", map[string]any{"file": "api", "index": 1, "body": "null"}, false)
+	if blocks := composer.ReadRequests(func() string { f, _ := store.Read("api.http"); return f.Content }()); blocks[1].Body != "" {
+		t.Fatalf("expected the body to be removed, got %q", blocks[1].Body)
+	}
+	updated, _ := callComposer[ComposerWriteResult](t, ctx, session, "update_composer_request", map[string]any{"file": "api", "index": 0, "body": "payload"}, false)
+	if blocks := composer.ReadRequests(func() string { f, _ := store.Read("api.http"); return f.Content }()); blocks[0].Body != "" || !strings.Contains(updated.Note, "not written") {
+		t.Fatalf("a GET body was written: %+v %q", blocks[0], updated.Note)
+	}
+}

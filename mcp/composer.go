@@ -103,7 +103,7 @@ type AddComposerParams struct {
 	Method             string           `json:"method" jsonschema:"GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS..."`
 	URL                string           `json:"url" jsonschema:"Absolute http(s) URL; may use {{variables}} declared in the file; no spaces"`
 	Headers            []ComposerHeader `json:"headers,omitempty"`
-	Body               string           `json:"body,omitempty" jsonschema:"Ignored when sending GET or HEAD; no line may start with ###"`
+	Body               string           `json:"body,omitempty" jsonschema:"Omit when there is no body; never written for GET or HEAD. No line may start with ###"`
 }
 
 type UpdateComposerParams struct {
@@ -114,7 +114,7 @@ type UpdateComposerParams struct {
 	Method             *string           `json:"method,omitempty" jsonschema:"New method; unchanged when omitted"`
 	URL                *string           `json:"url,omitempty" jsonschema:"New URL; unchanged when omitted. A __REDACTED__ query value keeps the current one"`
 	Headers            *[]ComposerHeader `json:"headers,omitempty" jsonschema:"Replaces all headers; unchanged when omitted. A __REDACTED__ value keeps the current value of that header"`
-	Body               *string           `json:"body,omitempty" jsonschema:"New body, empty string to remove it; unchanged when omitted"`
+	Body               *string           `json:"body,omitempty" jsonschema:"New body, empty string to remove it; unchanged when omitted; never written for GET or HEAD"`
 }
 
 type ComposerWriteResult struct {
@@ -162,12 +162,12 @@ func registerComposerTools(server *sdk.Server, deps Dependencies) {
 	}, deps.getComposerRequest)
 	sdk.AddTool(server, &sdk.Tool{
 		Name:        "add_composer_request",
-		Description: "Append a request to a Composer .http file, creating the file if needed. Does not send it. The Web UI shows the change after a reload.",
+		Description: "Append a request to a Composer .http file, creating the file if needed. An open Web UI Composer shows it. Does not send it.",
 		Annotations: &sdk.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no},
 	}, deps.addComposerRequest)
 	sdk.AddTool(server, &sdk.Tool{
 		Name:        "update_composer_request",
-		Description: "Change fields of an existing Composer request; omitted fields are kept, comments of the block are preserved. Does not send it. The Web UI shows the change after a reload.",
+		Description: "Change fields of an existing Composer request; omitted fields are kept, comments of the block are preserved. An open Web UI Composer shows the change. Does not send it.",
 		Annotations: &sdk.ToolAnnotations{IdempotentHint: true, OpenWorldHint: &no},
 	}, deps.updateComposerRequest)
 	sdk.AddTool(server, &sdk.Tool{
@@ -250,6 +250,11 @@ func (d Dependencies) addComposerRequest(_ context.Context, _ *sdk.CallToolReque
 	if err := checkComposerInput(p.Title, p.Method, p.URL, p.Body, p.Headers); err != nil {
 		return nil, ComposerWriteResult{}, err
 	}
+	p.Title, p.Body = withoutNull(p.Title), withoutNull(p.Body)
+	note := savedNote
+	if p.Body != "" && bodiless(p.Method) {
+		p.Body, note = "", savedNote+" "+droppedBodyNote
+	}
 	if strings.Contains(p.URL, redactedValue) || slices.ContainsFunc(p.Headers, func(h ComposerHeader) bool { return h.Value == redactedValue }) {
 		return nil, ComposerWriteResult{}, errors.New("a new request has no hidden value to keep: replace __REDACTED__ with a value or a {{variable}}")
 	}
@@ -268,7 +273,8 @@ func (d Dependencies) addComposerRequest(_ context.Context, _ *sdk.CallToolReque
 	if err != nil {
 		return nil, ComposerWriteResult{}, composerFileError(err)
 	}
-	return nil, ComposerWriteResult{File: written.Name, Index: index, ModifiedAt: written.ModifiedAt, Note: "Saved to disk; reload the Composer in the Web UI to see it. Not sent."}, nil
+	d.notifyComposer(written, "added", index)
+	return nil, ComposerWriteResult{File: written.Name, Index: index, ModifiedAt: written.ModifiedAt, Note: note}, nil
 }
 
 func (d Dependencies) updateComposerRequest(_ context.Context, _ *sdk.CallToolRequest, p UpdateComposerParams) (*sdk.CallToolResult, ComposerWriteResult, error) {
@@ -285,6 +291,15 @@ func (d Dependencies) updateComposerRequest(_ context.Context, _ *sdk.CallToolRe
 	if err := checkComposerInput(deref(p.Title), deref(p.Method), deref(p.URL), deref(p.Body), headers); err != nil {
 		return nil, ComposerWriteResult{}, err
 	}
+	if p.Title != nil {
+		title := withoutNull(*p.Title)
+		p.Title = &title
+	}
+	if p.Body != nil {
+		body := withoutNull(*p.Body)
+		p.Body = &body
+	}
+	note := savedNote
 
 	written, err := d.HttpFiles.Edit(p.File, func(current shared.HttpFileDto, exists bool) (string, error) {
 		if !exists {
@@ -316,6 +331,9 @@ func (d Dependencies) updateComposerRequest(_ context.Context, _ *sdk.CallToolRe
 			}
 			if p.Body != nil {
 				block.Body = *p.Body
+				if block.Body != "" && bodiless(block.Method) {
+					block.Body, note = "", savedNote+" "+droppedBodyNote
+				}
 			}
 			return block, nil
 		})
@@ -323,7 +341,8 @@ func (d Dependencies) updateComposerRequest(_ context.Context, _ *sdk.CallToolRe
 	if err != nil {
 		return nil, ComposerWriteResult{}, composerFileError(err)
 	}
-	return nil, ComposerWriteResult{File: written.Name, Index: p.Index, ModifiedAt: written.ModifiedAt, Note: "Saved to disk; reload the Composer in the Web UI to see it. Not sent."}, nil
+	d.notifyComposer(written, "updated", p.Index)
+	return nil, ComposerWriteResult{File: written.Name, Index: p.Index, ModifiedAt: written.ModifiedAt, Note: note}, nil
 }
 
 func (d Dependencies) sendComposerRequest(ctx context.Context, _ *sdk.CallToolRequest, p SendComposerParams) (*sdk.CallToolResult, ComposerSendResult, error) {
@@ -354,7 +373,7 @@ func (d Dependencies) sendComposerRequest(ctx context.Context, _ *sdk.CallToolRe
 	for _, header := range block.Headers {
 		request.Headers = append(request.Headers, shared.HeaderDto{Name: header.Name, Value: resolve(header.Value)})
 	}
-	if block.Method != "GET" && block.Method != "HEAD" {
+	if !bodiless(block.Method) {
 		request.Body = resolve(block.Body)
 	}
 	if len(unresolved) > 0 {
@@ -419,6 +438,12 @@ func (d Dependencies) readComposerRequest(name string, index int) (shared.HttpFi
 	return file, blocks[index], nil
 }
 
+func (d Dependencies) notifyComposer(file shared.HttpFileDto, action string, index int) {
+	if d.ComposerFileChanged != nil {
+		d.ComposerFileChanged(shared.HttpFileChangedDto{File: file, Action: action, RequestIndex: index})
+	}
+}
+
 func composerFileError(err error) error {
 	switch {
 	case errors.Is(err, composer.ErrInvalidHttpFileName):
@@ -454,6 +479,30 @@ func checkComposerInput(title, method, url, body string, headers []ComposerHeade
 		}
 	}
 	return nil
+}
+
+const (
+	savedNote       = "Saved to disk and shown in the Web UI Composer. Not sent."
+	droppedBodyNote = "The body was not written: GET and HEAD requests are sent without one."
+)
+
+// withoutNull reads a client's spelling of "no value" as no value. Some
+// clients and models turn a null into the text "None" or "null" rather than
+// leaving the field out, which would otherwise land in the file as a body or a
+// title.
+func withoutNull(value string) string {
+	switch strings.TrimSpace(value) {
+	case "None", "none", "null", "NULL", "Null", "undefined", "nil":
+		return ""
+	}
+	return value
+}
+
+// bodiless reports the methods the composer sends without a body, as the Web
+// UI play button does.
+func bodiless(method string) bool {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	return method == "GET" || method == "HEAD"
 }
 
 func deref(value *string) string {
