@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"httpStackLens/configuration"
+	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
 	"net"
 	"net/http"
@@ -119,7 +120,7 @@ func TestStartStopAndListTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Tools) != 8 {
+	if len(result.Tools) != 7 {
 		t.Fatalf("unexpected tools: %+v", result.Tools)
 	}
 	_ = session.Close()
@@ -249,7 +250,10 @@ func TestBearerToken(t *testing.T) {
 func TestCallLogTracesToolCalls(t *testing.T) {
 	var published []shared.McpCallDto
 	c := NewController(configuration.MCPConfig{})
-	c.Attach(Dependencies{Called: func(call shared.McpCallDto) { published = append(published, call) }})
+	c.Attach(Dependencies{
+		Requests: storage.NewRequestStore(storage.DefaultRequestStoreSize),
+		Called:   func(call shared.McpCallDto) { published = append(published, call) },
+	})
 	if err := c.Apply(configuration.MCPConfig{Enabled: true, Port: freePort(t)}); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +262,7 @@ func TestCallLogTracesToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "cityTime", Arguments: map[string]any{"city": "sf"}}); err != nil {
+	if _, err := session.CallTool(ctx, &sdk.CallToolParams{Name: "search_requests", Arguments: map[string]any{"method": "GET"}}); err != nil {
 		t.Fatal(err)
 	}
 	// Status needs live stores: without them the tool reports an error.
@@ -283,18 +287,18 @@ func TestCallLogTracesToolCalls(t *testing.T) {
 		return shared.McpCallDto{}
 	}
 	init := find("initialize", "")
-	city := find("tools/call", "cityTime")
+	search := find("tools/call", "search_requests")
 	failed := find("tools/call", "get_status")
 	if init.Client != "test 1" {
 		t.Errorf("initialize call = %+v", init)
 	}
-	if city.Status != CallOK || city.Arguments != `{"city":"sf"}` || !strings.Contains(city.Result, "San Francisco") || city.Client != "test 1" || city.SessionID == "" {
-		t.Errorf("cityTime call = %+v", city)
+	if search.Status != CallOK || search.Arguments != `{"method":"GET"}` || !strings.Contains(search.Result, `"requests":[]`) || search.Client != "test 1" || search.SessionID == "" {
+		t.Errorf("search_requests call = %+v", search)
 	}
 	if failed.Status != CallToolError || !strings.Contains(failed.Error, "unavailable") {
 		t.Errorf("get_status call = %+v", failed)
 	}
-	if calls[0] != failed || !(failed.ID > city.ID && city.ID > init.ID) {
+	if calls[0] != failed || !(failed.ID > search.ID && search.ID > init.ID) {
 		t.Errorf("calls not newest first: %+v", calls)
 	}
 

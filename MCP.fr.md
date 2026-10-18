@@ -25,7 +25,7 @@ ou une API Web UI existe déjà. Les noms d’outils proposés restent indicatif
 - [x] Authentification optionnelle par jeton Bearer (`require_token`, `token`), générée et renouvelable depuis l’onglet MCP ; les requêtes refusées apparaissent dans la trace.
 - [ ] Rendre visible le chemin du fichier de configuration réellement chargé et indiquer les réglages nécessitant un redémarrage.
 - [x] Fournir un exemple de configuration copiable depuis la Web UI (`mcp.json` pour LM Studio et clients similaires, commande Claude Code).
-- [ ] Retirer `cityTime` lorsque les premiers outils utiles au proxy sont disponibles.
+- [x] Retirer `cityTime` lorsque les premiers outils utiles au proxy sont disponibles.
 
 Configuration actuelle :
 
