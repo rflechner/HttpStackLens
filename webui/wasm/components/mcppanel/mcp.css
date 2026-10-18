@@ -1,0 +1,92 @@
+/* MCP tab. #mcp-view is a flex row owned by the page; the panel fills it. */
+#mcp-view { font-family:Inter; color:var(--ink) }
+#mcp-view .mono { font-family:'JetBrains Mono', ui-monospace, monospace }
+.mp-grow { flex:1 }
+
+.mp-side { width:340px; flex-shrink:0; background:var(--sidebar); border-right:1px solid var(--line); overflow:auto; padding:12px; display:flex; flex-direction:column; gap:10px }
+.mp-main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; background:var(--panel) }
+
+.mp-card { background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px 12px; display:flex; flex-direction:column; gap:7px }
+.mp-card-head { display:flex; align-items:center; gap:8px }
+.mp-card-t { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; color:var(--faint) }
+.mp-row { display:flex; align-items:center; gap:8px; min-width:0; font-size:12px }
+.mp-label { width:68px; flex-shrink:0; color:var(--faint); font-size:11.5px }
+.mp-value { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink) }
+.mp-hint { font-size:11px; line-height:1.5; color:var(--faint) }
+.mp-hint .mono { color:var(--dim) }
+
+.mp-dot { width:9px; height:9px; border-radius:5px; background:var(--faint); flex-shrink:0 }
+.mp-dot.on { background:var(--success); box-shadow:0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent) }
+.mp-dot.err { background:var(--danger) }
+.mp-status { font-size:13px; font-weight:600; color:var(--dim) }
+.mp-status.on { color:var(--success) }
+.mp-status.err { color:var(--danger) }
+.mp-error { font-size:11px; line-height:1.45; color:var(--danger); background:color-mix(in srgb, var(--danger) 9%, transparent); border:1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius:6px; padding:6px 8px; white-space:pre-wrap; word-break:break-word }
+
+.mp-btn { display:inline-flex; align-items:center; height:28px; padding:0 13px; border-radius:7px; font-size:12px; font-family:Inter; font-weight:600; color:var(--dim); background:var(--bg2); border:1px solid var(--line); cursor:pointer; white-space:nowrap }
+.mp-btn:hover { color:var(--ink); background:var(--bg3) }
+.mp-btn.primary { background:var(--mint); border-color:var(--mint); color:#fff }
+.mp-btn.primary:hover { opacity:.9; background:var(--mint); color:#fff }
+.mp-mini { background:transparent; border:1px solid var(--line); border-radius:6px; padding:3px 8px; font-size:11px; font-family:Inter; color:var(--dim); cursor:pointer; white-space:nowrap }
+.mp-mini:hover { color:var(--ink); background:var(--bg3) }
+.mp-btn[disabled], .mp-mini[disabled] { opacity:.55; cursor:default }
+.mp-actions { display:flex; gap:6px; flex-wrap:wrap }
+
+.mp-input { width:90px; height:26px; padding:0 8px; border-radius:6px; border:1px solid var(--line); background:var(--bg2); color:var(--ink); font-size:12px }
+.mp-input:focus { border-color:var(--mint) }
+.mp-check { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--ink); cursor:pointer }
+.mp-check input { accent-color:var(--mint); margin:0 }
+.mp-check.inline { font-size:11.5px; color:var(--dim) }
+.mp-token { font-size:11.5px; padding:6px 8px; border-radius:6px; background:var(--bg2); border:1px solid var(--line); word-break:break-all; user-select:all }
+.mp-token.idle { color:var(--faint) }
+/* Not wrapped: a URL or a token cut in the middle reads as two values. */
+.mp-snippet { margin:0; font-size:11px; line-height:1.5; padding:8px 10px; border-radius:6px; background:var(--bg2); border:1px solid var(--line); white-space:pre; overflow-x:auto; color:var(--ink) }
+.mp-seg { display:flex; gap:2px; background:var(--bg0); border:1px solid var(--line); border-radius:7px; padding:2px }
+.mp-seg button { border:none; background:transparent; color:var(--dim); font-size:10.5px; font-family:Inter; padding:2px 8px; border-radius:5px; cursor:pointer }
+.mp-seg button.on { background:var(--pill-bg); color:var(--mint); font-weight:600; box-shadow:var(--pill-shadow) }
+
+/* trace */
+.mp-toolbar { display:flex; align-items:center; gap:10px; height:44px; flex-shrink:0; padding:0 14px; border-bottom:1px solid var(--line) }
+.mp-title { font-size:13px; font-weight:600 }
+.mp-search { display:flex; align-items:center; gap:7px; width:320px; max-width:45%; height:28px; padding:0 9px; border-radius:7px; border:1px solid var(--line); background:var(--bg2); color:var(--faint) }
+.mp-search:focus-within { border-color:var(--mint) }
+.mp-search input { flex:1; min-width:0; border:0; background:transparent; color:var(--ink); font-size:12px; font-family:Inter }
+
+.mp-calls { flex:1; min-height:0; display:flex; flex-direction:column }
+.mp-rows { flex:1; min-height:0; overflow:auto }
+.mp-tr { display:flex; align-items:center; gap:10px; height:27px; padding:0 14px; font-size:12px; border-bottom:1px solid var(--lineSoft); cursor:pointer; white-space:nowrap }
+.mp-tr:hover { background:var(--bg2) }
+.mp-tr.sel { background:color-mix(in srgb, var(--mint) 12%, transparent) }
+.mp-th { height:26px; cursor:default; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.35px; color:var(--faint); background:var(--bg2); border-bottom:1px solid var(--line); flex-shrink:0 }
+.mp-th:hover { background:var(--bg2) }
+.mp-tr > span { overflow:hidden; text-overflow:ellipsis }
+.c-time { width:92px; flex-shrink:0; color:var(--dim) }
+.c-what { width:240px; flex-shrink:0; display:flex; align-items:baseline; gap:7px }
+.c-status { width:92px; flex-shrink:0 }
+.c-dur { width:70px; flex-shrink:0; text-align:right; color:var(--dim) }
+.c-client { width:150px; flex-shrink:0; color:var(--dim) }
+.c-err { flex:1; min-width:0; color:var(--danger) }
+.mp-what { font-weight:600; color:var(--ink) }
+.mp-method { font-size:10.5px; color:var(--faint) }
+.mp-pill { display:inline-block; font-size:10.5px; font-weight:600; padding:1px 7px; border-radius:9px; color:var(--dim); background:var(--bg3) }
+.mp-pill.ok { color:var(--success); background:color-mix(in srgb, var(--success) 14%, transparent) }
+.mp-pill.tool_error { color:var(--warn); background:color-mix(in srgb, var(--warn) 15%, transparent) }
+.mp-pill.error, .mp-pill.unauthorized { color:var(--danger); background:color-mix(in srgb, var(--danger) 13%, transparent) }
+.mp-foot { flex-shrink:0; padding:5px 14px; font-size:11px; color:var(--faint); border-top:1px solid var(--line); background:var(--bg2) }
+
+.mp-detail-host { flex-shrink:0 }
+.mp-detail { height:300px; display:flex; flex-direction:column; border-top:1px solid var(--line); background:var(--panel) }
+.mp-detail-head { display:flex; align-items:center; gap:9px; padding:8px 14px; border-bottom:1px solid var(--line) }
+.mp-meta { font-size:11px; color:var(--faint) }
+.mp-meta.warn { color:var(--warn) }
+.mp-detail-body { flex:1; min-height:0; overflow:auto; padding:10px 14px 14px }
+.mp-kv { display:grid; grid-template-columns:70px 1fr; gap:3px 10px; font-size:11.5px; color:var(--faint); margin-bottom:6px }
+.mp-kv .mono { color:var(--ink); word-break:break-all }
+.mp-sec-t { display:flex; align-items:center; gap:8px; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.35px; color:var(--faint); margin:10px 0 5px }
+.mp-pre { margin:0; font-size:11.5px; line-height:1.5; padding:8px 10px; border-radius:6px; background:var(--bg2); border:1px solid var(--line); white-space:pre-wrap; word-break:break-word; color:var(--ink) }
+.mp-pre.err { color:var(--danger) }
+
+.mp-blank { padding:28px 16px; text-align:center; color:var(--dim); font-size:12px }
+.mp-blank-t { font-size:13px; font-weight:600; color:var(--ink); margin-bottom:5px }
+.mp-blank-s { font-size:12px; line-height:1.5; color:var(--faint) }
+.mp-blank-s .mono { color:var(--dim) }

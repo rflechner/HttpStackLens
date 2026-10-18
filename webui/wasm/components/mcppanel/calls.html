@@ -1,0 +1,40 @@
+{{$rows := .Rows}}
+<div class="mp-tr mp-th">
+  <span class="c-time">Time</span>
+  <span class="c-what">Tool / method</span>
+  <span class="c-status">Status</span>
+  <span class="c-dur">Duration</span>
+  <span class="c-client">Client</span>
+  <span class="c-err">Detail</span>
+</div>
+<div class="mp-rows hsl-scroll" data-ref="rows">
+  {{if not .Loaded}}
+    <div class="mp-blank">Reading the trace…</div>
+  {{else if not $rows}}
+    <div class="mp-blank">
+      {{if .Filtered}}
+        <div class="mp-blank-t">No call matches the filter</div>
+      {{else if .Running}}
+        <div class="mp-blank-t">No MCP call yet</div>
+        <div class="mp-blank-s">Point an MCP client at <span class="mono">{{.URL}}</span>; every request it sends is listed here.</div>
+      {{else}}
+        <div class="mp-blank-t">The MCP server is stopped</div>
+        <div class="mp-blank-s">Start it on the left to let MCP clients connect.</div>
+      {{end}}
+    </div>
+  {{else}}
+    {{range $rows}}
+      <div class="mp-tr{{if .Selected}} sel{{end}}" data-on-click="Select" data-arg="{{.ID}}">
+        <span class="c-time mono">{{.Time}}</span>
+        <span class="c-what"><span class="mp-what mono">{{.What}}</span>{{if .Tool}}<span class="mp-method mono">{{.Method}}</span>{{end}}</span>
+        <span class="c-status"><span class="mp-pill {{.Status}}">{{.Status}}</span></span>
+        <span class="c-dur mono">{{.Duration}}</span>
+        <span class="c-client" title="{{.Client}}">{{.Client}}</span>
+        <span class="c-err" title="{{.Error}}">{{.Error}}</span>
+      </div>
+    {{end}}
+  {{end}}
+</div>
+<div class="mp-foot">
+  {{if .Filtered}}{{len $rows}} of {{end}}{{.Total}} call{{if ne .Total 1}}s{{end}}{{if .Capacity}} · the last {{.Capacity}} are kept, in memory only{{end}}
+</div>

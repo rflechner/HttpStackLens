@@ -29,6 +29,10 @@ type Dependencies struct {
 	// ComposerFileChanged is told about every file the composer tools write, so
 	// that the Web UI can refresh an open composer. Optional.
 	ComposerFileChanged func(shared.HttpFileChangedDto)
+	// StateChanged and Called report the listener state and each traced call,
+	// so that the Web UI MCP tab follows them live. Optional.
+	StateChanged func(shared.McpStateDto)
+	Called       func(shared.McpCallDto)
 }
 
 type Status struct {

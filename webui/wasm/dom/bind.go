@@ -18,8 +18,11 @@ func applyBindings(c Component) {
 	nodes := b.root.Call("querySelectorAll", "[data-bind]")
 	for i := range nodes.Length() {
 		node := nodes.Index(i)
-		if owner := node.Call("closest", "[data-child]"); owner.Truthy() {
-			continue // belongs to a nested component
+		// A child component is mounted on its parent's data-child node, so its
+		// own root carries the attribute too: only a closer host means the
+		// input belongs to a component nested inside this one.
+		if owner := node.Call("closest", "[data-child]"); owner.Truthy() && !owner.Equal(b.root) {
+			continue
 		}
 		v, ok := fieldByPath(c, node.Get("dataset").Get("bind").String())
 		if !ok {

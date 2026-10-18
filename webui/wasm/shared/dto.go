@@ -416,3 +416,63 @@ type HttpFileChangedDto struct {
 type HttpFileRenameDto struct {
 	Name string `json:"name"`
 }
+
+// McpStateDto is the runtime state of the local MCP listener, served by
+// GET /api/mcp/state and streamed as the "mcp_state" SSE event. It says whether
+// a token is configured, never what it is: the token is only returned by
+// GET /api/mcp/settings.
+type McpStateDto struct {
+	// Enabled is mcp.enabled, what the listener should do; Running is what it
+	// does. They differ when it could not start, and LastError says why.
+	Enabled bool `json:"enabled"`
+	Running bool `json:"running"`
+	Port    int  `json:"port"`
+	// URL is the endpoint to configure in an MCP client.
+	URL             string `json:"url"`
+	RequireToken    bool   `json:"require_token"`
+	TokenConfigured bool   `json:"token_configured"`
+	// StartedAt is RFC3339, empty while the listener is stopped.
+	StartedAt string `json:"started_at,omitempty"`
+	LastError string `json:"last_error,omitempty"`
+	// CallCount is the number of traced calls currently retained.
+	CallCount int `json:"call_count"`
+}
+
+// McpSettingsDto is the editable part of the mcp section of config.yaml,
+// exchanged by GET/PUT /api/mcp/settings. Starting and stopping the listener
+// has its own routes.
+type McpSettingsDto struct {
+	Port         int    `json:"port"`
+	RequireToken bool   `json:"require_token"`
+	Token        string `json:"token"`
+}
+
+// McpCallDto is one traced message received by the MCP listener, streamed as
+// the "mcp_call" SSE event. Arguments and Result are JSON, cut at a few KB.
+type McpCallDto struct {
+	ID int64 `json:"id"`
+	// At is RFC3339 with milliseconds, when the message was received.
+	At         string  `json:"at"`
+	DurationMs float64 `json:"duration_ms"`
+	// Method is the JSON-RPC method (initialize, tools/list, tools/call…), or
+	// "http" for a request rejected before it reached the MCP server.
+	Method string `json:"method"`
+	Tool   string `json:"tool,omitempty"`
+	// Status is ok, tool_error (the tool ran and reported a failure), error
+	// (the request failed) or unauthorized (missing or wrong token).
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+	Client    string `json:"client,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	// Remote is only known for requests rejected at the HTTP level.
+	Remote    string `json:"remote,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	Result    string `json:"result,omitempty"`
+	Truncated bool   `json:"truncated"`
+}
+
+// McpCallsDto is returned by GET /api/mcp/calls, newest call first.
+type McpCallsDto struct {
+	Calls    []McpCallDto `json:"calls"`
+	Capacity int          `json:"capacity"`
+}

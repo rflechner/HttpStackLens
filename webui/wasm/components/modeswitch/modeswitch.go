@@ -1,7 +1,7 @@
 //go:build js && wasm
 
 // Package modeswitch is the title-bar segmented control that flips the window
-// between the traffic capture view and the .http composer.
+// between the traffic capture view, the .http composer and the MCP server.
 //
 // It owns nothing but itself: switching views is the host's business, so the
 // component only reports the new mode through OnChange — the equivalent of an
@@ -20,11 +20,18 @@ var switchHTML string
 //go:embed modeswitch.css
 var switchCSS string
 
-// The two modes the switch offers.
+// The modes the switch offers.
 const (
 	Traffic  = "capture"
 	Composer = "compose"
+	MCP      = "mcp"
 )
+
+// Known reports whether mode is one the switch offers: anything else, such as
+// a stale value in storage, falls back to Traffic.
+func Known(mode string) bool {
+	return mode == Traffic || mode == Composer || mode == MCP
+}
 
 // Switch is the segmented control. Mount it on the element carrying the
 // mode-seg class — that element belongs to the page, its content to the switch.
@@ -38,7 +45,7 @@ type Switch struct {
 // New returns an unmounted switch showing mode as the current one. onChange
 // runs on every actual change, never on the initial mode.
 func New(mode string, onChange func(mode string)) *Switch {
-	if mode != Composer {
+	if !Known(mode) {
 		mode = Traffic
 	}
 	return &Switch{Mode: mode, OnChange: onChange}
@@ -54,7 +61,7 @@ func (s *Switch) IsOn(mode string) bool { return s.Mode == mode }
 // Select is the click handler: data-arg carries the mode.
 func (s *Switch) Select(e dom.Event) {
 	mode := e.Arg()
-	if mode == "" || mode == s.Mode {
+	if !Known(mode) || mode == s.Mode {
 		return
 	}
 	s.Mode = mode

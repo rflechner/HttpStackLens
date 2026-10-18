@@ -19,9 +19,12 @@ ou une API Web UI existe déjà. Les noms d’outils proposés restent indicatif
 - [x] Outil de démonstration `cityTime`.
 - [x] Tests de connexion MCP et de découverte des outils avec le client SDK Go.
 - [ ] Valider le parcours complet avec LM Studio : connexion, découverte et appel d’un outil.
-- [ ] Afficher dans la Web UI l’état MCP, son URL et une éventuelle erreur de démarrage.
+- [x] Afficher dans la Web UI l’état MCP, son URL et une éventuelle erreur de démarrage (onglet MCP).
+- [x] Démarrer, arrêter et changer le port du listener depuis la Web UI, sans redémarrer l’application ; persistance dans `config.yaml`.
+- [x] Tracer les appels reçus (méthode, outil, statut, durée, client, arguments et résultat tronqués à 4 Ko), en mémoire uniquement, avec flux SSE `mcp_call`.
+- [x] Authentification optionnelle par jeton Bearer (`require_token`, `token`), générée et renouvelable depuis l’onglet MCP ; les requêtes refusées apparaissent dans la trace.
 - [ ] Rendre visible le chemin du fichier de configuration réellement chargé et indiquer les réglages nécessitant un redémarrage.
-- [ ] Fournir un exemple de configuration LM Studio copiable depuis la Web UI.
+- [x] Fournir un exemple de configuration copiable depuis la Web UI (`mcp.json` pour LM Studio et clients similaires, commande Claude Code).
 - [ ] Retirer `cityTime` lorsque les premiers outils utiles au proxy sont disponibles.
 
 Configuration actuelle :
@@ -30,11 +33,19 @@ Configuration actuelle :
 mcp:
   enabled: true
   port: 8087
+  require_token: false
+  token: ""
 ```
 
 Le client se connecte à `http://127.0.0.1:8087/`. Il faut démarrer HttpStackLens
-avant la connexion et redémarrer l’application après modification de ces réglages.
-Sans section `mcp`, le serveur reste désactivé.
+avant la connexion. L’onglet MCP de la Web UI démarre et arrête le listener,
+change son port et gère le jeton sans redémarrage ; chaque modification est
+réécrite dans la section `mcp` de `config.yaml`. Sans section `mcp`, le serveur
+reste désactivé.
+
+Avec `require_token: true`, chaque requête doit porter
+`Authorization: Bearer <token>` ; les autres reçoivent 401. Le jeton est stocké
+en clair dans `config.yaml`, comme le reste de la configuration locale.
 
 **Attention avec GoLand :** `config.yaml` est résolu à côté de l’exécutable,
 pas dans le répertoire de travail. Un lancement depuis l’IDE peut donc utiliser

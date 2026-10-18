@@ -20,8 +20,10 @@ webui:
     networks: []
 
 mcp:
-  enabled: true # opt-in local MCP server; changes require restart
+  enabled: true # opt-in local MCP server; can be started/stopped from the Web UI MCP tab
   port: 8087 # listens only on 127.0.0.1
+  require_token: false # when true, clients must send "Authorization: Bearer <token>"
+  token: "" # generated from the MCP tab; kept when require_token is switched off
 
 logging:
   level: info # debug | info | warn | error (overridden by --verbose)

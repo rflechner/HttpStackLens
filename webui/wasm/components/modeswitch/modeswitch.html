@@ -2,3 +2,5 @@
         title="Inspect the captured traffic">Traffic</button>
 <button class="mode-btn{{if .IsOn "compose"}} on{{end}}" data-on-click="Select" data-arg="compose"
         title="Compose and replay requests from .http files">Composer<span class="mode-badge mono">.http</span></button>
+<button class="mode-btn{{if .IsOn "mcp"}} on{{end}}" data-on-click="Select" data-arg="mcp"
+        title="Run the local MCP server and trace the calls of MCP clients">MCP</button>

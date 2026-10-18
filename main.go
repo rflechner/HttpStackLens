@@ -131,6 +131,12 @@ func main() {
 	// One .http collection for the Web UI composer and the MCP composer tools.
 	httpFiles := composer.NewHttpFileStore(config.HttpFiles.GetResolvedFolder())
 
+	// The MCP listener is created stopped: its tools report to the Web UI hub,
+	// which only exists once the Web UI is served. It is attached and started
+	// further down.
+	mcpServer := mcp.NewController(config.MCP)
+	defer mcpServer.Close()
+
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
 		InitialConfig:         config,
 		CurrentConfig:         runtimeConfig.Snapshot,
@@ -147,6 +153,7 @@ func main() {
 		Build:                 buildInfo(),
 		GitHubRepo:            repoSlug,
 		UpdateCheckEnabled:    config.Updates.CheckEnabled,
+		MCP:                   mcpServer,
 	})
 
 	// Streams request/response events to the Web UI over SSE. Created before the
@@ -190,9 +197,10 @@ func main() {
 		requests:      requestStore,
 		captureCtl:    captureCtl,
 		proxyCtl:      proxyCtl,
+		mcp:           mcpServer,
 	}
 
-	mcpServer, err := mcp.Start(config.MCP, mcp.Dependencies{
+	mcpServer.Attach(mcp.Dependencies{
 		Proxy: proxyCtl, Capture: captureCtl, Storage: storageSink,
 		Requests: requestStore, DecryptHTTPS: decryptHttpsSettings, Upstream: upstreamSettings,
 		HttpFiles: httpFiles, SendComposer: composerSend.Send,
@@ -203,11 +211,21 @@ func main() {
 				hub.Publish("http_file_changed", string(data))
 			}
 		},
+		StateChanged: func(state shared.McpStateDto) {
+			if data, err := json.Marshal(state); err == nil {
+				hub.Publish("mcp_state", string(data))
+			}
+		},
+		Called: func(call shared.McpCallDto) {
+			if data, err := json.Marshal(call); err == nil {
+				hub.Publish("mcp_call", string(data))
+			}
+		},
 	})
-	if err != nil {
-		slog.Warn("Could not start MCP server; MCP disabled", "error", err)
-	} else if mcpServer != nil {
-		defer func() { _ = mcpServer.Close() }()
+	// A listener that cannot start leaves the proxy running: the MCP tab shows
+	// the error and can retry once the port is free.
+	if err := mcpServer.Apply(config.MCP); err != nil {
+		slog.Warn("Could not start MCP server", "error", err)
 	}
 
 	go proxyServer.Run()

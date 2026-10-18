@@ -23,7 +23,7 @@ func (discardCaptureWriter) Close() error                               { return
 
 func connectStatusClient(t *testing.T, deps Dependencies) (context.Context, *sdk.ClientSession) {
 	t.Helper()
-	server := httptest.NewServer(newHandler(deps))
+	server := httptest.NewServer(newHandler(deps, nil))
 	t.Cleanup(server.Close)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)

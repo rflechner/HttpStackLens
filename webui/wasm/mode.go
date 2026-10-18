@@ -6,6 +6,7 @@ import (
 	"syscall/js"
 
 	"httpStackLens/webui/wasm/components/composer"
+	"httpStackLens/webui/wasm/components/mcppanel"
 	"httpStackLens/webui/wasm/components/modeswitch"
 	"httpStackLens/webui/wasm/dom"
 )
@@ -20,6 +21,11 @@ var composerMounted bool
 // SSE stream hands it the .http files an MCP client writes.
 var composerView *composer.Composer
 
+// mcpView is the mounted MCP tab, nil until the first switch to it. The SSE
+// stream hands it the listener state and the calls it traces; until then it
+// has nothing to keep up to date, since mounting it reads both.
+var mcpView *mcppanel.Panel
+
 // initModeSwitch mounts the title-bar switch and applies the mode the window
 // was left in. The switch itself knows nothing of the views — it hands the mode
 // back here, where the page regions are shown and hidden.
@@ -29,7 +35,7 @@ func initModeSwitch() {
 		return
 	}
 	mode := dom.LocalGet(modeKey)
-	if mode != modeswitch.Composer {
+	if !modeswitch.Known(mode) {
 		mode = modeswitch.Traffic
 	}
 	applyMode(mode)
@@ -38,18 +44,23 @@ func initModeSwitch() {
 
 func applyMode(mode string) {
 	dom.LocalSet(modeKey, mode)
-	capture := mode != modeswitch.Composer
+	capture := mode == modeswitch.Traffic
 	showRegion("capture-toolbar", capture)
 	showRegion("capture-view", capture)
-	showRegion("compose-view", !capture)
+	showRegion("compose-view", mode == modeswitch.Composer)
+	showRegion("mcp-view", mode == modeswitch.MCP)
 
-	if capture || composerMounted {
-		return
+	switch {
+	case mode == modeswitch.Composer && !composerMounted:
+		composerMounted = true
+		view := js.Global().Get("document").Call("getElementById", "compose-view")
+		composerView = composer.New()
+		dom.Mount(view, composerView)
+	case mode == modeswitch.MCP && mcpView == nil:
+		view := js.Global().Get("document").Call("getElementById", "mcp-view")
+		mcpView = mcppanel.New()
+		dom.Mount(view, mcpView)
 	}
-	composerMounted = true
-	view := js.Global().Get("document").Call("getElementById", "compose-view")
-	composerView = composer.New()
-	dom.Mount(view, composerView)
 }
 
 // showRegion toggles a top-level region. Every one of them is a flex row, so

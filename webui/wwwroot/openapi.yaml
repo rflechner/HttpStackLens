@@ -11,6 +11,7 @@ tags:
   - name: Requests
   - name: Captures
   - name: Composer
+  - name: MCP
   - name: Events
 paths:
   /config:
@@ -303,7 +304,12 @@ paths:
       summary: Subscribe to live proxy events
       description: |
         Server-Sent Events stream. Known event types are `request_occurred`
-        `response_occurred`, `capture_state`, and `http_file_changed`.
+        `response_occurred`, `capture_state`, `http_file_changed`, `mcp_state`
+        and `mcp_call`.
+
+        `mcp_state` (schema `McpState`) is sent whenever the MCP listener is
+        started, stopped, reconfigured or its trace cleared. `mcp_call`
+        (schema `McpCall`) is sent for every message the MCP listener traces.
 
         `http_file_changed` carries a `.http` file of the composer's folder
         written by an MCP client (schema `HttpFileChanged`), so that an open
@@ -329,6 +335,14 @@ paths:
                   value: |
                     event: http_file_changed
                     data: {"file":{"name":"api.http","content":"### Health\nGET https://example.com/health\n","modified_at":"2026-10-18T13:46:32.872094519Z"},"action":"added","request_index":0}
+                mcp_state:
+                  value: |
+                    event: mcp_state
+                    data: {"enabled":true,"running":true,"port":8087,"url":"http://127.0.0.1:8087/","require_token":true,"token_configured":true,"started_at":"2026-10-18T15:40:00Z","call_count":3}
+                mcp_call:
+                  value: |
+                    event: mcp_call
+                    data: {"id":3,"at":"2026-10-18T15:41:02.120Z","duration_ms":1.25,"method":"tools/call","tool":"search_requests","status":"ok","client":"LM Studio 0.3.30","session_id":"VBWDU7MAV23YNI5Z5JL7ABV2JR","arguments":"{\"host\":\"registry.npmjs.org\"}","result":"{\"source\":\"memory\",\"requests\":[]}","truncated":false}
   /api/requests/{id}:
     get:
       tags: [Requests]
@@ -622,6 +636,151 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CaptureState"
+  /api/mcp/state:
+    get:
+      tags: [MCP]
+      summary: Read the MCP listener state
+      description: |
+        Whether the local MCP listener should run (`mcp.enabled`), whether it
+        does, its endpoint and the last start error. The token itself is never
+        part of the state; see `/api/mcp/settings`.
+      responses:
+        "200":
+          description: Current state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpState"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/mcp/start:
+    post:
+      tags: [MCP]
+      summary: Start the MCP listener
+      description: |
+        Starts listening on `mcp.port` and writes `mcp.enabled: true` to
+        `config.yaml`. When the listener cannot start (port in use), nothing is
+        written, the answer is 500 with the reason, and the reason is also
+        reported as `last_error` in the state.
+      responses:
+        "200":
+          description: Updated state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpState"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/mcp/stop:
+    post:
+      tags: [MCP]
+      summary: Stop the MCP listener
+      description: |
+        Closes the listener and the open MCP sessions, and writes
+        `mcp.enabled: false` to `config.yaml`. The proxy and the Web UI are not
+        affected.
+      responses:
+        "200":
+          description: Updated state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpState"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/mcp/settings:
+    get:
+      tags: [MCP]
+      summary: Read the MCP settings, token included
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpSettings"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    put:
+      tags: [MCP]
+      summary: Change the MCP port and token
+      description: |
+        Applies the settings to the running listener — a new port moves it, a
+        token change applies from the next request — and writes them to the
+        `mcp` section of `config.yaml`. `require_token: true` with an empty
+        `token` generates a random one. Whether the listener runs is left to
+        `/api/mcp/start` and `/api/mcp/stop`.
+
+        With `require_token`, every MCP request must carry
+        `Authorization: Bearer <token>`; others get 401 and are traced with
+        status `unauthorized`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/McpSettings"
+      responses:
+        "200":
+          description: Settings in force
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/mcp/token:
+    post:
+      tags: [MCP]
+      summary: Generate a new MCP token
+      description: |
+        Replaces the token with a random 256-bit one (64 hex characters) and
+        writes it to `config.yaml`. Clients using the previous token are
+        rejected from their next request on, when a token is required.
+      responses:
+        "200":
+          description: Settings with the new token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpSettings"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/mcp/calls:
+    get:
+      tags: [MCP]
+      summary: List the traced MCP calls
+      description: |
+        The messages received by the MCP listener, newest first, kept in memory
+        only (never written to disk) up to `capacity`. Pings and notifications
+        are not traced. Arguments and results are cut at 4 KB.
+      responses:
+        "200":
+          description: Traced calls
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpCalls"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      tags: [MCP]
+      summary: Clear the MCP trace
+      responses:
+        "204":
+          description: Trace cleared; an `mcp_state` event follows
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/runtime/stats:
     get:
       tags: [Runtime]
@@ -893,6 +1052,101 @@ components:
           type: integer
           minimum: 0
           description: The request added or updated, counted from 0 in the file.
+    McpState:
+      type: object
+      required: [enabled, running, port, url, require_token, token_configured, call_count]
+      properties:
+        enabled:
+          type: boolean
+          description: "`mcp.enabled`: whether the listener should run."
+        running:
+          type: boolean
+          description: Whether it does. False with `enabled` when it could not start.
+        port:
+          type: integer
+        url:
+          type: string
+          description: Endpoint to configure in an MCP client.
+          examples: ["http://127.0.0.1:8087/"]
+        require_token:
+          type: boolean
+        token_configured:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+          description: Absent while stopped.
+        last_error:
+          type: string
+          description: Why the last start or change failed; cleared by the next success.
+        call_count:
+          type: integer
+          description: Number of traced calls currently retained.
+    McpSettings:
+      type: object
+      required: [port, require_token, token]
+      properties:
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        require_token:
+          type: boolean
+        token:
+          type: string
+          description: |
+            Bearer token. Empty, or at least 16 visible ASCII characters without
+            spaces. Kept when `require_token` is switched off.
+    McpCall:
+      type: object
+      required: [id, at, duration_ms, method, status, truncated]
+      properties:
+        id:
+          type: integer
+        at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: number
+        method:
+          type: string
+          description: JSON-RPC method, or `http` for a request rejected before reaching the MCP server.
+          examples: ["initialize", "tools/list", "tools/call", "http"]
+        tool:
+          type: string
+          description: Tool name, for `tools/call`.
+        status:
+          type: string
+          enum: [ok, tool_error, error, unauthorized]
+        error:
+          type: string
+        client:
+          type: string
+          description: Client name and version from `initialize`, or the User-Agent of a rejected request.
+        session_id:
+          type: string
+        remote:
+          type: string
+          description: Remote address, only for requests rejected at the HTTP level.
+        arguments:
+          type: string
+          description: Tool arguments as JSON, cut at 4 KB.
+        result:
+          type: string
+          description: Result as JSON (tool names for `tools/list`), cut at 4 KB.
+        truncated:
+          type: boolean
+    McpCalls:
+      type: object
+      required: [calls, capacity]
+      properties:
+        calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpCall"
+        capacity:
+          type: integer
+          description: Maximum number of calls retained; older ones are dropped first.
     HttpFileRename:
       type: object
       required: [name]

@@ -48,6 +48,11 @@ const (
 	SetAccessControl
 	StartProxy
 	StopProxy
+	StartMCP
+	StopMCP
+	// SetMCPSettings applies the port, require_token and token of MCP; whether
+	// the listener runs is left to StartMCP/StopMCP.
+	SetMCPSettings
 )
 
 // RuntimeCommand is emitted by the HTTP adapter and handled by the application
@@ -59,6 +64,7 @@ type RuntimeCommand struct {
 	DecryptHTTPS  configuration.DecryptHttpsConfig
 	Upstream      configuration.UpstreamSettings
 	AccessControl configuration.AccessControlSettings
+	MCP           configuration.MCPConfig
 	Reply         chan RuntimeCommandResult
 }
 
@@ -93,6 +99,9 @@ type Dependencies struct {
 	GitHubRepo string
 	// UpdateCheckEnabled gates the automatic GitHub update check (opt-in).
 	UpdateCheckEnabled bool
+	// MCP is the local MCP listener, for the MCP tab. Left nil, the MCP routes
+	// report the feature as unavailable.
+	MCP MCPRuntime
 }
 
 type Hub struct {
@@ -346,6 +355,7 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 		httpFiles = composer.NewHttpFileStore(config.HttpFiles.GetResolvedFolder())
 	}
 	registerHttpFileRoutes(mux, httpFiles)
+	registerMCPRoutes(mux, deps.MCP, send)
 	mux.HandleFunc("/api/runtime/stats", runtimeStatsHandler)
 	mux.HandleFunc("/api/version", buildInfoHandler(deps.Build))
 	mux.HandleFunc("/api/update-check", updateCheckHandler(newUpdateChecker(deps.UpdateCheckEnabled, deps.Build.Version, deps.GitHubRepo)))

@@ -252,6 +252,31 @@ func (m *StateModel) connectSSE() {
 		return nil
 	}))
 
+	// The MCP listener state and the calls it traces, for the MCP tab.
+	es.Call("addEventListener", "mcp_state", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var state shared.McpStateDto
+		if err := json.Unmarshal([]byte(args[0].Get("data").String()), &state); err != nil {
+			consoleLog("Error parsing mcp_state JSON: " + err.Error())
+			return nil
+		}
+		if mcpView != nil {
+			mcpView.ApplyState(state)
+		}
+		return nil
+	}))
+
+	es.Call("addEventListener", "mcp_call", js.FuncOf(func(this js.Value, args []js.Value) any {
+		var call shared.McpCallDto
+		if err := json.Unmarshal([]byte(args[0].Get("data").String()), &call); err != nil {
+			consoleLog("Error parsing mcp_call JSON: " + err.Error())
+			return nil
+		}
+		if mcpView != nil {
+			mcpView.AddCall(call)
+		}
+		return nil
+	}))
+
 	es.Call("addEventListener", "capture_state", js.FuncOf(func(this js.Value, args []js.Value) any {
 		data := args[0].Get("data").String()
 		if data == "" {

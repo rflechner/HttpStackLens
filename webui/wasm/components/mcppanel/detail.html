@@ -1,0 +1,33 @@
+{{with .Call}}
+  <div class="mp-detail">
+    <div class="mp-detail-head">
+      <span class="mp-what mono">{{$.Title}}</span>
+      <span class="mp-pill {{.Status}}">{{.Status}}</span>
+      <span class="mp-meta">{{.Method}}</span>
+      <span class="mp-meta">{{$.When}}</span>
+      <span class="mp-meta">{{$.Duration}}</span>
+      {{if .Truncated}}<span class="mp-meta warn" title="Arguments or result were cut at 4 KB">truncated</span>{{end}}
+      <span class="mp-grow"></span>
+      <button class="mp-mini" data-on-click="Close" title="Close">✕</button>
+    </div>
+    <div class="mp-detail-body hsl-scroll">
+      <div class="mp-kv">
+        {{if .Client}}<span>Client</span><span class="mono">{{.Client}}</span>{{end}}
+        {{if .SessionID}}<span>Session</span><span class="mono">{{.SessionID}}</span>{{end}}
+        {{if .Remote}}<span>Remote</span><span class="mono">{{.Remote}}</span>{{end}}
+      </div>
+      {{if .Error}}
+        <div class="mp-sec-t">Error</div>
+        <pre class="mp-pre err mono">{{.Error}}</pre>
+      {{end}}
+      {{if .Arguments}}
+        <div class="mp-sec-t">Arguments <button class="mp-mini" data-on-click="CopyArguments">Copy</button></div>
+        <pre class="mp-pre mono">{{$.Arguments}}</pre>
+      {{end}}
+      {{if .Result}}
+        <div class="mp-sec-t">Result <button class="mp-mini" data-on-click="CopyResult">Copy</button></div>
+        <pre class="mp-pre mono">{{$.Result}}</pre>
+      {{end}}
+    </div>
+  </div>
+{{end}}

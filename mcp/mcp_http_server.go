@@ -2,13 +2,8 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"httpStackLens/configuration"
-	"log/slog"
-	"net"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -64,37 +59,16 @@ func getTime(ctx context.Context, req *mcp.CallToolRequest, params *GetTimeParam
 	}, nil, nil
 }
 
-// Start starts the optional loopback listener. The caller owns the returned
-// HTTP server and must close it when the application stops.
-// A disabled service returns (nil, nil); startup failures never exit the process.
-func Start(config configuration.MCPConfig, deps Dependencies) (*http.Server, error) {
-	if !config.Enabled {
-		return nil, nil
-	}
-	if config.Port < 1 || config.Port > 65535 {
-		return nil, fmt.Errorf("MCP port must be between 1 and 65535, got %d", config.Port)
-	}
-
-	addr := net.JoinHostPort("localhost", strconv.Itoa(config.Port))
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("start MCP listener: %w", err)
-	}
-	server := &http.Server{Addr: addr, Handler: newHandler(deps)}
-	go func() {
-		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("MCP server stopped", "error", err)
-		}
-	}()
-	slog.Info("MCP server listening", "url", "http://"+addr)
-	return server, nil
-}
-
-func newHandler(deps Dependencies) http.Handler {
+// newHandler builds the MCP server over deps. Every request it handles is
+// traced in calls.
+func newHandler(deps Dependencies, calls *CallLog) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "http-stack-lens-mcp-server",
 		Version: "1.0.0",
 	}, nil)
+	if calls != nil {
+		server.AddReceivingMiddleware(calls.middleware)
+	}
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_requests",

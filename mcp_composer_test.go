@@ -52,16 +52,17 @@ func TestMCPComposerRequestGoesThroughThePipeline(t *testing.T) {
 	}
 	port := probe.Addr().(*net.TCPAddr).Port
 	_ = probe.Close()
-	server, err := mcp.Start(configuration.MCPConfig{Enabled: true, Port: port}, mcp.Dependencies{HttpFiles: files, SendComposer: sender.Send})
-	if err != nil {
+	server := mcp.NewController(configuration.MCPConfig{})
+	server.Attach(mcp.Dependencies{HttpFiles: files, SendComposer: sender.Send})
+	if err := server.Apply(configuration.MCPConfig{Enabled: true, Port: port}); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = server.Close() }()
+	defer server.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	client := sdk.NewClient(&sdk.Implementation{Name: "integration", Version: "1"}, nil)
-	session, err := client.Connect(ctx, &sdk.StreamableClientTransport{Endpoint: "http://" + server.Addr + "/"}, nil)
+	session, err := client.Connect(ctx, &sdk.StreamableClientTransport{Endpoint: "http://" + server.Addr() + "/"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

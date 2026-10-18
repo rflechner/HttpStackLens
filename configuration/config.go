@@ -18,10 +18,18 @@ type AppConfig struct {
 	MCP          MCPConfig          `yaml:"mcp"`
 }
 
-// MCPConfig controls the optional local MCP listener. Changes require restart.
+// MCPConfig controls the optional local MCP listener. The Web UI can start and
+// stop it, change its port and manage its token at runtime; every change is
+// written back to config.yaml.
 type MCPConfig struct {
 	Enabled bool `yaml:"enabled"`
 	Port    int  `yaml:"port"`
+	// RequireToken makes the listener reject any request that does not carry
+	// "Authorization: Bearer <Token>". Token is kept when the requirement is
+	// switched off, so that clients configured with it keep working once it is
+	// switched back on.
+	RequireToken bool   `yaml:"require_token"`
+	Token        string `yaml:"token"`
 }
 
 func DefaultMCPConfig() MCPConfig {

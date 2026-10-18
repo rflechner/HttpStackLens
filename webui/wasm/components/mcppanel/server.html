@@ -1,0 +1,91 @@
+{{if not .Loaded}}
+  <div class="mp-blank">Reading the MCP server state…</div>
+{{else if .LoadErr}}
+  <div class="mp-blank">
+    <div class="mp-blank-t">The MCP state could not be read</div>
+    <div class="mp-blank-s mono">{{.LoadErr}}</div>
+  </div>
+{{else}}
+  {{$st := .St}}
+  {{$set := .Set}}
+  <section class="mp-card">
+    <div class="mp-card-head">
+      <span class="mp-dot {{.StatusClass}}"></span>
+      <span class="mp-status {{.StatusClass}}">{{.StatusLabel}}</span>
+      <span class="mp-grow"></span>
+      <button class="mp-btn{{if not $st.Running}} primary{{end}}" data-on-click="Toggle" {{if .AnyBusy}}{{attr "disabled"}}{{end}}>
+        {{if .IsBusy "start"}}Starting…{{else if .IsBusy "stop"}}Stopping…{{else if $st.Running}}Stop{{else}}Start{{end}}
+      </button>
+    </div>
+    <div class="mp-row">
+      <span class="mp-label">Endpoint</span>
+      <span class="mp-value mono" title="{{$st.URL}}">{{$st.URL}}</span>
+      <button class="mp-mini" data-on-click="CopyURL">{{if .WasCopied "url"}}Copied{{else}}Copy{{end}}</button>
+    </div>
+    {{if .Since}}
+      <div class="mp-row">
+        <span class="mp-label">Since</span>
+        <span class="mp-value">{{.Since}}</span>
+      </div>
+    {{end}}
+    <div class="mp-row">
+      <span class="mp-label">Transport</span>
+      <span class="mp-value">Streamable HTTP · loopback only</span>
+    </div>
+    {{if $st.LastError}}
+      <div class="mp-error mono">{{$st.LastError}}</div>
+    {{end}}
+    {{if .Err}}
+      <div class="mp-error mono">{{.Err}}</div>
+    {{end}}
+  </section>
+
+  <section class="mp-card">
+    <div class="mp-card-t">Listener</div>
+    <div class="mp-row">
+      <label class="mp-label" for="mp-port">Port</label>
+      <!-- No data-bind-render: re-rendering on every keystroke would replace
+           the input being typed into. -->
+      <input id="mp-port" class="mp-input mono" type="number" min="1" max="65535" data-bind="PortDraft" data-on-keydown="PortKey" />
+      <button class="mp-mini" data-on-click="ApplyPort" {{if .AnyBusy}}{{attr "disabled"}}{{end}}>{{if .IsBusy "port"}}Applying…{{else}}Apply{{end}}</button>
+    </div>
+    <div class="mp-hint">A running listener moves to the new port at once; connected clients must reconnect.</div>
+  </section>
+
+  <section class="mp-card">
+    <div class="mp-card-t">Authentication</div>
+    <label class="mp-check">
+      <input type="checkbox" data-on-change="ToggleRequire" {{if $set.RequireToken}}{{attr "checked"}}{{end}} {{if .AnyBusy}}{{attr "disabled"}}{{end}} />
+      <span>Require a bearer token</span>
+    </label>
+    <div class="mp-hint">Clients must send <span class="mono">Authorization: Bearer &lt;token&gt;</span>. Other requests get 401 and appear in the trace as unauthorized.</div>
+    {{if .HasToken}}
+      <div class="mp-token mono{{if not $set.RequireToken}} idle{{end}}" title="{{if not $set.RequireToken}}Kept, but not required{{end}}">{{.TokenText}}</div>
+      <div class="mp-actions">
+        <button class="mp-mini" data-on-click="ToggleShow">{{if .ShowToken}}Hide{{else}}Show{{end}}</button>
+        <button class="mp-mini" data-on-click="CopyToken">{{if .WasCopied "token"}}Copied{{else}}Copy{{end}}</button>
+        <button class="mp-mini" data-on-click="Regenerate" {{if .AnyBusy}}{{attr "disabled"}}{{end}}>{{if .IsBusy "token"}}Generating…{{else}}Regenerate{{end}}</button>
+      </div>
+    {{else}}
+      <div class="mp-actions">
+        <button class="mp-mini" data-on-click="Regenerate" {{if .AnyBusy}}{{attr "disabled"}}{{end}}>Generate a token</button>
+      </div>
+    {{end}}
+  </section>
+
+  <section class="mp-card">
+    <div class="mp-card-head">
+      <span class="mp-card-t">Client configuration</span>
+      <span class="mp-grow"></span>
+      <div class="mp-seg">
+        <button class="{{if .SnippetIs "json"}}on{{end}}" data-on-click="SetSnippet" data-arg="json" title="mcp.json for LM Studio, Cursor and similar clients">mcp.json</button>
+        <button class="{{if .SnippetIs "claude"}}on{{end}}" data-on-click="SetSnippet" data-arg="claude">Claude Code</button>
+      </div>
+    </div>
+    <pre class="mp-snippet mono">{{.SnippetText}}</pre>
+    <div class="mp-actions">
+      <button class="mp-mini" data-on-click="CopySnippet">{{if .WasCopied "snippet"}}Copied{{else}}Copy configuration{{end}}</button>
+    </div>
+    <div class="mp-hint">Settings are saved to the <span class="mono">mcp</span> section of config.yaml.</div>
+  </section>
+{{end}}

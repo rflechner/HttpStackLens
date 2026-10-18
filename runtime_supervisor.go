@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"httpStackLens/configuration"
+	"httpStackLens/mcp"
 	"httpStackLens/storage"
 	"httpStackLens/webui"
 	"sync"
@@ -49,6 +51,7 @@ type runtimeSupervisor struct {
 	storageSink   *storage.StorageSink
 	requests      *storage.RequestStore
 	captureCtl    *storage.CaptureController
+	mcp           *mcp.Controller
 }
 
 func (s *runtimeSupervisor) Run(commands <-chan webui.RuntimeCommand, stop <-chan bool) {
@@ -112,6 +115,19 @@ func (s *runtimeSupervisor) apply(command webui.RuntimeCommand) webui.RuntimeCom
 		s.stopProxy()
 		result.ProxyRunning = s.proxyCtl.IsRunning()
 
+	case webui.StartMCP:
+		result.Err = s.updateMCP(func(config *configuration.MCPConfig) { config.Enabled = true })
+
+	case webui.StopMCP:
+		result.Err = s.updateMCP(func(config *configuration.MCPConfig) { config.Enabled = false })
+
+	case webui.SetMCPSettings:
+		result.Err = s.updateMCP(func(config *configuration.MCPConfig) {
+			config.Port = command.MCP.Port
+			config.RequireToken = command.MCP.RequireToken
+			config.Token = command.MCP.Token
+		})
+
 	default:
 		result.Err = fmt.Errorf("unknown runtime command %d", command.Kind)
 	}
@@ -152,6 +168,29 @@ func (s *runtimeSupervisor) closeAllProxies() {
 		}
 	}
 	s.proxyCtl.SetRunning(false)
+}
+
+// updateMCP applies a change to the MCP listener, then writes it to
+// config.yaml. A change that cannot be written is undone, so that what runs
+// is what the next start will run.
+func (s *runtimeSupervisor) updateMCP(change func(*configuration.MCPConfig)) error {
+	if s.mcp == nil {
+		return errors.New("the MCP server is unavailable")
+	}
+	prev := s.mcp.Config()
+	next := prev
+	change(&next)
+	if err := s.mcp.Apply(next); err != nil {
+		return err
+	}
+	if err := configuration.PersistMCPConfig(next); err != nil {
+		if rollbackErr := s.mcp.Apply(prev); rollbackErr != nil {
+			return fmt.Errorf("%w (also failed to restore the MCP server: %v)", err, rollbackErr)
+		}
+		return err
+	}
+	s.config.Update(func(config *configuration.AppConfig) { config.MCP = next })
+	return nil
 }
 
 func (s *runtimeSupervisor) setUpstream(settings configuration.UpstreamSettings) error {
