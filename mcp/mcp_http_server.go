@@ -108,6 +108,8 @@ func newHandler(deps Dependencies) http.Handler {
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, deps.getStatus)
 
+	registerComposerTools(server, deps)
+
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "cityTime",
 		Description: "Get the current time in NYC, San Francisco, or Boston",

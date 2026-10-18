@@ -180,7 +180,7 @@ Runtime APIs may expose UI-first settings flows for values that originate in
 the updated configuration back to `config.yaml`, so the setting survives the next
 application start for users who prefer the Web UI over editing YAML manually.
 
-## The composer's `.http` files (`webui/http_files.go`)
+## The composer's `.http` files (`composer/http_file_store.go`)
 
 The composer edits ordinary `.http` files in the folder `http_files.folder`
 names, not a collection hidden in the browser. That is what makes the same
@@ -188,11 +188,20 @@ requests openable from an IDE, committable next to a project, and shareable with
 a colleague — and it is why the sidebar can show the folder and open it in the
 file manager.
 
-`httpFileStore` is the whole of it: list, save, rename, delete, and reveal. Every
-path it hands the filesystem is rebuilt by `httpFileName` from a validated base
-name, so a name arriving over `/api/http-files/{name}` can never point outside
-the folder. The Web UI writes back on a short debounce after the last keystroke,
-so the file on disk is what an editor opened beside the composer would show.
+`composer.HttpFileStore` is the whole of it: list, read, save, edit, rename,
+delete, and reveal. Every path it hands the filesystem is rebuilt by
+`HttpFileName` from a validated base name, so a name arriving over
+`/api/http-files/{name}` or from an MCP tool can never point outside the folder.
+`main.go` creates one store and hands it to both the Web UI
+(`webui/http_files.go` puts it on the wire) and the MCP server. The Web UI
+writes back on a short debounce after the last keystroke, so the file on disk
+is what an editor opened beside the composer would show.
+
+The MCP composer tools edit a single request block with
+`composer.AppendRequest` / `composer.ReplaceRequest`, which rewrite only that
+block and reparse the result before it is saved. The Web UI does not reload the
+files on its own: it shows an MCP edit after a reload, and a later save of the
+same file from an open composer overwrites it.
 
 ## Web UI (`webui/`)
 

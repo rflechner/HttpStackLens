@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"httpStackLens/composer"
 	"httpStackLens/configuration"
 	"httpStackLens/logging"
 	"httpStackLens/mcp"
@@ -126,6 +127,8 @@ func main() {
 	// It is created before the Web UI (which exposes it) and completed further
 	// down, once the event logger and the stores it reports to exist.
 	composerSend := newComposerSender(runtimeConfig.Snapshot, decryptHttpsSettings)
+	// One .http collection for the Web UI composer and the MCP composer tools.
+	httpFiles := composer.NewHttpFileStore(config.HttpFiles.GetResolvedFolder())
 
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
 		InitialConfig:         config,
@@ -139,6 +142,7 @@ func main() {
 		Proxy:                 proxyCtl,
 		Commands:              runtimeCommands,
 		SendComposerRequest:   composerSend.Send,
+		HttpFiles:             httpFiles,
 		Build:                 buildInfo(),
 		GitHubRepo:            repoSlug,
 		UpdateCheckEnabled:    config.Updates.CheckEnabled,
@@ -190,6 +194,7 @@ func main() {
 	mcpServer, err := mcp.Start(config.MCP, mcp.Dependencies{
 		Proxy: proxyCtl, Capture: captureCtl, Storage: storageSink,
 		Requests: requestStore, DecryptHTTPS: decryptHttpsSettings, Upstream: upstreamSettings,
+		HttpFiles: httpFiles, SendComposer: composerSend.Send,
 	})
 	if err != nil {
 		slog.Warn("Could not start MCP server; MCP disabled", "error", err)

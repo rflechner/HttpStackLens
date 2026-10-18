@@ -68,7 +68,7 @@ func TestConfiguredListenerAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Tools) != 3 {
+	if len(result.Tools) != 8 {
 		t.Fatalf("unexpected tools: %+v", result.Tools)
 	}
 	if err := session.Close(); err != nil {

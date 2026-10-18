@@ -133,11 +133,16 @@ dans le dossier de captures, sans accepter de chemin arbitraire.
 
 ## 6. Ensuite — Préparer et exécuter des reproductions
 
-- [ ] `prepare_request` : reconstruire une requête à partir d’un échange et proposer des modifications sans effectuer d’appel réseau.
+- [x] `list_composer_requests` / `get_composer_request` : lire les fichiers `.http` du Composer et le détail d’une requête, secrets masqués.
+- [x] `add_composer_request` : ajouter une requête à un fichier `.http`, créé au besoin.
+- [x] `update_composer_request` : modifier une requête existante, avec contrôle optimiste par `modified_at`.
+- [x] `send_composer_request` : exécuter une requête enregistrée via la pipeline existante, variables `{{…}}` substituées.
+- [x] Retourner le statut de destination et les erreurs réseau, en distinguant `response` et `transport_error`.
+- [ ] Retourner l’identifiant du nouvel échange observé (aujourd’hui : le retrouver avec `search_requests`).
+- [ ] Contrôler l’écriture et l’envoi séparément des outils de lecture (réglage dédié dans `config.yaml`).
+- [ ] Recharger le Composer de la Web UI lorsqu’un fichier est modifié par MCP (événement SSE).
+- [ ] `prepare_request` : reconstruire une requête à partir d’un échange et l’ajouter au Composer sans effectuer d’appel réseau.
 - [ ] Signaler les corps manquants et remplacer les secrets masqués par des paramètres explicites, sans inventer leur valeur.
-- [ ] Produire un fichier `.http` consultable et modifiable dans le Composer.
-- [ ] `send_request` : envoyer une requête via la pipeline existante, avec un contrôle distinct des outils de lecture.
-- [ ] Retourner le statut de destination, les erreurs réseau et l’identifiant du nouvel échange observé.
 - [ ] Comparer la reproduction à l’échange initial.
 
 Le Composer peut envoyer une requête même lorsque le listener TCP du proxy est
@@ -271,3 +276,47 @@ Les chemins restent visibles et peuvent contenir des données sensibles : cette
 première politique ne garantit pas un masquage exhaustif. Le store original n’est
 pas modifié. Les erreurs réseau détaillées ne sont pas actuellement conservées
 par ce store ; une absence de réponse peut aussi correspondre à un échange en cours.
+
+## Contrat actuel des outils Composer
+
+Les outils travaillent sur les fichiers `.http` du dossier `http_files.folder`,
+via le même store que la Web UI. Un fichier est désigné par son nom seul
+(`api` ou `api.http`), jamais par un chemin ; une requête par son `index`
+(à partir de 0) dans le fichier, dans l’ordre où le Composer les affiche.
+
+| Outil | Effet |
+| --- | --- |
+| `list_composer_requests` | Lecture seule. Fichiers, `modified_at`, noms des variables, et pour chaque requête : index, titre, méthode, URL telle qu’écrite. Argument `file` facultatif. |
+| `get_composer_request` | Lecture seule. Méthode, URL, en-têtes, corps (64 Kio max) et variables du fichier. |
+| `add_composer_request` | Ajoute un bloc `### titre` à la fin du fichier, créé s’il n’existe pas. N’envoie rien. |
+| `update_composer_request` | Remplace les champs fournis (`title`, `method`, `url`, `headers`, `body`) ; les champs omis sont conservés. `headers` remplace la liste entière. N’envoie rien. |
+| `send_composer_request` | Exécute la requête enregistrée, comme le bouton ▶ du Composer : variables substituées, pas de corps pour GET et HEAD. Appel réseau réel. |
+
+**Masquage.** Les valeurs d’en-têtes, de paramètres de query et de variables
+dont le nom évoque un secret (`auth`, `token`, `secret`, `password`, `api_key`,
+`session`, `cookie`…) sont remplacées par `__REDACTED__`, de même que les
+variables utilisées dans de tels en-têtes ou paramètres. Une valeur limitée à
+une référence (`Bearer {{token}}`) reste visible. Renvoyer `__REDACTED__` dans
+`update_composer_request` conserve la valeur actuelle, associée par nom ;
+`add_composer_request` le refuse. Les corps ne sont pas masqués. Il s’agit d’une
+heuristique, pas d’une garantie.
+
+**Écriture.** Seul le bloc visé est réécrit ; le reste du fichier, y compris
+les blocs illisibles, est conservé tel quel. Les commentaires du bloc sont
+gardés : ceux placés sous la ligne de requête (dont les en-têtes décochés dans
+la Web UI) sont réécrits après les en-têtes. Le résultat est relu par le parser
+avant enregistrement ; une URL avec espaces, une valeur sur plusieurs lignes ou
+une ligne de corps commençant par `###` sont refusées. Avec
+`expected_modified_at`, l’écriture échoue si le fichier a changé depuis la
+lecture. La Web UI ne recharge pas les fichiers automatiquement : une
+modification MCP apparaît après rechargement, et une sauvegarde ultérieure du
+même fichier depuis un Composer déjà ouvert l’écrase.
+
+**Envoi.** Une variable non déclarée fait échouer l’outil sans rien envoyer.
+`outcome` vaut `response` lorsque la destination (ou un proxy) a répondu,
+`transport_error` sinon, avec `error` (DNS, connexion, TLS, timeout). Les
+en-têtes de réponse sensibles sont masqués ; le corps est renvoyé en extrait
+(`max_body_chars`, 16 384 par défaut, 262 144 maximum), ou omis s’il n’est pas
+du texte UTF-8. L’URL de l’upstream n’est jamais renvoyée. L’échange apparaît
+dans le trafic comme tout envoi du Composer ; son identifiant n’est pas encore
+retourné.

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"httpStackLens/certManager"
+	"httpStackLens/composer"
 	configuration "httpStackLens/configuration"
 	"httpStackLens/storage"
 	"httpStackLens/webui/wasm/shared"
@@ -84,7 +85,10 @@ type Dependencies struct {
 	// proxy pipeline. Left nil, the composer routes report the feature as
 	// unavailable instead of falling back to a browser-issued request.
 	SendComposerRequest ComposerSender
-	Build               shared.BuildInfoDto
+	// HttpFiles is the composer's collection of .http files, shared with the MCP
+	// server. Left nil, a store over http_files.folder is created.
+	HttpFiles *composer.HttpFileStore
+	Build     shared.BuildInfoDto
 	// GitHubRepo is "owner/name", used to query the releases API for updates.
 	GitHubRepo string
 	// UpdateCheckEnabled gates the automatic GitHub update check (opt-in).
@@ -337,7 +341,11 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	mux.HandleFunc("/api/composer/send", composerSendHandler(deps.SendComposerRequest))
 	// The composer's collection lives on disk, in http_files.folder, so the same
 	// .http files can be opened from an IDE or committed alongside a project.
-	registerHttpFileRoutes(mux, newHttpFileStore(config.HttpFiles.GetResolvedFolder()))
+	httpFiles := deps.HttpFiles
+	if httpFiles == nil {
+		httpFiles = composer.NewHttpFileStore(config.HttpFiles.GetResolvedFolder())
+	}
+	registerHttpFileRoutes(mux, httpFiles)
 	mux.HandleFunc("/api/runtime/stats", runtimeStatsHandler)
 	mux.HandleFunc("/api/version", buildInfoHandler(deps.Build))
 	mux.HandleFunc("/api/update-check", updateCheckHandler(newUpdateChecker(deps.UpdateCheckEnabled, deps.Build.Version, deps.GitHubRepo)))

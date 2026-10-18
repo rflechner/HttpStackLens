@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"httpStackLens/composer"
 	"httpStackLens/configuration"
 	"httpStackLens/storage"
 	"runtime"
@@ -20,6 +21,10 @@ type Dependencies struct {
 	Requests     *storage.RequestStore
 	DecryptHTTPS *configuration.DecryptHttpsConfigStore
 	Upstream     *configuration.UpstreamSettingsStore
+	// HttpFiles and SendComposer back the composer tools: the same .http
+	// collection and pipeline sender as the Web UI composer.
+	HttpFiles    *composer.HttpFileStore
+	SendComposer ComposerSender
 }
 
 type Status struct {
