@@ -49,8 +49,8 @@ Le flux SSE `/events` de la Web UI reste indépendant du protocole MCP.
 Parcours cible : « J’ai relancé `npm install`, retrouve les échanges en échec et
 aide-moi à comprendre pourquoi. »
 
-- [ ] `get_status` : lire l’état du proxy, de l’enregistrement, de la persistance, de l’upstream et du MITM, sans exposer de secrets.
-- [ ] `search_requests` : rechercher les échanges par période, hôte, méthode, chemin, statut HTTP et présence d’une erreur réseau.
+- [x] `get_status` : lire l’état du proxy, de l’enregistrement, de la persistance, de l’upstream et du MITM, sans exposer de secrets.
+- [x] `search_requests` : rechercher les échanges par période, hôte, méthode, chemin, statut HTTP et présence d’une réponse. Le filtre sur les erreurs réseau détaillées reste à construire.
 - [ ] Inclure les échecs sans réponse HTTP : connexion refusée, timeout ou erreur TLS, lorsque ces informations sont disponibles.
 - [ ] Retourner des listes compactes : identifiant, date, méthode, URL masquée, statut ou erreur, durée et mode HTTPS.
 - [ ] Paginer les résultats avec une limite bornée et un curseur ; définir le comportement lorsque le trafic continue d’arriver.
@@ -200,3 +200,74 @@ ensuite sans retarder ce parcours initial.
 - [Prototype MCP](mcp/mcp_http_server.go)
 - [Transport MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 - [Outils MCP](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+
+## Contrat actuel de `get_status`
+
+`get_status` ne prend aucun argument (`{}`). Cet outil en lecture seule renvoie
+un résultat structuré et sa représentation textuelle pour les clients MCP.
+Il lit les contrôleurs partagés avec la Web UI à chaque appel.
+
+| Champ | Signification |
+| --- | --- |
+| `proxy.running`, `proxy.address` | État et adresse du listener ; son arrêt n’interdit pas les envois du Composer. |
+| `capture.recording` | Enregistrement des nouveaux échanges activé. |
+| `capture.persistence_enabled` | Fichier de capture ouvert ; l’enregistrement doit également être actif pour capturer le nouveau trafic. |
+| `capture.buffered_exchanges` | Nombre d’échanges actuellement conservés en mémoire. |
+| `https.decryption_enabled` | MITM activé pour les nouveaux CONNECT ; les tunnels existants gardent leur mode initial. |
+| `upstream.enabled` | Un proxy upstream est configuré. |
+| `upstream.windows_authentication_configured` | Option d’authentification Windows configurée. |
+| `upstream.windows_authentication_applicable` | Option configurée avec un upstream sur Windows ; ne prouve pas une authentification réussie. |
+
+Ce résultat ne contient ni URL upstream, ni identifiants, ni en-têtes, ni corps,
+ni chemins de fichiers. Il ne teste pas la connectivité et n’atteste pas que le
+navigateur utilise le proxy. Les champs sont lus dans des stores synchronisés,
+mais ne constituent pas une transaction atomique entre tous les contrôleurs.
+Si les dépendances runtime sont absentes, l’outil retourne une erreur explicite.
+Le contrat HTTP de la Web UI est inchangé.
+
+## Contrat actuel de `search_requests`
+
+Outil en lecture seule, limité aux échanges encore en mémoire. Aucun endpoint
+Web UI ni format de capture sur disque n’est modifié.
+
+Arguments facultatifs :
+
+| Argument | Comportement |
+| --- | --- |
+| `host` | Nom d’hôte exact, sans port, insensible à la casse ; pas d’inclusion automatique des sous-domaines. |
+| `method` | Méthode HTTP, insensible à la casse. |
+| `path_contains` | Sous-chaîne du chemin décodé, sensible à la casse ; ne recherche pas dans la query. |
+| `status_code` | Statut exact entre 100 et 599 ; absent ou zéro pour tous les statuts. |
+| `has_response` | Présence d’une réponse enregistrée. `false` ne prouve pas une erreur réseau. |
+| `since`, `until` | Bornes inclusives RFC3339 sur la première observation de l’échange dans le store. |
+| `limit` | 25 par défaut (également pour zéro), maximum 100. |
+| `cursor` | Valeur de `next_cursor` de la page précédente, en répétant les mêmes filtres. |
+
+Exemple :
+
+```json
+{"host":"example.com","method":"GET","status_code":503,"limit":25}
+```
+
+Le résultat contient `source: "memory"`, un tableau `requests`, les `limitations`
+et éventuellement `next_cursor`. Chaque résumé expose l’identifiant, la date de
+première observation, la méthode, l’URL masquée, le statut et la durée mesurée
+(ou `null`), la présence de chaque côté de l’échange et sa visibilité.
+`connect` identifie un échange CONNECT, sans conclure au mode des requêtes internes ;
+`https_request` et `http_request` reposent sur le schéma enregistré. En l’absence
+de cette information, la visibilité vaut `unknown`.
+
+Les résultats sont triés par ordre d’insertion, du plus récent au plus ancien.
+La pagination exclut les insertions postérieures à la première page. Les réponses
+et timings restent vivants et peuvent évoluer entre les pages : il ne s’agit pas
+d’une photographie figée. Une éviction, un effacement ou un changement de store
+invalide les curseurs ; le client doit alors relancer une recherche sans curseur.
+Un curseur invalide ou des filtres différents provoquent une erreur explicite.
+
+Les en-têtes, corps et messages de réponse sont exclus. Les informations utilisateur
+et fragments d’URL sont supprimés, et toute la query est remplacée par `REDACTED`.
+Une URL invalide est omise ; les URL longues sont tronquées et signalées.
+Les chemins restent visibles et peuvent contenir des données sensibles : cette
+première politique ne garantit pas un masquage exhaustif. Le store original n’est
+pas modifié. Les erreurs réseau détaillées ne sont pas actuellement conservées
+par ce store ; une absence de réponse peut aussi correspondre à un échange en cours.

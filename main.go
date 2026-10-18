@@ -187,7 +187,10 @@ func main() {
 		proxyCtl:      proxyCtl,
 	}
 
-	mcpServer, err := mcp.Start(config.MCP)
+	mcpServer, err := mcp.Start(config.MCP, mcp.Dependencies{
+		Proxy: proxyCtl, Capture: captureCtl, Storage: storageSink,
+		Requests: requestStore, DecryptHTTPS: decryptHttpsSettings, Upstream: upstreamSettings,
+	})
 	if err != nil {
 		slog.Warn("Could not start MCP server; MCP disabled", "error", err)
 	} else if mcpServer != nil {

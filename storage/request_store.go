@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"crypto/rand"
 	"sync"
 	"time"
 )
@@ -13,6 +14,7 @@ const DefaultRequestStoreSize = 500
 // received), held in memory so the Web UI can fetch full headers and bodies on
 // demand without re-reading the capture file.
 type CapturedExchange struct {
+	Sequence      uint64 // Monotonic insertion order within this store.
 	CorrelationID string
 	Request       *RequestRecord
 	Response      *ResponseRecord
@@ -40,10 +42,13 @@ type Timing struct {
 //
 // Safe for concurrent use.
 type RequestStore struct {
-	mu      sync.RWMutex
-	max     int
-	queue   []string // correlation ids in insertion order, oldest first
-	entries map[string]*CapturedExchange
+	mu         sync.RWMutex
+	epoch      string
+	generation uint64
+	sequence   uint64
+	max        int
+	queue      []string // correlation ids in insertion order, oldest first
+	entries    map[string]*CapturedExchange
 }
 
 // NewRequestStore returns a store bounded to max exchanges (at least 1).
@@ -53,6 +58,7 @@ func NewRequestStore(max int) *RequestStore {
 	}
 	return &RequestStore{
 		max:     max,
+		epoch:   rand.Text(),
 		entries: make(map[string]*CapturedExchange),
 	}
 }
@@ -101,12 +107,15 @@ func (s *RequestStore) PutTiming(id string, t Timing) {
 // enqueue inserts a new exchange and evicts the oldest while over capacity. The
 // caller must hold the write lock.
 func (s *RequestStore) enqueue(e *CapturedExchange) {
+	s.sequence++
+	e.Sequence = s.sequence
 	s.entries[e.CorrelationID] = e
 	s.queue = append(s.queue, e.CorrelationID)
 	for len(s.queue) > s.max {
 		oldest := s.queue[0]
 		s.queue = s.queue[1:]
 		delete(s.entries, oldest)
+		s.generation++
 	}
 }
 
@@ -134,6 +143,19 @@ func (s *RequestStore) Len() int {
 func (s *RequestStore) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.generation++
 	s.queue = nil
 	s.entries = make(map[string]*CapturedExchange)
+}
+
+// Snapshot returns immutable record references in newest-first insertion order.
+// Generation changes on eviction or clear so paged readers can detect gaps.
+func (s *RequestStore) Snapshot() (exchanges []CapturedExchange, epoch string, generation uint64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	exchanges = make([]CapturedExchange, 0, len(s.queue))
+	for i := len(s.queue) - 1; i >= 0; i-- {
+		exchanges = append(exchanges, *s.entries[s.queue[i]])
+	}
+	return exchanges, s.epoch, s.generation
 }

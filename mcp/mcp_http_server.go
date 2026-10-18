@@ -67,7 +67,7 @@ func getTime(ctx context.Context, req *mcp.CallToolRequest, params *GetTimeParam
 // Start starts the optional loopback listener. The caller owns the returned
 // HTTP server and must close it when the application stops.
 // A disabled service returns (nil, nil); startup failures never exit the process.
-func Start(config configuration.MCPConfig) (*http.Server, error) {
+func Start(config configuration.MCPConfig, deps Dependencies) (*http.Server, error) {
 	if !config.Enabled {
 		return nil, nil
 	}
@@ -80,7 +80,7 @@ func Start(config configuration.MCPConfig) (*http.Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start MCP listener: %w", err)
 	}
-	server := &http.Server{Addr: addr, Handler: newHandler()}
+	server := &http.Server{Addr: addr, Handler: newHandler(deps)}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("MCP server stopped", "error", err)
@@ -90,11 +90,23 @@ func Start(config configuration.MCPConfig) (*http.Server, error) {
 	return server, nil
 }
 
-func newHandler() http.Handler {
+func newHandler(deps Dependencies) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "http-stack-lens-mcp-server",
 		Version: "1.0.0",
 	}, nil)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "search_requests",
+		Description: "Search retained in-memory exchanges, newest first. Returns compact redacted summaries without headers or bodies. Repeat filters with next_cursor; missing responses are not proof of network failure.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, deps.searchRequests)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_status",
+		Description: "Read current local proxy, recording, persistence, HTTPS inspection and upstream state. Does not test connectivity or change settings. No traffic or credentials are returned.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, deps.getStatus)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "cityTime",

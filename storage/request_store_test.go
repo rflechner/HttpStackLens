@@ -190,3 +190,32 @@ func TestRequestStoreConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestSnapshotOrderAndGeneration(t *testing.T) {
+	s := NewRequestStore(2)
+	s.PutRequest("a", RequestRecord{Method: "GET"})
+	s.PutRequest("b", RequestRecord{Method: "POST"})
+	entries, epoch, generation := s.Snapshot()
+	if len(entries) != 2 || entries[0].CorrelationID != "b" || entries[0].Sequence <= entries[1].Sequence {
+		t.Fatalf("snapshot: %+v", entries)
+	}
+	s.PutResponse("b", ResponseRecord{StatusCode: 200})
+	updated, sameEpoch, sameGeneration := s.Snapshot()
+	if sameEpoch != epoch || sameGeneration != generation || entries[0].Response != nil || updated[0].Response == nil {
+		t.Fatal("record update corrupted snapshot or invalidated pagination")
+	}
+	s.PutRequest("c", RequestRecord{})
+	_, _, evictedGeneration := s.Snapshot()
+	if evictedGeneration == generation {
+		t.Fatal("eviction must change generation")
+	}
+	s.Clear()
+	cleared, _, clearGeneration := s.Snapshot()
+	if len(cleared) != 0 || clearGeneration == evictedGeneration {
+		t.Fatal("clear must change generation")
+	}
+	_, otherEpoch, _ := NewRequestStore(2).Snapshot()
+	if epoch == otherEpoch {
+		t.Fatal("stores must have distinct epochs")
+	}
+}
