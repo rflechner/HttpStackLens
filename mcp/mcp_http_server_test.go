@@ -335,3 +335,39 @@ func TestNewTokenIsRandom(t *testing.T) {
 		t.Fatalf("tokens %q and %q", a, b)
 	}
 }
+
+func TestToolsCatalog(t *testing.T) {
+	// The catalog does not need the listener, nor does it appear in the trace.
+	c := NewController(configuration.MCPConfig{})
+	tools, err := c.Tools(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 7 || len(c.TracedCalls()) != 0 {
+		t.Fatalf("%d tools, %d traced calls", len(tools), len(c.TracedCalls()))
+	}
+	byName := map[string]shared.McpToolDto{}
+	for i, tool := range tools {
+		if tool.Description == "" || len(tool.InputSchema) == 0 {
+			t.Errorf("tool %s lacks a description or input schema", tool.Name)
+		}
+		if i > 0 && tools[i-1].Name >= tool.Name {
+			t.Errorf("tools not sorted: %s before %s", tools[i-1].Name, tool.Name)
+		}
+		byName[tool.Name] = tool
+	}
+
+	search := byName["search_requests"]
+	if !search.ReadOnly || search.Destructive || search.OpenWorld || !strings.Contains(string(search.InputSchema), `"path_contains"`) {
+		t.Errorf("search_requests = %+v", search)
+	}
+	add := byName["add_composer_request"]
+	if add.ReadOnly || add.Destructive || add.OpenWorld {
+		t.Errorf("add_composer_request = %+v", add)
+	}
+	// No annotation means the protocol defaults: may modify, reaches out.
+	send := byName["send_composer_request"]
+	if send.ReadOnly || !send.Destructive || !send.OpenWorld {
+		t.Errorf("send_composer_request = %+v", send)
+	}
+}

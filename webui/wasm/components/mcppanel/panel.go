@@ -3,14 +3,18 @@
 // Package mcppanel is the MCP tab: the state and settings of the local MCP
 // listener on the left, the trace of the calls it received on the right.
 //
+// The main column has two views: the trace of the calls, and the catalog of
+// the tools MCP clients are offered.
+//
 // The root component renders once and never again. Everything that changes
-// lives in a child — server pane, trace toolbar, call list, call detail — so
-// that a call arriving while a filter or a port is being typed re-renders the
-// list only, and the input keeps its focus.
+// lives in a child — server pane, toolbar, call list, call detail, tool
+// catalog — so that a call arriving while a filter or a port is being typed
+// re-renders the list only, and the input keeps its focus.
 package mcppanel
 
 import (
 	_ "embed"
+	"syscall/js"
 
 	"httpStackLens/webui/wasm/dom"
 	"httpStackLens/webui/wasm/shared"
@@ -39,11 +43,24 @@ type Panel struct {
 	ErrorsOnly bool
 	Selected   int64
 
+	// View is the main column: viewCalls or viewTools.
+	View       string
+	ToolFilter string
+
 	server  *ServerPane
 	toolbar *CallsToolbar
 	list    *CallsList
 	detail  *CallDetail
+	tools   *ToolsList
 }
+
+// viewKey remembers the view the main column was left on.
+const viewKey = "hsl-mcp-view"
+
+const (
+	viewCalls = "calls"
+	viewTools = "tools"
+)
 
 // New returns an unmounted panel. Pass it to dom.Mount.
 func New() *Panel { return &Panel{} }
@@ -57,12 +74,57 @@ func (p *Panel) OnInit() {
 	p.toolbar = &CallsToolbar{owner: p}
 	p.list = &CallsList{owner: p}
 	p.detail = &CallDetail{owner: p}
+	p.tools = &ToolsList{owner: p}
 	p.SetChild("server", p.server)
 	p.SetChild("toolbar", p.toolbar)
 	p.SetChild("calls", p.list)
 	p.SetChild("detail", p.detail)
+	p.SetChild("tools", p.tools)
+	p.View = viewCalls
+	if dom.LocalGet(viewKey) == viewTools {
+		p.View = viewTools
+	}
 	// Fetching blocks: it has to leave the JS thread its callbacks run on.
 	go p.load()
+}
+
+func (p *Panel) OnAfterRender(first bool) {
+	if first {
+		p.showView()
+	}
+}
+
+// setView switches the main column. The hosts are shown and hidden rather
+// than re-rendered, so that each view keeps its scroll and selection.
+func (p *Panel) setView(view string) {
+	if view != viewCalls && view != viewTools {
+		return
+	}
+	p.View = view
+	dom.LocalSet(viewKey, view)
+	p.showView()
+	p.toolbar.StateHasChanged()
+}
+
+func (p *Panel) showView() {
+	calls := p.View == viewCalls
+	setDisplay(p.Ref("calls"), calls)
+	setDisplay(p.Ref("detail"), calls)
+	setDisplay(p.Ref("tools"), !calls)
+	if !calls {
+		p.tools.ensureLoaded()
+	}
+}
+
+func setDisplay(node js.Value, visible bool) {
+	if !node.Truthy() {
+		return
+	}
+	display := "none"
+	if visible {
+		display = ""
+	}
+	node.Get("style").Set("display", display)
 }
 
 func (p *Panel) load() {
@@ -124,6 +186,9 @@ func (p *Panel) AddCall(call shared.McpCallDto) {
 		p.Calls = p.Calls[:limit]
 	}
 	p.State.CallCount = len(p.Calls)
+	if call.Tool != "" && p.View == viewTools {
+		p.tools.refresh() // the per-tool call counts
+	}
 	shifted := 0
 	if p.visible(call) {
 		shifted = 1

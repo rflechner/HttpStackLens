@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ type MCPRuntime interface {
 	Config() configuration.MCPConfig
 	TracedCalls() []shared.McpCallDto
 	ClearCalls()
+	Tools(ctx context.Context) ([]shared.McpToolDto, error)
 }
 
 // minTokenLength rejects a token typed by hand that would be easy to guess.
@@ -48,6 +50,15 @@ func registerMCPRoutes(mux *http.ServeMux, runtime MCPRuntime, send func(Runtime
 	}))
 	mux.HandleFunc("PUT /api/mcp/settings", available(mcpSettingsHandler(runtime, send)))
 	mux.HandleFunc("POST /api/mcp/token", available(mcpTokenHandler(runtime, send)))
+	mux.HandleFunc("GET /api/mcp/tools", available(func(w http.ResponseWriter, r *http.Request) {
+		tools, err := runtime.Tools(r.Context())
+		if err != nil {
+			log.Printf("Error listing MCP tools: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, shared.McpToolsDto{Tools: tools})
+	}))
 	mux.HandleFunc("GET /api/mcp/calls", available(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, shared.McpCallsDto{Calls: runtime.TracedCalls(), Capacity: mcp.CallLogCapacity})
 	}))

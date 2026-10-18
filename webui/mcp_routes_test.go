@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -27,6 +28,9 @@ func (f *fakeMCPRuntime) State() shared.McpStateDto {
 func (f *fakeMCPRuntime) Config() configuration.MCPConfig  { return f.config }
 func (f *fakeMCPRuntime) TracedCalls() []shared.McpCallDto { return f.calls }
 func (f *fakeMCPRuntime) ClearCalls()                      { f.calls = nil }
+func (f *fakeMCPRuntime) Tools(context.Context) ([]shared.McpToolDto, error) {
+	return []shared.McpToolDto{{Name: "get_status", Description: "Read the state", ReadOnly: true, InputSchema: json.RawMessage(`{"type":"object"}`)}}, nil
+}
 
 func (f *fakeMCPRuntime) send(command RuntimeCommand) RuntimeCommandResult {
 	f.commands = append(f.commands, command)
@@ -146,5 +150,16 @@ func TestMCPCalls(t *testing.T) {
 	}
 	if res := serveMCP(t, runtime, http.MethodDelete, "/api/mcp/calls", ""); res.Code != http.StatusNoContent || runtime.calls != nil {
 		t.Fatalf("clear = %d", res.Code)
+	}
+}
+
+func TestMCPTools(t *testing.T) {
+	res := serveMCP(t, &fakeMCPRuntime{}, http.MethodGet, "/api/mcp/tools", "")
+	var tools shared.McpToolsDto
+	if err := json.Unmarshal(res.Body.Bytes(), &tools); err != nil || res.Code != http.StatusOK {
+		t.Fatalf("tools = %d %s", res.Code, res.Body)
+	}
+	if len(tools.Tools) != 1 || !tools.Tools[0].ReadOnly || string(tools.Tools[0].InputSchema) != `{"type":"object"}` {
+		t.Fatalf("tools = %+v", tools)
 	}
 }

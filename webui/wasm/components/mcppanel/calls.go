@@ -29,8 +29,9 @@ const rowHeight = 27
 
 // ── toolbar ────────────────────────────────────────────────────────────────
 
-// CallsToolbar holds the filter. It re-renders only on its own toggles: the
-// count, which changes with every call, belongs to the list below.
+// CallsToolbar holds the view switch and the filter of the current view. It
+// re-renders only on its own toggles: the count, which changes with every
+// call, belongs to the list below.
 type CallsToolbar struct {
 	dom.Base
 	owner *Panel
@@ -38,8 +39,19 @@ type CallsToolbar struct {
 
 func (t *CallsToolbar) Template() string { return toolbarHTML }
 
-func (t *CallsToolbar) ErrorsOnly() bool { return t.owner.ErrorsOnly }
-func (t *CallsToolbar) Filter() string   { return t.owner.Filter }
+func (t *CallsToolbar) ErrorsOnly() bool        { return t.owner.ErrorsOnly }
+func (t *CallsToolbar) Filter() string          { return t.owner.Filter }
+func (t *CallsToolbar) ToolFilter() string      { return t.owner.ToolFilter }
+func (t *CallsToolbar) ViewIs(view string) bool { return t.owner.View == view }
+
+func (t *CallsToolbar) SetView(e dom.Event) { t.owner.setView(e.Arg()) }
+
+func (t *CallsToolbar) ToolFilterChanged(e dom.Event) {
+	t.owner.ToolFilter = e.Value()
+	t.owner.tools.refresh()
+}
+
+func (t *CallsToolbar) ReloadTools() { t.owner.tools.reload() }
 
 // FilterChanged narrows the list as the filter is typed, without re-rendering
 // the toolbar holding the input.

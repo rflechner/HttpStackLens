@@ -1,5 +1,7 @@
 package shared
 
+import "encoding/json"
+
 type RequestEventDto struct {
 	// ID is the incrementing per-connection sequence number, kept for display
 	// (the "#001" column) and ordering in the UI.
@@ -475,4 +477,26 @@ type McpCallDto struct {
 type McpCallsDto struct {
 	Calls    []McpCallDto `json:"calls"`
 	Capacity int          `json:"capacity"`
+}
+
+// McpToolDto describes one tool the MCP server offers, as an MCP client sees
+// it, for GET /api/mcp/tools. The behaviour flags are the MCP tool annotations
+// with the protocol defaults applied: a tool that does not say otherwise may
+// modify things and reach the outside world.
+type McpToolDto struct {
+	Name        string `json:"name"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description"`
+	ReadOnly    bool   `json:"read_only"`
+	Destructive bool   `json:"destructive"`
+	Idempotent  bool   `json:"idempotent"`
+	OpenWorld   bool   `json:"open_world"`
+	// InputSchema and OutputSchema are the JSON Schemas sent to clients.
+	InputSchema  json.RawMessage `json:"input_schema"`
+	OutputSchema json.RawMessage `json:"output_schema,omitempty"`
+}
+
+// McpToolsDto is returned by GET /api/mcp/tools, sorted by name.
+type McpToolsDto struct {
+	Tools []McpToolDto `json:"tools"`
 }

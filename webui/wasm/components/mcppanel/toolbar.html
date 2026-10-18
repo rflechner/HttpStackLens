@@ -1,14 +1,26 @@
-<span class="mp-title">Calls</span>
+<div class="mp-seg view">
+  <button class="{{if .ViewIs "calls"}}on{{end}}" data-on-click="SetView" data-arg="calls" title="Messages received from MCP clients">Calls</button>
+  <button class="{{if .ViewIs "tools"}}on{{end}}" data-on-click="SetView" data-arg="tools" title="What MCP clients are allowed to do">Tools</button>
+</div>
 <div class="mp-search">
   <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
     <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.4"></circle>
     <path d="M9.5 9.5L13 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
   </svg>
-  <input placeholder="Filter by tool, method, status, client…" value="{{.Filter}}" data-on-input="FilterChanged" />
+  {{if .ViewIs "calls"}}
+    <input placeholder="Filter by tool, method, status, client…" value="{{.Filter}}" data-on-input="FilterChanged" />
+  {{else}}
+    <input placeholder="Filter by name or description…" value="{{.ToolFilter}}" data-on-input="ToolFilterChanged" />
+  {{end}}
 </div>
-<label class="mp-check inline">
-  <input type="checkbox" data-on-change="ToggleErrors" {{if .ErrorsOnly}}{{attr "checked"}}{{end}} />
-  <span>Errors only</span>
-</label>
-<span class="mp-grow"></span>
-<button class="mp-mini" data-on-click="Clear" title="Empty the trace, here and in every open window">Clear</button>
+{{if .ViewIs "calls"}}
+  <label class="mp-check inline">
+    <input type="checkbox" data-on-change="ToggleErrors" {{if .ErrorsOnly}}{{attr "checked"}}{{end}} />
+    <span>Errors only</span>
+  </label>
+  <span class="mp-grow"></span>
+  <button class="mp-mini" data-on-click="Clear" title="Empty the trace, here and in every open window">Clear</button>
+{{else}}
+  <span class="mp-grow"></span>
+  <button class="mp-mini" data-on-click="ReloadTools" title="Read the catalog again">Reload</button>
+{{end}}

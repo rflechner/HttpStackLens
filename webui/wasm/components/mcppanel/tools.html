@@ -1,0 +1,55 @@
+{{if .Loading}}
+  <div class="mp-blank">Reading the tool catalog…</div>
+{{else if .LoadErr}}
+  <div class="mp-blank">
+    <div class="mp-blank-t">The tool catalog could not be read</div>
+    <div class="mp-blank-s mono">{{.LoadErr}}</div>
+  </div>
+{{else}}
+  {{$cards := .Cards}}
+  <div class="mp-tools-head">
+    <div class="mp-tools-sum">{{.Summary}}</div>
+    <div class="mp-hint">Exactly what an MCP client receives from <span class="mono">tools/list</span>: the descriptions the model reads to decide what to call, and the arguments it can fill in. Behaviour flags are hints declared to clients, not restrictions HttpStackLens enforces.</div>
+  </div>
+  {{if not $cards}}
+    <div class="mp-blank"><div class="mp-blank-t">{{if .Filtered}}No tool matches the filter{{else}}No tool is offered{{end}}</div></div>
+  {{end}}
+  {{range $cards}}
+    <section class="mp-tool">
+      <div class="mp-tool-head">
+        <span class="mp-tool-name mono">{{.Name}}</span>
+        {{if .Title}}<span class="mp-meta">{{.Title}}</span>{{end}}
+        <span class="mp-pill {{.EffectClass}}" title="{{.EffectHint}}">{{.Effect}}</span>
+        {{if .OpenWorld}}<span class="mp-flag net" title="openWorldHint: the tool may reach the outside world, such as sending a network request">network</span>{{end}}
+        {{if .Idempotent}}<span class="mp-flag" title="idempotentHint: calling it again with the same arguments has no further effect">idempotent</span>{{end}}
+        <span class="mp-grow"></span>
+        {{if .Calls}}
+          <button class="mp-mini" data-on-click="ShowCalls" data-arg="{{.Name}}" title="Show its calls in the trace">{{.Calls}} call{{if ne .Calls 1}}s{{end}}</button>
+        {{else}}
+          <span class="mp-meta">not called</span>
+        {{end}}
+      </div>
+      <div class="mp-tool-desc">{{.Description}}</div>
+      {{if .Params}}
+        <div class="mp-params">
+          {{range .Params}}
+            <span class="mp-p-name mono">{{.Name}}{{if .Required}}<span class="mp-req" title="Required">*</span>{{end}}</span>
+            <span class="mp-p-type mono">{{.Type}}</span>
+            <span class="mp-p-desc">{{.Description}}</span>
+          {{end}}
+        </div>
+      {{else}}
+        <div class="mp-meta">No arguments.</div>
+      {{end}}
+      <button class="mp-link" data-on-click="ToggleSchema" data-arg="{{.Name}}">{{if .ShowSchema}}Hide{{else}}Show{{end}} JSON Schema</button>
+      {{if .ShowSchema}}
+        <div class="mp-sec-t">Input schema</div>
+        <pre class="mp-pre mono">{{.InputJSON}}</pre>
+        {{if .OutputSchema}}
+          <div class="mp-sec-t">Output schema</div>
+          <pre class="mp-pre mono">{{.OutputJSON}}</pre>
+        {{end}}
+      {{end}}
+    </section>
+  {{end}}
+{{end}}

@@ -20,6 +20,7 @@ const (
 	settingsPath = "/api/mcp/settings"
 	tokenPath    = "/api/mcp/token"
 	callsPath    = "/api/mcp/calls"
+	toolsPath    = "/api/mcp/tools"
 )
 
 // apiCall sends body as JSON when it is not nil and decodes the answer into
@@ -72,4 +73,10 @@ func fetchCalls() (shared.McpCallsDto, error) {
 	var calls shared.McpCallsDto
 	err := apiCall("GET", callsPath, nil, &calls)
 	return calls, err
+}
+
+func fetchTools() ([]shared.McpToolDto, error) {
+	var tools shared.McpToolsDto
+	err := apiCall("GET", toolsPath, nil, &tools)
+	return tools.Tools, err
 }

@@ -756,6 +756,25 @@ paths:
           $ref: "#/components/responses/InternalServerError"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /api/mcp/tools:
+    get:
+      tags: [MCP]
+      summary: List the tools offered to MCP clients
+      description: |
+        The tools exactly as an MCP client receives them from `tools/list` —
+        description, behaviour annotations and JSON Schemas — sorted by name.
+        Available whether the listener runs or not; not traced.
+      responses:
+        "200":
+          description: Tool catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpTools"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/mcp/calls:
     get:
       tags: [MCP]
@@ -1136,6 +1155,48 @@ components:
           description: Result as JSON (tool names for `tools/list`), cut at 4 KB.
         truncated:
           type: boolean
+    McpTool:
+      type: object
+      required: [name, description, read_only, destructive, idempotent, open_world, input_schema]
+      description: |
+        A tool offered to MCP clients. The behaviour flags are the MCP tool
+        annotations with the protocol defaults applied: absent
+        `destructiveHint` and `openWorldHint` count as true. They are hints
+        given to clients, not enforced restrictions.
+      properties:
+        name:
+          type: string
+          examples: ["search_requests"]
+        title:
+          type: string
+        description:
+          type: string
+        read_only:
+          type: boolean
+          description: The tool does not modify anything.
+        destructive:
+          type: boolean
+          description: The tool may modify or delete existing data. Always false for a read-only tool.
+        idempotent:
+          type: boolean
+          description: Calling it again with the same arguments has no further effect.
+        open_world:
+          type: boolean
+          description: The tool may reach the outside world, such as sending a network request.
+        input_schema:
+          type: object
+          description: JSON Schema of the arguments.
+        output_schema:
+          type: object
+          description: JSON Schema of the structured result, when the tool has one.
+    McpTools:
+      type: object
+      required: [tools]
+      properties:
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpTool"
     McpCalls:
       type: object
       required: [calls, capacity]
