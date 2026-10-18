@@ -99,6 +99,9 @@ func TestGetStatusLiveAndSanitized(t *testing.T) {
 	if !initial.Proxy.Running || initial.Proxy.Address != "127.0.0.1:3128" || !initial.Capture.Recording || initial.Capture.PersistenceEnabled || initial.Upstream.Enabled || initial.HTTPS.DecryptionEnabled {
 		t.Fatalf("unexpected initial status: %+v", initial)
 	}
+	if initial.UserAction == nil || len(initial.UserAction.Steps) == 0 {
+		t.Fatalf("decryption off must be relayed to the user: %+v", initial.UserAction)
+	}
 	deps.Proxy.SetRunning(false)
 	deps.Capture.Pause()
 	if err := deps.Storage.Enable(); err != nil {
@@ -110,6 +113,9 @@ func TestGetStatusLiveAndSanitized(t *testing.T) {
 	updated := call()
 	if updated.Proxy.Running || updated.Capture.Recording || !updated.Capture.PersistenceEnabled || updated.Capture.BufferedExchanges != 1 || !updated.HTTPS.DecryptionEnabled || !updated.Upstream.Enabled || !updated.Upstream.WindowsAuthenticationConfigured || updated.Upstream.WindowsAuthenticationApplicable != (runtime.GOOS == "windows") {
 		t.Fatalf("stale or incorrect status: %+v", updated)
+	}
+	if updated.UserAction != nil {
+		t.Fatalf("user_action left once decryption is on: %+v", updated.UserAction)
 	}
 }
 

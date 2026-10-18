@@ -29,6 +29,11 @@ type Dependencies struct {
 	// ComposerFileChanged is told about every file the composer tools write, so
 	// that the Web UI can refresh an open composer. Optional.
 	ComposerFileChanged func(shared.HttpFileChangedDto)
+	// Certificate reads the local root CA, so that the instructions for
+	// enabling HTTPS decryption match what the user will see. WebUIURL is
+	// where those instructions send the user. Both optional.
+	Certificate func() CertificateState
+	WebUIURL    string
 	// StateChanged and Called report the listener state and each traced call,
 	// so that the Web UI MCP tab follows them live. Optional.
 	StateChanged func(shared.McpStateDto)
@@ -36,10 +41,11 @@ type Dependencies struct {
 }
 
 type Status struct {
-	Proxy    ProxyStatus    `json:"proxy"`
-	Capture  CaptureStatus  `json:"capture"`
-	HTTPS    HTTPSStatus    `json:"https"`
-	Upstream UpstreamStatus `json:"upstream"`
+	UserAction *UserAction    `json:"user_action,omitempty" jsonschema:"When present, guide the user through its steps: it cannot be done through MCP"`
+	Proxy      ProxyStatus    `json:"proxy"`
+	Capture    CaptureStatus  `json:"capture"`
+	HTTPS      HTTPSStatus    `json:"https"`
+	Upstream   UpstreamStatus `json:"upstream"`
 }
 
 type ProxyStatus struct {
@@ -54,7 +60,7 @@ type CaptureStatus struct {
 }
 
 type HTTPSStatus struct {
-	DecryptionEnabled bool `json:"decryption_enabled" jsonschema:"MITM setting for new CONNECT requests; existing tunnels retain their original mode and capture rules may omit bodies"`
+	DecryptionEnabled bool `json:"decryption_enabled" jsonschema:"MITM setting for new CONNECT requests; existing tunnels retain their original mode and capture rules may omit bodies. Only the user can change it, from the Web UI"`
 }
 
 type UpstreamStatus struct {
@@ -75,5 +81,6 @@ func (d Dependencies) getStatus(context.Context, *sdk.CallToolRequest, struct{})
 		HTTPS:    HTTPSStatus{DecryptionEnabled: d.DecryptHTTPS.Get().Enabled},
 		Upstream: UpstreamStatus{Enabled: enabled, WindowsAuthenticationConfigured: up.AddWindowsAuthentication, WindowsAuthenticationApplicable: enabled && up.AddWindowsAuthentication && runtime.GOOS == "windows"},
 	}
+	status.UserAction = d.decryptionUserAction()
 	return nil, status, nil
 }

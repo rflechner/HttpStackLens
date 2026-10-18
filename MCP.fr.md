@@ -66,7 +66,7 @@ aide-moi à comprendre pourquoi. »
 - [ ] Inclure les échecs sans réponse HTTP : connexion refusée, timeout ou erreur TLS, lorsque ces informations sont disponibles.
 - [ ] Retourner des listes compactes : identifiant, date, méthode, URL masquée, statut ou erreur, durée et mode HTTPS.
 - [ ] Paginer les résultats avec une limite bornée et un curseur ; définir le comportement lorsque le trafic continue d’arriver.
-- [ ] `get_request` : lire les détails d’un échange, ses en-têtes filtrés et les mesures de temps disponibles.
+- [x] `get_request` : lire les détails d’un échange, ses en-têtes filtrés et les mesures de temps disponibles.
 - [ ] Distinguer un échange terminé, encore en cours, introuvable ou évincé de la mémoire lorsque le suivi disponible le permet.
 - [ ] Expliquer les limites de visibilité : enregistrement arrêté, tunnel CONNECT opaque, corps non capturé ou données tronquées.
 - [ ] Fournir les identifiants des échanges qui justifient chaque résultat pour permettre leur consultation dans l’inspecteur.
@@ -242,6 +242,36 @@ mais ne constituent pas une transaction atomique entre tous les contrôleurs.
 Si les dépendances runtime sont absentes, l’outil retourne une erreur explicite.
 Le contrat HTTP de la Web UI est inchangé.
 
+## Actions réservées à l’utilisateur
+
+Activer le déchiffrement HTTPS installe une autorité de certification locale
+capable de lire le trafic HTTPS de l’utilisateur : ce n’est jamais proposé comme
+outil MCP. Lorsqu’il est désactivé, `get_status`, `search_requests` et
+`get_request` (sur un tunnel CONNECT) renvoient un objet `user_action` que la
+description de ces outils demande au modèle de suivre avec l’utilisateur :
+
+| Champ | Contenu |
+| --- | --- |
+| `reason` | Pourquoi le trafic HTTPS est opaque et pourquoi seul l’utilisateur peut l’activer. |
+| `steps` | Instructions pas à pas dans la Web UI, avec son URL. |
+| `notes` | Magasins de certificats propres à Firefox, Node.js ou Java ; clé privée locale ; désactivation possible. |
+| `verify` | Rappeler `get_status` une fois l’opération faite : `https.decryption_enabled` doit valoir `true`. |
+
+Les étapes suivent l’état de la CA locale, relu à chaque appel :
+
+- **aucune CA** : bouton « HTTPS decryption · Off » de la barre Traffic,
+  « Generate certificate », « Install in OS trust store », « Done — enable decryption » ;
+- **CA non approuvée** : mêmes étapes sans la génération ;
+- **installation automatique indisponible** : « Export public certificate » puis
+  import manuel comme autorité racine de confiance ;
+- **CA expirée** : Settings → TLS / Certificate → « Regenerate root » puis « Install » ;
+- **CA prête** : seulement le bouton puis « Done — enable decryption ».
+
+Dès qu’un certificat vient d’être généré ou approuvé, l’utilisateur doit quitter
+complètement le navigateur et le relancer, pour qu’il relise le magasin de
+certificats. Dans tous les cas, il doit ensuite reproduire le trafic : les
+tunnels ouverts avant l’activation restent opaques.
+
 ## Contrat actuel de `search_requests`
 
 Outil en lecture seule, limité aux échanges encore en mémoire. Aucun endpoint
@@ -288,6 +318,45 @@ Les chemins restent visibles et peuvent contenir des données sensibles : cette
 première politique ne garantit pas un masquage exhaustif. Le store original n’est
 pas modifié. Les erreurs réseau détaillées ne sont pas actuellement conservées
 par ce store ; une absence de réponse peut aussi correspondre à un échange en cours.
+
+## Contrat actuel de `get_request`
+
+Outil en lecture seule, sans accès réseau, sur un échange encore en mémoire.
+Argument unique : `id`, l’identifiant retourné par `search_requests`.
+
+Le résultat contient :
+
+| Champ | Contenu |
+| --- | --- |
+| `state` | `complete` (requête et réponse), `no_response` (en cours, en échec ou réponse non enregistrée) ou `response_only` (requête absente). |
+| `visibility` | Comme pour `search_requests` : `connect`, `https_request`, `http_request` ou `unknown`. |
+| `request` | Méthode, URL masquée comme dans `search_requests`, version HTTP, en-têtes filtrés et état du corps. |
+| `response` | Statut, texte du statut, version HTTP, en-têtes filtrés et état du corps. |
+| `timing` | Phases mesurées en millisecondes (`dns_ms`, `connect_ms`, `tls_ms`, `ttfb_ms`, `download_ms`, `total_ms`) ; une phase non mesurée ou qui n’a pas eu lieu vaut `null` (les envois du Composer ne mesurent que `total_ms`), et `timing` vaut `null` quand rien n’a été mesuré. |
+| `limitations` | Ce que le résultat ne permet pas de conclure pour cet échange. |
+
+Filtrage des en-têtes, sans modifier le store :
+
+- `Authorization`, `Proxy-Authorization`, `WWW-Authenticate`, `Proxy-Authenticate` :
+  seul le schéma est conservé (`Negotiate REDACTED`, `NTLM REDACTED`, `Basic REDACTED`),
+  ce qui suffit à diagnostiquer l’authentification d’un proxy d’entreprise ;
+- `Cookie` : noms conservés, valeurs masquées ; `Set-Cookie` : valeur masquée,
+  attributs (`Path`, `Secure`, `HttpOnly`, `SameSite`…) conservés ;
+- `Location`, `Referer`, `Content-Location` : query, userinfo et fragment masqués ;
+- tout autre en-tête dont le nom évoque un secret (`token`, `api_key`, `session`…) : `REDACTED` ;
+- 100 en-têtes au plus par côté (`headers_omitted` compte le reste), valeurs
+  coupées à 1 Ko et signalées par `truncated`.
+
+Les corps ne sont jamais retournés : `body.state` vaut `captured` (avec `size`),
+`empty`, `skipped` (au-delà de la règle de capture du type de contenu) ou `absent`,
+avec le `Content-Type` lorsqu’il est connu. Leur lecture relève de `get_body_excerpt`.
+
+Les réponses ne sont enregistrées que pour le HTTPS déchiffré et les envois du
+Composer : une requête HTTP relayée en clair ou un tunnel CONNECT reste en
+`no_response`, ce qui ne prouve pas une erreur. Un `407` est signalé comme venant
+d’un proxy, distinct d’un `401` du serveur cible. Un identifiant inconnu donne une
+erreur explicite : l’échange a pu être évincé, effacé ou jamais enregistré, sans
+qu’il soit possible de distinguer ces cas.
 
 ## Contrat actuel des outils Composer
 

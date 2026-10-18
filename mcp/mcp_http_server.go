@@ -31,13 +31,19 @@ func newServer(deps Dependencies, calls *CallLog) *mcp.Server {
 	local := false
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_requests",
-		Description: "Search retained in-memory exchanges, newest first. Returns compact redacted summaries without headers or bodies. Repeat filters with next_cursor; missing responses are not proof of network failure.",
+		Description: "Search retained in-memory exchanges, newest first. Returns compact redacted summaries without headers or bodies; read one with get_request. Repeat filters with next_cursor; missing responses are not proof of network failure. If the result has user_action, guide the user through its steps.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &local},
 	}, deps.searchRequests)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_request",
+		Description: "Read one exchange found with search_requests: method, redacted URL, filtered request and response headers, body state and size (not the content), and measured timing phases. Credentials are redacted; authentication headers keep their scheme (Negotiate, NTLM, Basic) to diagnose proxy authentication. If the result has user_action, guide the user through its steps.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &local},
+	}, deps.getRequest)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_status",
-		Description: "Read current local proxy, recording, persistence, HTTPS inspection and upstream state. Does not test connectivity or change settings. No traffic or credentials are returned.",
+		Description: "Read current local proxy, recording, persistence, HTTPS inspection and upstream state. Does not test connectivity or change settings. No traffic or credentials are returned. If the result has user_action, guide the user through its steps.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &local},
 	}, deps.getStatus)
 

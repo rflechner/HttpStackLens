@@ -212,11 +212,13 @@ func traceRaw(data json.RawMessage) (string, bool) {
 }
 
 // truncate cuts s at maxTracedBytes without splitting a UTF-8 sequence.
-func truncate(s string) string {
-	if len(s) <= maxTracedBytes {
+func truncate(s string) string { return truncateTo(s, maxTracedBytes) }
+
+func truncateTo(s string, n int) string {
+	if len(s) <= n {
 		return s
 	}
-	cut := maxTracedBytes
+	cut := n
 	for cut > 0 && s[cut]&0xC0 == 0x80 {
 		cut--
 	}

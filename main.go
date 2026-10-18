@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"httpStackLens/certManager"
 	"httpStackLens/composer"
 	"httpStackLens/configuration"
 	"httpStackLens/logging"
@@ -204,6 +205,8 @@ func main() {
 		Proxy: proxyCtl, Capture: captureCtl, Storage: storageSink,
 		Requests: requestStore, DecryptHTTPS: decryptHttpsSettings, Upstream: upstreamSettings,
 		HttpFiles: httpFiles, SendComposer: composerSend.Send,
+		Certificate: func() mcp.CertificateState { return certificateState(config.DecryptHttps.CertManager) },
+		WebUIURL:    fmt.Sprintf("http://127.0.0.1:%d/", appContext.webUiPort),
 		ComposerFileChanged: func(change shared.HttpFileChangedDto) {
 			// An open composer applies the change instead of overwriting it
 			// with its own copy on the next save.
@@ -237,6 +240,29 @@ func main() {
 
 	requestStop()
 	supervisor.closeAllProxies()
+}
+
+// certificateState reads the local root CA for the MCP instructions on
+// enabling HTTPS decryption. It is read on each call: the user may generate or
+// install the certificate between two of them.
+func certificateState(certConfig configuration.CertManagerConfig) mcp.CertificateState {
+	installer := certManager.NewCertInstaller()
+	state := mcp.CertificateState{Known: true, InstallSupported: installer.IsSupported()}
+	caCert, _, err := certManager.LoadCA(certConfig.GetResolvedCaCertFile(), certConfig.GetResolvedCaKeyFile())
+	if err != nil {
+		return state // no usable CA yet
+	}
+	now := time.Now()
+	state.Available = true
+	state.Expired = now.Before(caCert.NotBefore) || now.After(caCert.NotAfter)
+	if state.InstallSupported {
+		installed, err := installer.IsCACertInstalled(certConfig.GetResolvedCaCertFile())
+		if err != nil {
+			state.Known = false
+		}
+		state.Installed = installed
+	}
+	return state
 }
 
 // logResolvedPaths reports the on-disk locations the app will actually use, once

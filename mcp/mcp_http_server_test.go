@@ -120,7 +120,7 @@ func TestStartStopAndListTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Tools) != 7 {
+	if len(result.Tools) != 8 {
 		t.Fatalf("unexpected tools: %+v", result.Tools)
 	}
 	_ = session.Close()
@@ -343,7 +343,7 @@ func TestToolsCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools) != 7 || len(c.TracedCalls()) != 0 {
+	if len(tools) != 8 || len(c.TracedCalls()) != 0 {
 		t.Fatalf("%d tools, %d traced calls", len(tools), len(c.TracedCalls()))
 	}
 	byName := map[string]shared.McpToolDto{}

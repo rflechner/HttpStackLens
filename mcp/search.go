@@ -41,6 +41,9 @@ type RequestSummary struct {
 }
 
 type SearchResult struct {
+	// UserAction is set when something only the user can do limits the
+	// results; the model is meant to relay it, not to work around it.
+	UserAction  *UserAction      `json:"user_action,omitempty" jsonschema:"When present, guide the user through its steps: it cannot be done through MCP"`
 	Source      string           `json:"source"`
 	Requests    []RequestSummary `json:"requests"`
 	NextCursor  string           `json:"next_cursor,omitempty"`
@@ -115,6 +118,7 @@ func (d Dependencies) searchRequests(ctx context.Context, _ *sdk.CallToolRequest
 	if d.Capture != nil && !d.Capture.IsCapturing() {
 		result.Limitations = append(result.Limitations, "Recording is currently paused.")
 	}
+	result.UserAction = d.decryptionUserAction()
 	var last uint64
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
@@ -187,34 +191,10 @@ func requestURL(r *storage.RequestRecord) *url.URL {
 }
 
 func summarizeRequest(e storage.CapturedExchange, u *url.URL) RequestSummary {
-	s := RequestSummary{ID: e.CorrelationID, ObservedAt: e.CreatedAt, HasRequest: e.Request != nil, HasResponse: e.Response != nil, Visibility: "unknown"}
+	s := RequestSummary{ID: e.CorrelationID, ObservedAt: e.CreatedAt, HasRequest: e.Request != nil, HasResponse: e.Response != nil, Visibility: visibility(e.Request, u)}
 	if e.Request != nil {
 		s.Method = e.Request.Method
-		if strings.EqualFold(s.Method, "CONNECT") {
-			s.Visibility = "connect"
-		} else if u != nil && u.Scheme == "https" {
-			s.Visibility = "https_request"
-		} else if u != nil && u.Scheme == "http" {
-			s.Visibility = "http_request"
-		}
-		if u == nil {
-			s.URLRedacted = true
-		} else {
-			clean := *u
-			s.URLRedacted = clean.User != nil || clean.RawQuery != "" || clean.Fragment != ""
-			clean.User = nil
-			clean.Fragment = ""
-			clean.RawFragment = ""
-			// Mask the entire query, including names: arbitrary keys can also be secrets.
-			if clean.RawQuery != "" {
-				clean.RawQuery = "REDACTED"
-			}
-			s.URL = clean.String()
-			if len(s.URL) > 2048 {
-				s.URL = string([]rune(s.URL)[:min(len([]rune(s.URL)), 512)]) + "…"
-				s.URLTruncated = true
-			}
-		}
+		s.URL, s.URLRedacted, s.URLTruncated = redactRequestURL(u)
 	}
 	if e.Response != nil {
 		code := e.Response.StatusCode
@@ -225,4 +205,44 @@ func summarizeRequest(e storage.CapturedExchange, u *url.URL) RequestSummary {
 		s.DurationMS = &ms
 	}
 	return s
+}
+
+// visibility says what kind of exchange a record is, from its method and the
+// scheme it was recorded with: an opaque CONNECT tunnel, or an HTTPS or HTTP
+// request whose headers were seen.
+func visibility(r *storage.RequestRecord, u *url.URL) string {
+	switch {
+	case r == nil:
+		return "unknown"
+	case strings.EqualFold(r.Method, "CONNECT"):
+		return "connect"
+	case u != nil && u.Scheme == "https":
+		return "https_request"
+	case u != nil && u.Scheme == "http":
+		return "http_request"
+	}
+	return "unknown"
+}
+
+// redactRequestURL drops userinfo and fragment and masks the whole query,
+// names included: arbitrary keys can also be secrets. An unparsable URL is
+// omitted rather than echoed back unredacted.
+func redactRequestURL(u *url.URL) (text string, redacted, truncated bool) {
+	if u == nil {
+		return "", true, false
+	}
+	clean := *u
+	redacted = clean.User != nil || clean.RawQuery != "" || clean.Fragment != ""
+	clean.User = nil
+	clean.Fragment = ""
+	clean.RawFragment = ""
+	if clean.RawQuery != "" {
+		clean.RawQuery = "REDACTED"
+	}
+	text = clean.String()
+	if len(text) > 2048 {
+		text = string([]rune(text)[:min(len([]rune(text)), 512)]) + "…"
+		truncated = true
+	}
+	return text, redacted, truncated
 }
