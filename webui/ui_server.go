@@ -68,6 +68,7 @@ type RuntimeCommandResult struct {
 }
 
 type Dependencies struct {
+	DesktopSettings       desktopSettingsService
 	InitialConfig         configuration.AppConfig
 	CurrentConfig         func() configuration.AppConfig
 	DecryptHTTPSSettings  *configuration.DecryptHttpsConfigStore
@@ -257,6 +258,7 @@ func ServeWebUi(port int, stop <-chan bool, deps Dependencies) *Hub {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/settings/desktop", desktopSettingsHandler(deps.DesktopSettings))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		data, err := fs.ReadFile(rootFS, "wwwroot/index.html")

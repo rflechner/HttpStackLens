@@ -965,6 +965,7 @@ func main() {
 
 	model := &StateModel{}
 	model.registerBridges()
+	registerDesktopSettingsBridges()
 	model.connectSSE()
 	model.loadCaptureState()
 

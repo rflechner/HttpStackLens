@@ -61,8 +61,20 @@ interface; the Web UI implementation of that interface publishes to a `Hub`.
    store and an `HttpsInterceptor` is wrapped around the pipeline.
 7. The proxy server is created with the pipeline + `CertStore` and `Run()` in a
    goroutine.
-8. The main goroutine waits for `exit` on stdin, then shuts everything down via
-   `stopChan`.
+8. The main goroutine runs the Wails desktop window. On Windows, a native
+   notification icon keeps the application accessible when the window is closed.
+   Its Quit action ends Wails, then the application shuts down via `stopChan`.
+   `--background` starts the Windows inspector hidden; the tray's Start at sign-in
+   option registers that command in the current user's Windows Run registry key.
+   Settings → Application and the tray menu share a controller that persists
+   `desktop.start_at_login` in `config.yaml`, reads back the native registration,
+   and restores its previous command if saving the configuration fails. The
+   HTTP contract is GET/PUT `/api/settings/desktop`. Existing configurations
+   without the key preserve their registration; explicit YAML preferences are
+   applied at launch.
+   An instance mutex is claimed before either server opens its port, so launching
+   the executable again shows the existing inspector. Other platforms retain
+   their window-close-to-exit behavior.
 
 ## Request lifecycle (the proxy)
 

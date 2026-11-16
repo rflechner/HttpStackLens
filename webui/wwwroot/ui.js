@@ -111,6 +111,7 @@
     detailHeight: savedDetailHeight,
     upstream: { on: false, ntlm: false, host: '', noProxy: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
     access: { mode: 'loopback', networks: [], appliedMode: 'loopback', appliedNetworks: [], loaded: false, loading: false, saving: false, dirty: false, saved: false, error: null },
+    desktop: { loaded: false, loading: false, saving: false, saved: false, supported: false, startAtLogin: false, registered: false, startedInBackground: false, error: null },
     certificate: { loaded: false, loading: false, busy: false, action: '', status: null, error: null, cleanup: null },
     // Real body-capture settings (B5.1), fed by WASM from /api/settings/body-capture.
     bodyCapture: { loaded: false, loading: false, defaultMaxBytes: null, mimeTypes: [], error: null, saving: false, saved: false, dirty: false },
@@ -1303,9 +1304,9 @@
 
   // settings modal with tabs
   let settingsTab = 'body';
-  function openSettings(tab) { modalKind = 'settings'; settingsTab = tab || 'body'; renderSettings(); }
+  function openSettings(tab) { modalKind = 'settings'; settingsTab = tab || 'body'; if (!state.desktop.saving) { state.desktop.loaded = false; state.desktop.error = null; } renderSettings(); }
   function renderSettings() {
-    const tabs = [['cert', 'TLS / Certificate'], ['body', 'Body capture'], ['upstream', 'Upstream proxy'], ['access', 'Access control']];
+    const tabs = [['desktop', 'Application'], ['cert', 'TLS / Certificate'], ['body', 'Body capture'], ['upstream', 'Upstream proxy'], ['access', 'Access control']];
     const nav = tabs.map(([id, l]) => `<button data-settab="${id}" style="display:block;width:100%;text-align:left;background:${settingsTab === id ? C.bg3 : 'transparent'};border:none;cursor:pointer;padding:7px 10px;border-radius:3px;margin-bottom:2px;color:${settingsTab === id ? C.ink : C.dim};font-size:12px;font-family:Inter;font-weight:500">${l}</button>`).join('');
     openModal(modalHeader('Settings') +
       `<div class="grid" style="grid-template-columns:180px 1fr;min-height:380px">
@@ -1314,6 +1315,7 @@
       modalFooter(btn('Done', 'close-modal', 'primary')), 820);
   }
   function settingsBody() {
+    if (settingsTab === 'desktop') return desktopPanel();
     if (settingsTab === 'cert') {
       const ca = state.certificate;
       if (!ca.loaded) {
@@ -1342,6 +1344,42 @@
   }
 
   function sizeLabel(b) { return b === 0 ? 'off' : b < 1048576 ? (b / 1024) + ' KB' : (b / 1048576) + ' MB'; }
+
+  function desktopPanel() {
+    const d = state.desktop;
+    if (!d.loaded) {
+      if (d.error) return `<p style="color:${C.danger};font-size:12px">${esc(d.error)}</p>${btn('Retry', 'desktop-reload', 'ghost')}`;
+      if (!d.loading) {
+        d.loading = true;
+        if (typeof window.hslLoadDesktopSettings === 'function') setTimeout(() => window.hslLoadDesktopSettings(), 0);
+        else { d.loading = false; d.error = 'Backend bridge unavailable. Rebuild the Web UI.'; }
+      }
+      return `<p style="color:${C.dim};font-size:12px">${esc(d.error || 'Loading application settings…')}</p>`;
+    }
+    if (!d.supported) return `<p style="font-size:12px;color:${C.dim}">Start at sign-in and the notification icon are currently available on Windows.</p>`;
+    const status = d.error ? `<span style="color:${C.danger}">${esc(d.error)}</span>`
+      : d.saving ? 'Saving…' : d.saved ? `<span style="color:${C.mint}">Saved</span>` : '';
+    return `<div style="font-size:12px;color:${C.dim};line-height:1.7">
+      <div class="flex items-center justify-between gap-3" style="margin-bottom:16px">
+        <div><div style="font-weight:600;color:${C.ink}">Start at Windows sign-in</div><div>Keep the proxy running in the notification area, with the inspector hidden.</div></div>
+        ${toggle(d.startAtLogin, 'desktop-toggle', false, d.saving)}</div>
+      <div style="padding:12px;border:1px solid ${C.line};border-radius:4px;background:${C.bg2}">
+        <div>Windows registration: <b style="color:${d.registered ? C.mint : C.dim}">${d.registered ? 'Registered for this user' : 'Not registered'}</b></div>
+        <div>Current launch: <b style="color:${C.ink}">${d.startedInBackground ? 'Background' : 'Normal'}</b></div>
+      </div>
+      ${d.startAtLogin !== d.registered ? `<p style="color:${C.warn}">The saved preference and Windows registration differ. Toggle the setting to apply it again.</p>` : ''}
+      <p>Changes are saved immediately. Closing the inspector keeps the proxy running; use Quit HttpStackLens in the notification menu to stop it.</p>
+      <p>Windows can also disable startup apps in Settings → Apps → Startup.</p>
+      <div class="flex items-center gap-3">${btn('Refresh status', 'desktop-reload', 'ghost')}<span>${status}</span></div></div>`;
+  }
+
+  function setDesktopSettings(result) {
+    const d = state.desktop;
+    d.loading = false; d.saving = false;
+    if (result.error) { d.error = result.error; d.saved = false; }
+    else Object.assign(d, result, { loaded: true, error: null });
+    if (modalKind === 'settings' && settingsTab === 'desktop') renderSettings();
+  }
   // Size options offered per rule (bytes). `null` is a sentinel whose meaning
   // (use-default vs. no-limit) depends on the caller, passed via nullLabel.
   const BODY_SIZE_OPTS = [null, 0, 65536, 262144, 524288, 1048576, 2097152, 8388608];
@@ -1592,7 +1630,7 @@
       }
 
       const settab = e.target.closest('[data-settab]');
-      if (settab) { settingsTab = settab.dataset.settab; renderSettings(); return; }
+      if (settab) { settingsTab = settab.dataset.settab; if (settingsTab === 'desktop' && !state.desktop.saving) { state.desktop.loaded = false; state.desktop.error = null; } renderSettings(); return; }
 
       const acc = e.target.closest('[data-access]');
       if (acc) { state.access.mode = acc.dataset.access; renderSettings(); renderToolbar(); renderStatusBar(); return; }
@@ -1642,6 +1680,18 @@
   }
 
   function handleAction(a) {
+    if (a === 'desktop-reload') {
+      if (state.desktop.saving) return;
+      state.desktop.loaded = false; state.desktop.error = null; state.desktop.saved = false; renderSettings(); return;
+    }
+    if (a === 'desktop-toggle') {
+      const d = state.desktop;
+      if (!d.loaded || !d.supported || d.saving) return;
+      d.saving = true; d.saved = false; d.error = null; renderSettings();
+      if (typeof window.hslSaveDesktopSettings === 'function') window.hslSaveDesktopSettings(!d.startAtLogin);
+      else setDesktopSettings({ error: 'Backend bridge unavailable.' });
+      return;
+    }
     if (a.startsWith('access-mode:')) {
       state.access.mode = a.slice('access-mode:'.length);
       state.access.dirty = true; state.access.saved = false; state.access.error = null;
@@ -1918,6 +1968,7 @@
     setCertificate: setCertificate,     // B6 CA status/actions
     setCertificateCleanup: setCertificateCleanup, // certificate cleanup summary
     setAccessControl: setAccessControl, // B5.3 access settings
+    setDesktopSettings: setDesktopSettings,
     setUpstream: setUpstream,           // B5.2 upstream settings
     clear: () => {
       state.liveRows = [];

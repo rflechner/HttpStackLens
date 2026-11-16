@@ -1,5 +1,36 @@
 # HttpStackLens
 
+On Windows, the application stays in the notification area when its window is
+closed. Click its icon or choose **Open inspector** to show the window again;
+choose **Quit HttpStackLens** to stop the proxy and exit. Launching the executable
+again also opens the existing inspector instead of starting a second proxy.
+
+To start automatically when you sign in, enable **Start at sign-in** in the
+notification icon's right-click menu, or open **Settings → Application** and
+enable **Start at Windows sign-in**. That panel shows the saved choice, the
+current Windows registration, and whether this process started in the background.
+Both controls save `desktop.start_at_login` in `config.yaml` and apply the Windows
+registration immediately. Disable either control to remove it. This
+uses the current user's Windows startup registry entry, requires no administrator
+rights, and launches the installed executable with `--background` so the inspector
+stays hidden. Windows Task Manager's Startup settings can also disable the entry.
+Keep the executable in a permanent folder; after moving it, turn this option off
+and back on from the new location. Configuration and captures continue to resolve
+relative to the executable. This runs in your user session, preserving Windows
+authentication credentials; it does not install a Windows service or change the
+system proxy settings. macOS and Linux keep their existing window-close behavior.
+
+The same preference can be configured manually:
+
+```yaml
+desktop:
+  start_at_login: true
+```
+
+It is applied on the next application launch. Older configurations without this
+key preserve any existing registration until the user changes the setting.
+Windows Settings → Apps → Startup can independently disable a registered entry.
+
 **English** · [Français](readme.fr.md)
 
 ![HttpStackLens](images/splash-screen.png)
@@ -67,7 +98,7 @@ The build is a single command and needs only Go and Node.js — see
 
 ## Prerequisites
 
-- [Go](https://go.dev/dl/) 1.26.1 or later
+- [Go](https://go.dev/dl/) 1.26.4 (recommended for the Wails v2.13.0 build)
 - [Node.js](https://nodejs.org/) (for the Web UI build — Tailwind CSS)
 
 ## Build
@@ -83,6 +114,16 @@ From the project root — **this is all you need:**
 ```sh
 go run .\build-tools\main.go
 ```
+
+If Go 1.27 is installed and Wails fails with `package "fmt" without types`,
+select Go 1.26.4 for the build. In Git Bash (or another POSIX shell):
+
+```sh
+GOTOOLCHAIN=go1.26.4 go run ./build-tools/main.go
+```
+
+Go downloads that toolchain automatically on first use; the installed Go version
+stays unchanged. See [Go toolchain selection](https://go.dev/doc/toolchain).
 
 Additional targets:
 
