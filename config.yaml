@@ -1,3 +1,6 @@
+desktop:
+  start_at_login: false # Windows: start in the notification area at sign-in
+
 proxy:
   port: 3128
   require_windows_authentication: true # only for windows

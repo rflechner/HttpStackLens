@@ -1,5 +1,39 @@
 # HttpStackLens
 
+Sous Windows, fermer la fenêtre laisse l'application et le proxy actifs dans la
+zone de notification. Cliquez sur l'icône ou choisissez **Open inspector** pour
+rouvrir l'inspecteur ; **Quit HttpStackLens** arrête le proxy et quitte
+l'application. Relancer l'exécutable affiche également l'instance existante.
+
+Pour démarrer automatiquement à l'ouverture de session, cochez **Start at
+sign-in** dans le menu contextuel de l'icône, ou activez **Start at Windows sign-in**
+dans **Settings → Application**. Ce panneau affiche le choix sauvegardé,
+l'inscription Windows actuelle et le mode de lancement de ce processus.
+Les deux contrôles enregistrent `desktop.start_at_login` dans `config.yaml` et
+appliquent immédiatement l'inscription Windows. Décochez l'option pour supprimer
+le démarrage automatique. L'inscription utilise le registre de l'utilisateur
+courant, sans droits administrateur, et lance l'exécutable avec `--background`
+pour garder la fenêtre masquée. Les paramètres de démarrage du Gestionnaire des
+tâches Windows permettent aussi de désactiver l'entrée. Placez l'exécutable dans
+un dossier permanent ; après un déplacement, décochez puis recochez l'option
+depuis le nouvel emplacement. Les chemins de configuration et de captures restent
+relatifs à l'exécutable. Le processus s'exécute dans votre session et conserve
+votre identité Windows pour l'authentification. Aucun service Windows n'est
+installé et les paramètres du proxy système ne sont pas modifiés. Sous macOS et
+Linux, fermer la fenêtre continue de quitter l'application.
+
+Le même réglage peut être défini manuellement :
+
+```yaml
+desktop:
+  start_at_login: true
+```
+
+Il est appliqué au prochain lancement. Les anciennes configurations sans cette
+clé conservent l'inscription existante jusqu'à une modification du réglage.
+Windows peut désactiver indépendamment une inscription dans Paramètres →
+Applications → Démarrage.
+
 [English](readme.md) · **Français**
 
 ![HttpStackLens](images/splash-screen.png)
@@ -72,7 +106,7 @@ voir [Compilation](#compilation) ci-dessous.
 
 ## Prérequis
 
-- [Go](https://go.dev/dl/) 1.26.1 ou supérieur
+- [Go](https://go.dev/dl/) 1.26.4 (recommandé pour le build Wails v2.13.0)
 - [Node.js](https://nodejs.org/) (pour la compilation de l'interface web — Tailwind CSS)
 
 ## Compilation
@@ -88,6 +122,16 @@ Depuis la racine du projet — **c'est tout ce dont vous avez besoin :**
 ```sh
 go run .\build-tools\main.go
 ```
+
+Si Go 1.27 est installé et que Wails échoue avec `package "fmt" without types`,
+sélectionnez Go 1.26.4 pour la compilation. Dans Git Bash (ou un shell POSIX) :
+
+```sh
+GOTOOLCHAIN=go1.26.4 go run ./build-tools/main.go
+```
+
+Go télécharge automatiquement cette version à la première utilisation ; la
+version installée reste inchangée. Voir la [sélection de la chaîne Go](https://go.dev/doc/toolchain).
 
 Cibles supplémentaires :
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"httpStackLens/helpers"
 
@@ -13,6 +14,8 @@ import (
 )
 
 const defaultConfigPath = "config.yaml"
+
+var configPersistenceMu sync.Mutex
 
 func ResolveConfigPath() string {
 	return helpers.ResolveRelativePath(defaultConfigPath)
@@ -61,16 +64,22 @@ func ReadOrCreateConfigurationIfNotExists() AppConfig {
 // the rest of the file as-is. The Web UI uses this for pause/resume so capture
 // preference survives the next application start.
 func PersistStorageEnabled(enabled bool) error {
+	configPersistenceMu.Lock()
+	defer configPersistenceMu.Unlock()
 	return persistStorageEnabled(ResolveConfigPath(), enabled)
 }
 
 func PersistDecryptHttpsCaptureRules(config DecryptHttpsConfig) error {
+	configPersistenceMu.Lock()
+	defer configPersistenceMu.Unlock()
 	return persistDecryptHttpsCaptureRules(ResolveConfigPath(), config)
 }
 
 // PersistDecryptHttpsEnabled updates decrypt_https.enabled in config.yaml while
 // preserving certificate and body capture settings.
 func PersistDecryptHttpsEnabled(enabled bool) error {
+	configPersistenceMu.Lock()
+	defer configPersistenceMu.Unlock()
 	return persistDecryptHttpsEnabled(ResolveConfigPath(), enabled)
 }
 
@@ -78,6 +87,8 @@ func PersistDecryptHttpsEnabled(enabled bool) error {
 // add_windows_authentication_to_output_proxy, no_proxy) back into the proxy
 // section of config.yaml so Web UI edits survive the next application start.
 func PersistUpstreamSettings(settings UpstreamSettings) error {
+	configPersistenceMu.Lock()
+	defer configPersistenceMu.Unlock()
 	return persistUpstreamSettings(ResolveConfigPath(), settings)
 }
 
@@ -85,6 +96,8 @@ func PersistUpstreamSettings(settings UpstreamSettings) error {
 // config.yaml and removes the legacy enable_remote_connection keys from the
 // proxy/webui sections.
 func PersistAccessControlSettings(settings AccessControlSettings) error {
+	configPersistenceMu.Lock()
+	defer configPersistenceMu.Unlock()
 	return persistAccessControlSettings(ResolveConfigPath(), settings)
 }
 

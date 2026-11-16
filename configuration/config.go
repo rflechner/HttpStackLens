@@ -8,6 +8,7 @@ import (
 )
 
 type AppConfig struct {
+	Desktop      DesktopConfig      `yaml:"desktop"`
 	Proxy        ProxyConfig        `json:"proxy"`
 	WebUi        WebUiConfig        `json:"webui"`
 	Logging      LoggingConfig      `yaml:"logging"`
@@ -15,6 +16,11 @@ type AppConfig struct {
 	HttpFiles    HttpFilesConfig    `yaml:"http_files"`
 	DecryptHttps DecryptHttpsConfig `yaml:"decrypt_https"`
 	Updates      UpdatesConfig      `yaml:"updates"`
+}
+
+type DesktopConfig struct {
+	// Nil preserves an existing Windows registration in older configurations.
+	StartAtLogin *bool `yaml:"start_at_login,omitempty"`
 }
 
 // UpdatesConfig gates the automatic update check. It is opt-in: when CheckEnabled
@@ -277,7 +283,9 @@ type WebUiConfig struct {
 }
 
 func DefaultAppConfig() AppConfig {
+	startAtLogin := false
 	return AppConfig{
+		Desktop:   DesktopConfig{StartAtLogin: &startAtLogin},
 		Proxy:     ProxyConfig{Port: 3128, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
 		WebUi:     WebUiConfig{Port: 9000, AccessControl: AccessControlConfig{Mode: AccessControlLoopback}},
 		Logging:   LoggingConfig{Level: "info", File: "logs/httpStackLens.log"},

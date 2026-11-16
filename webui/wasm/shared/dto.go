@@ -1,5 +1,12 @@
 package shared
 
+type DesktopSettingsDto struct {
+	Supported           bool `json:"supported"`
+	StartAtLogin        bool `json:"start_at_login"`
+	Registered          bool `json:"registered"`
+	StartedInBackground bool `json:"started_in_background"`
+}
+
 type RequestEventDto struct {
 	// ID is the incrementing per-connection sequence number, kept for display
 	// (the "#001" column) and ordering in the UI.

@@ -13,6 +13,67 @@ tags:
   - name: Composer
   - name: Events
 paths:
+  /api/settings/desktop:
+    get:
+      tags: [Runtime]
+      summary: Read desktop startup preference and Windows registration
+      description: |
+        Reads the saved desktop.start_at_login preference and the current user's
+        Windows Run registration. Older config files without this preference
+        report the registration as their initial preference. Registration does
+        not guarantee Windows will run the application: Windows Startup settings
+        can disable the entry independently. started_in_background reports the
+        --background flag of this process, not proof of a Windows sign-in launch.
+      responses:
+        "200":
+          description: Desktop settings and current registration; supported is false outside Windows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopSettings"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "503":
+          description: Desktop settings service is unavailable
+    put:
+      tags: [Runtime]
+      summary: Save start at sign-in and apply the Windows registration
+      description: |
+        Updates only the current user's Run entry and persists the boolean to
+        desktop.start_at_login in config.yaml. Enabled entries launch the current
+        executable with --background. If persistence fails, the previous Windows
+        command is restored; rollback errors are also reported. The tray menu
+        uses the same behavior. No administrator privileges are required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [start_at_login]
+              properties:
+                start_at_login:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved preference and current Windows registration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "501":
+          description: Start at sign-in is not supported on this operating system
+        "503":
+          description: Desktop settings service is unavailable
   /config:
     get:
       tags: [Runtime]
@@ -843,6 +904,22 @@ components:
           schema:
             type: string
   schemas:
+    DesktopSettings:
+      type: object
+      required: [supported, start_at_login, registered, started_in_background]
+      properties:
+        supported:
+          type: boolean
+          description: True on Windows
+        start_at_login:
+          type: boolean
+          description: Saved preference, or current registration when no preference has been saved yet
+        registered:
+          type: boolean
+          description: Whether the current user's Windows Run entry is present
+        started_in_background:
+          type: boolean
+          description: Whether this process was started with --background
     HttpFile:
       type: object
       required: [name, content, modified_at]

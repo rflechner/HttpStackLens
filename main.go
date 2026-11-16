@@ -60,12 +60,24 @@ func main() {
 	// Registered here but parsed inside CreateOsSpecificProxyPipeline (which
 	// calls flag.Parse on the shared default flag set).
 	verbose := flag.Bool("verbose", false, "enable verbose (debug) logging")
+	background := flag.Bool("background", false, "start in the Windows notification area without opening the inspector")
 
 	appContext, err := CreateOsSpecificProxyPipeline(config)
 	if err != nil {
 		log.Printf("Failed to configure proxy pipeline: %v\n", err)
 		return
 	}
+	// Claim the desktop instance before opening ports or capture files. A second
+	// interactive launch asks the existing tray instance to show its inspector.
+	releaseInstance, primary, err := acquireDesktopInstance(*background)
+	if err != nil {
+		log.Printf("Failed to acquire desktop instance: %v\n", err)
+		return
+	}
+	if !primary {
+		return
+	}
+	defer releaseInstance()
 
 	level := logging.ParseLevel(config.Logging.Level)
 	if *verbose {
@@ -102,6 +114,18 @@ func main() {
 	proxyAccess := accessControlSettings.Get().Proxy
 	proxyCtl.SetAddress(fmt.Sprintf("%s:%d", proxyAccess.ListenHost(), appContext.port))
 	runtimeConfig := newRuntimeConfigState(config)
+	startup := &desktopStartupController{
+		supported: startupSupported, background: *background,
+		preference: config.Desktop.StartAtLogin,
+		read:       readStartupRegistration, write: writeStartupRegistration,
+		command: currentStartupCommand, persist: configuration.PersistDesktopStartup,
+		changed: func(enabled bool) {
+			runtimeConfig.Update(func(config *configuration.AppConfig) { config.Desktop.StartAtLogin = &enabled })
+		},
+	}
+	if err := startup.ApplyInitial(); err != nil {
+		slog.Warn("Could not apply start at sign-in setting", "error", err)
+	}
 	runtimeCommands := make(chan webui.RuntimeCommand, 16)
 	basePipeline := appContext.pipeline
 	activePipeline := middlewares.NewSwitchableMiddleware(basePipeline)
@@ -129,6 +153,7 @@ func main() {
 	hub := webui.ServeWebUi(appContext.webUiPort, stopChan, webui.Dependencies{
 		InitialConfig:         config,
 		CurrentConfig:         runtimeConfig.Snapshot,
+		DesktopSettings:       startup,
 		DecryptHTTPSSettings:  decryptHttpsSettings,
 		UpstreamSettings:      upstreamSettings,
 		AccessControlSettings: accessControlSettings,
@@ -189,7 +214,7 @@ func main() {
 	go proxyServer.Run()
 	go supervisor.Run(runtimeCommands, stopChan)
 
-	if err := runDesktopApp(appContext.webUiPort, requestStop); err != nil {
+	if err := runDesktopApp(appContext.webUiPort, *background, requestStop, startup); err != nil {
 		slog.Error("Wails application stopped with an error", "error", err)
 	}
 

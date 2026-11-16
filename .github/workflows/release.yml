@@ -16,6 +16,10 @@ on:
       version:
         description: "Version to build (e.g. v0.1.2-alpha). Produces a draft release."
         required: true
+      package_macos:
+        description: "Build, test and package macOS (amd64 and arm64) alongside Windows."
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -35,6 +39,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       commit: ${{ steps.version.outputs.commit }}
       date: ${{ steps.version.outputs.date }}
+      matrix: ${{ steps.targets.outputs.matrix }}
+      targets: ${{ steps.targets.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +60,31 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Select build targets
+        id: targets
+        env:
+          # Tag and branch pushes have no manual input: Windows only.
+          PACKAGE_MACOS: ${{ inputs.package_macos || false }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          # Windows builds are pure Go; the macOS backend requires cgo.
+          platforms = [("windows-latest", "windows", "HttpStackLens.exe", "httpStackLens.exe", "0")]
+          if os.environ["PACKAGE_MACOS"] == "true":
+              platforms.append(("macos-latest", "darwin", "HttpStackLens.app", "HttpStackLens.app", "1"))
+
+          targets = []
+          for runner, goos, source, artifact, cgo in platforms:
+              for arch in ("amd64", "arm64"):
+                  targets.append(dict(os=runner, goos=goos, arch=arch,
+                                      source=f"build/bin/{source}", artifact=artifact, cgo=cgo))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("matrix=" + json.dumps({"include": targets}) + "\n")
+              output.write("targets=" + " ".join(f"{t['goos']}_{t['arch']}" for t in targets) + "\n")
+          PY
 
       - name: Check sample config
         run: |
@@ -97,40 +128,7 @@ jobs:
     needs: [prepare, webui]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            goos: windows
-            arch: amd64
-            source: build/bin/HttpStackLens.exe
-            artifact: httpStackLens.exe
-            # Pure Go on this side: no cgo in app_windows.go, and Wails'
-            # Windows backend is go-webview2, so a static build stays
-            # dependency-free.
-            cgo: "0"
-          - os: windows-latest
-            goos: windows
-            arch: arm64
-            source: build/bin/HttpStackLens.exe
-            artifact: httpStackLens.exe
-            cgo: "0"
-          - os: macos-latest
-            goos: darwin
-            arch: amd64
-            source: build/bin/HttpStackLens.app
-            artifact: HttpStackLens.app
-            # darwin has no choice: app_darwin.go links UniformTypeIdentifiers
-            # through cgo and Wails' darwin backend is Objective-C. With
-            # CGO_ENABLED=0 Go silently DROPS every file importing "C", so
-            # app_darwin.go vanishes and CreateOsSpecificProxyPipeline ends up
-            # undefined.
-            cgo: "1"
-          - os: macos-latest
-            goos: darwin
-            arch: arm64
-            source: build/bin/HttpStackLens.app
-            artifact: HttpStackLens.app
-            cgo: "1"
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -204,12 +202,15 @@ jobs:
           merge-multiple: true
 
       - name: Package archives
+        env:
+          TARGETS: ${{ needs.prepare.outputs.targets }}
         run: |
           set -eu
           version="${{ needs.prepare.outputs.version }}"
           mkdir -p artifacts
 
-          for target in windows_amd64 windows_arm64 darwin_amd64 darwin_arm64; do
+          # Package only the targets selected and built by the matrix.
+          for target in ${TARGETS}; do
             cp "${SAMPLE_CONFIG}" "dist/${target}/config.yaml"
             cp readme.md readme.fr.md LICENSE RELEASE.md "dist/${target}/"
             # upload-artifact does not preserve the Unix executable bit
